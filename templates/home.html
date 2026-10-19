@@ -1,12 +1,302 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Mental Disorder Detection</title>
-</head>
-<body>
-    <h1>Welcome to Mental Disorder Detection</h1>
-    <p>AI-Based Mental Disorder Detection and Monitoring System</p>
-    <a href="/login">Login</a> | <a href="/register">Register</a>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Mental Disorder Detection - AI-Powered Mental Health Platform{% endblock %}
+
+{% block content %}
+
+<!-- ========== HERO SECTION ========== -->
+<section class="hero">
+    <div class="hero-container">
+        <div class="hero-left">
+            <span class="hero-pill"><span class="pill-dot"></span> AI-Powered Mental Health Monitoring</span>
+            <h1>Detect Stress & Depression <span class="text-gradient">Early — Privately & Smartly</span></h1>
+            <p class="hero-sub">A stigma-free AI system that monitors your mental health using facial analysis, wristband sensors, and clinically validated questionnaires.</p>
+            <div class="hero-cta">
+                <a href="/register" class="btn btn-primary btn-lg">Get Started Free →</a>
+                <a href="#how-it-works" class="btn btn-outline btn-lg">▶ See How It Works</a>
+            </div>
+            <div class="hero-trust">
+                <div class="trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Privacy First</div>
+                <div class="trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg> Clinically Validated</div>
+                <div class="trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Real-time Monitoring</div>
+            </div>
+        </div>
+
+        <div class="hero-right">
+            <div class="hero-brain">
+                <svg viewBox="0 0 100 100" fill="none" stroke="white" stroke-width="2.5">
+                    <path d="M35 30 Q25 35 25 50 Q25 65 35 70 Q40 75 50 75 Q60 75 65 70 Q75 65 75 50 Q75 35 65 30 Q60 25 50 25 Q40 25 35 30 Z" fill="rgba(255,255,255,0.15)"/>
+                    <path d="M50 25 L50 75 M35 40 Q50 45 65 40 M35 60 Q50 55 65 60"/>
+                </svg>
+            </div>
+            <div class="float-card card-top-left">
+                <div class="fc-head"><div class="fc-icon">⌚</div> Heart Rate</div>
+                <div class="fc-value">72 <span>BPM</span></div>
+                <svg class="fc-wave" viewBox="0 0 100 20"><polyline points="0,10 20,10 25,5 30,15 35,10 50,10 55,3 60,17 65,10 100,10" fill="none" stroke="#0F7A5F" stroke-width="1.5"/></svg>
+            </div>
+            <div class="float-card card-top-right">
+                <div class="fc-head"><div class="fc-icon">😊</div> Emotion Scan</div>
+                <div class="fc-bar"><span>Happy</span><div class="bar"><div style="width:62%"></div></div><em>62%</em></div>
+                <div class="fc-bar"><span>Neutral</span><div class="bar"><div style="width:28%"></div></div><em>28%</em></div>
+                <div class="fc-bar"><span>Sad</span><div class="bar"><div style="width:10%; background:#F59E0B"></div></div><em>10%</em></div>
+            </div>
+            <div class="float-card card-bottom-left">
+                <div class="fc-head small">Risk Score</div>
+                <div class="fc-value big">18 <span class="risk-pill">LOW</span></div>
+                <div class="risk-bar"><div style="width:18%"></div></div>
+            </div>
+            <div class="float-card card-bottom-right">
+                <div class="fc-head small">Brain Activity</div>
+                <svg class="fc-wave big" viewBox="0 0 120 30"><polyline points="0,15 10,15 15,8 20,22 25,10 30,18 40,15 45,5 50,25 55,12 65,15 70,8 75,20 80,10 90,15 95,6 100,22 105,13 120,15" fill="none" stroke="#0F7A5F" stroke-width="1.5"/></svg>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== ABOUT SECTION ========== -->
+<section class="section" id="about">
+    <div class="container">
+        <div class="about-grid">
+            <div class="about-left">
+                <span class="eyebrow">ABOUT</span>
+                <h2>About <span class="text-gradient">Mental Disorder Detection</span></h2>
+                <p class="lead">Mental Disorder Detection is an AI-based mental disorder detection and monitoring platform designed to bridge the gap between traditional psychiatric care and modern technology. By combining facial emotion recognition, IoT wristband biometric data, and validated clinical questionnaires, we provide patients and doctors with a continuous, objective window into mental health — privately and without stigma.</p>
+                <p class="lead">Our mission is simple: detect early, intervene faster, and empower both patients and clinicians with the data they need to heal.</p>
+
+                <div class="getintouch-card">
+                    <h4>Get in Touch</h4>
+                    <div class="git-row">
+                        <div class="git-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
+                        <span>+92 3423050647</span>
+                    </div>
+                    <div class="git-row">
+                        <div class="git-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
+                        <span>MentalDisorderDetection.Support@gmail.com</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="about-right">
+                <div class="team-card">
+                    <div class="team-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+                    <h3>Built by passionate students, guided by clinicians.</h3>
+                    <p>Our team brings together expertise in AI, embedded systems, and clinical psychology to build tools that actually move the needle on mental health outcomes.</p>
+
+                    <div class="team-avatars">
+                        <div class="team-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+                        <div class="team-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+                        <div class="team-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+                        <div class="team-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+                    </div>
+                    <p class="team-sub">Team: Khizer · Laiba · Samreen · Taha</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== FEATURES SECTION ========== -->
+<section class="section section-light" id="features">
+    <div class="container">
+        <div class="section-head">
+            <span class="eyebrow">FEATURES</span>
+            <h2>Everything You Need for <span class="text-gradient">Mental Wellness</span></h2>
+        </div>
+
+        <div class="features-grid">
+            <div class="feat-card">
+                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v6a2 2 0 0 0 2 2h3l4 4V3l-4 4H5a2 2 0 0 0-2 2z"/><path d="M14 9a3 3 0 0 1 0 6"/><path d="M8 9h.01M12 9h.01M16 9h.01"/></svg></div>
+                <h3>AI Facial Emotion Detection</h3>
+                <p>OpenCV + TensorFlow detect 7 emotions in real-time from your camera feed.</p>
+            </div>
+
+            <div class="feat-card">
+                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="3"/><path d="M12 8v4l2 2"/></svg></div>
+                <h3>IoT Wristband Monitoring</h3>
+                <p>Live heart rate, GSR, and skin temperature streamed from ESP32 hardware.</p>
+            </div>
+
+            <div class="feat-card">
+                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4"/><path d="M9 11V7a3 3 0 0 1 6 0v4"/><polyline points="9 15 11 17 15 13"/></svg></div>
+                <h3>PHQ-9 / GAD-7 Assessment</h3>
+                <p>Gold-standard clinical questionnaires for depression and anxiety screening.</p>
+            </div>
+
+            <div class="feat-card">
+                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+                <h3>Real-time Doctor Alerts</h3>
+                <p>Automated notifications when thresholds are exceeded — no manual escalation.</p>
+            </div>
+
+            <div class="feat-card">
+                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 8 22 9 17 14 18 21 12 17 6 21 7 14 2 9 9 8 12 2"/></svg></div>
+                <h3>Therapeutic Activities</h3>
+                <p>Breathing, coloring, journaling and meditation built into your dashboard.</p>
+            </div>
+
+            <div class="feat-card">
+                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+                <h3>Privacy-First Design</h3>
+                <p>Video never stored. Only emotion scores are encrypted and saved securely.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== HOW IT WORKS ========== -->
+<section class="section" id="how-it-works">
+    <div class="container">
+        <div class="section-head">
+            <span class="eyebrow">HOW IT WORKS</span>
+            <h2>How <span class="text-gradient">Mental Disorder Detection</span> Works</h2>
+            <p>Four simple steps to better mental wellness.</p>
+        </div>
+
+        <div class="steps-row">
+            <div class="step-item">
+                <div class="step-wrap">
+                    <span class="step-num">1</span>
+                    <div class="step-circle"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></div>
+                </div>
+                <h3>Register & Login</h3>
+                <p>Create a secure account in under a minute.</p>
+            </div>
+            <div class="step-arrow">→</div>
+
+            <div class="step-item">
+                <div class="step-wrap">
+                    <span class="step-num">2</span>
+                    <div class="step-circle"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4"/><path d="M9 11V7a3 3 0 0 1 6 0v4"/></svg></div>
+                </div>
+                <h3>Fill PHQ-9 / GAD-7</h3>
+                <p>Take clinically validated assessments.</p>
+            </div>
+            <div class="step-arrow">→</div>
+
+            <div class="step-item">
+                <div class="step-wrap">
+                    <span class="step-num">3</span>
+                    <div class="step-circle"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a2 2 0 0 1 2-2h2M4 17v2a2 2 0 0 0 2 2h2M20 7V5a2 2 0 0 0-2-2h-2M20 17v2a2 2 0 0 1-2 2h-2M8 10h.01M16 10h.01M9 14h6"/></svg></div>
+                </div>
+                <h3>Facial + Wristband Scan</h3>
+                <p>AI analyzes emotion and biometric signals.</p>
+            </div>
+            <div class="step-arrow">→</div>
+
+            <div class="step-item">
+                <div class="step-wrap">
+                    <span class="step-num">4</span>
+                    <div class="step-circle"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
+                </div>
+                <h3>Get Risk Score</h3>
+                <p>Receive personalized recommendations.</p>
+            </div>
+        </div>
+    </div>
+</section>
+<!-- ========== TEAM SECTION ========== -->
+<section class="section" id="team">
+    <div class="container">
+        <div class="section-head">
+            <span class="eyebrow">OUR TEAM</span>
+            <h2>Meet the <span class="text-gradient">Developers</span></h2>
+            <p>A dedicated team of final year students from Iqra University, Karachi.</p>
+        </div>
+
+        <div class="team-grid">
+            <div class="team-member-card">
+                <div class="tm-avatar">SK</div>
+                <h3>Syed Muhammad Khizer Rizvi</h3>
+                <p class="tm-role">Project Lead & Full-Stack Developer</p>
+                <span class="tm-id">IU04-0123-0087</span>
+            </div>
+
+            <div class="team-member-card">
+                <div class="tm-avatar">LF</div>
+                <h3>Laiba Fatima</h3>
+                <p class="tm-role">Mobile Developer</p>
+                <span class="tm-id">IU04-0322-0617</span>
+            </div>
+
+            <div class="team-member-card">
+                <div class="tm-avatar">SP</div>
+                <h3>Samreen Pervaiz</h3>
+                <p class="tm-role">UI / UX Designer</p>
+                <span class="tm-id">IU04-0322-0158</span>
+            </div>
+
+            <div class="team-member-card">
+                <div class="tm-avatar">MT</div>
+                <h3>Muhammad Taha</h3>
+                <p class="tm-role">Backend Developer</p>
+                <span class="tm-id">IU04-0322-0619</span>
+            </div>
+        </div>
+
+        <div class="supervisor-row">
+            <div class="supervisor-chip">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span>Supervised by</span>
+                <strong>Engr. Sidra Rehman</strong>
+            </div>
+        </div>
+    </div>
+</section>
+<!-- ========== CONTACT ========== -->
+<section class="section section-light" id="contact">
+    <div class="container">
+        <div class="section-head">
+            <span class="eyebrow">CONTACT</span>
+            <h2>Get In Touch</h2>
+            <p>We are here to help you with any questions.</p>
+        </div>
+
+        <div class="contact-grid">
+            <div class="contact-form-card">
+                <h3>Send us a Message</h3>
+                <form>
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <div class="input-with-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            <input type="text" placeholder="Your full name">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Email Address</label>
+                        <div class="input-with-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            <input type="email" placeholder="your@email.com">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Subject</label>
+                        <select><option>General Inquiry</option><option>Technical Support</option><option>Partnership</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Message</label>
+                        <textarea rows="4" placeholder="Write your message here..."></textarea>
+                    </div>
+                    <button class="btn btn-primary btn-full btn-lg">Send Message →</button>
+                </form>
+            </div>
+
+            <div class="contact-info-col">
+                <div class="info-card">
+                    <div class="info-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
+                    <div><span class="info-label">PHONE</span><strong>+92 3423050647</strong></div>
+                </div>
+                <div class="info-card">
+                    <div class="info-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
+                    <div><span class="info-label">EMAIL</span><strong>MentalDisorderDetection.Support@gmail.com</strong></div>
+                </div>
+                <div class="info-card">
+                    <div class="info-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+                    <div><span class="info-label">HOURS</span><strong>Mon — Fri · 9AM — 6PM PKT</strong></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
