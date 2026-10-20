@@ -14,22 +14,10 @@
                 <p>Create your account and start your journey towards better mental wellness with AI-powered support.</p>
 
                 <div class="auth-features">
-                    <div class="auth-feature">
-                        <div class="auth-feature-icon">✓</div>
-                        <span>Free Registration</span>
-                    </div>
-                    <div class="auth-feature">
-                        <div class="auth-feature-icon">✓</div>
-                        <span>Instant Health Assessment</span>
-                    </div>
-                    <div class="auth-feature">
-                        <div class="auth-feature-icon">✓</div>
-                        <span>Personalized Recommendations</span>
-                    </div>
-                    <div class="auth-feature">
-                        <div class="auth-feature-icon">✓</div>
-                        <span>Connect with Specialists</span>
-                    </div>
+                    <div class="auth-feature"><div class="auth-feature-icon">✓</div><span>Free Registration</span></div>
+                    <div class="auth-feature"><div class="auth-feature-icon">✓</div><span>Instant Health Assessment</span></div>
+                    <div class="auth-feature"><div class="auth-feature-icon">✓</div><span>Personalized Recommendations</span></div>
+                    <div class="auth-feature"><div class="auth-feature-icon">✓</div><span>Connect with Specialists</span></div>
                 </div>
             </div>
         </div>
@@ -40,42 +28,44 @@
                 <h1>Create Account</h1>
                 <p class="auth-subtitle">Fill in your details to get started</p>
 
-                <form>
+                <div id="alertBox" class="alert-box" style="display:none;"></div>
+
+                <form id="registerForm">
                     <div class="form-row">
                         <div class="form-group">
                             <label>First Name</label>
-                            <input type="text" placeholder="John" required>
+                            <input type="text" id="firstName" placeholder="John" required>
                         </div>
                         <div class="form-group">
                             <label>Last Name</label>
-                            <input type="text" placeholder="Doe" required>
+                            <input type="text" id="lastName" placeholder="Doe" required>
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label>Email Address</label>
-                        <input type="email" placeholder="your@email.com" required>
+                        <input type="email" id="regEmail" placeholder="your@email.com" required>
                     </div>
 
                     <div class="form-group">
                         <label>Phone Number</label>
-                        <input type="tel" placeholder="+92 300 1234567" required>
+                        <input type="tel" id="regPhone" placeholder="+92 300 1234567" required>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
                             <label>Password</label>
-                            <input type="password" placeholder="Create password" required>
+                            <input type="password" id="regPassword" placeholder="Min 6 characters" minlength="6" required>
                         </div>
                         <div class="form-group">
                             <label>Confirm Password</label>
-                            <input type="password" placeholder="Repeat password" required>
+                            <input type="password" id="regConfirmPassword" placeholder="Repeat password" minlength="6" required>
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label>I am a</label>
-                        <select required>
+                        <select id="regRole" required>
                             <option value="">Select your role</option>
                             <option value="patient">Patient</option>
                             <option value="doctor">Doctor / Psychiatrist</option>
@@ -89,20 +79,7 @@
                         </label>
                     </div>
 
-                    <button type="submit" class="btn btn-primary btn-lg auth-submit">Create Account</button>
-
-                    <div class="auth-divider"><span>or sign up with</span></div>
-
-                    <div class="social-buttons">
-                        <button type="button" class="social-btn">
-                            <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                            Google
-                        </button>
-                        <button type="button" class="social-btn">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                            Facebook
-                        </button>
-                    </div>
+                    <button type="submit" id="registerBtn" class="btn btn-primary btn-lg auth-submit">Create Account</button>
 
                     <p class="auth-footer">
                         Already have an account? <a href="/login">Sign in here</a>
@@ -112,5 +89,90 @@
         </div>
     </div>
 </section>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
+
+    const firebaseConfig = {{ firebase_config | tojson }};
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    const alertBox = document.getElementById('alertBox');
+    const registerBtn = document.getElementById('registerBtn');
+    const registerForm = document.getElementById('registerForm');
+
+    function showAlert(message, type) {
+        alertBox.textContent = message;
+        alertBox.className = 'alert-box ' + (type === 'success' ? 'alert-success' : 'alert-error');
+        alertBox.style.display = 'block';
+    }
+
+    registerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const firstName = document.getElementById('firstName').value.trim();
+        const lastName = document.getElementById('lastName').value.trim();
+        const email = document.getElementById('regEmail').value.trim();
+        const phone = document.getElementById('regPhone').value.trim();
+        const password = document.getElementById('regPassword').value;
+        const confirmPassword = document.getElementById('regConfirmPassword').value;
+        const role = document.getElementById('regRole').value;
+        const fullName = firstName + ' ' + lastName;
+
+        // Validation
+        if (password !== confirmPassword) {
+            showAlert('Passwords do not match.', 'error');
+            return;
+        }
+        if (password.length < 6) {
+            showAlert('Password must be at least 6 characters.', 'error');
+            return;
+        }
+        if (!role) {
+            showAlert('Please select your role.', 'error');
+            return;
+        }
+
+        registerBtn.disabled = true;
+        registerBtn.textContent = 'Creating account...';
+        alertBox.style.display = 'none';
+
+        try {
+            // 1. Create Firebase account
+            const userCred = await createUserWithEmailAndPassword(auth, email, password);
+            const idToken = await userCred.user.getIdToken();
+
+            // 2. Send profile to Flask backend
+            const res = await fetch('/api/register-profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idToken, name: fullName, phone, role })
+            });
+
+            const result = await res.json();
+
+            if (result.success) {
+                // Sign out immediately so user has to login manually
+                await signOut(auth);
+                showAlert(result.message + ' Redirecting to login...', 'success');
+                setTimeout(() => { window.location.href = '/login'; }, 2200);
+            } else {
+                showAlert(result.error || 'Registration failed.', 'error');
+                registerBtn.disabled = false;
+                registerBtn.textContent = 'Create Account';
+            }
+        } catch (err) {
+            let msg = 'Registration failed. Please try again.';
+            if (err.code === 'auth/email-already-in-use') msg = 'This email is already registered. Try logging in.';
+            else if (err.code === 'auth/weak-password') msg = 'Password is too weak. Use at least 6 characters.';
+            else if (err.code === 'auth/invalid-email') msg = 'Invalid email format.';
+            showAlert(msg, 'error');
+            registerBtn.disabled = false;
+            registerBtn.textContent = 'Create Account';
+        }
+    });
+</script>
 
 {% endblock %}

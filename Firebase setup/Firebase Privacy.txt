@@ -1,0 +1,9 @@
+const firebaseConfig = {
+  apiKey: "AIzaSyCOMIkDlZ3tyJJxGuooTRp5ra7bI0JWEbg",
+  authDomain: "mentaldisorderdetection-31d60.firebaseapp.com",
+  projectId: "mentaldisorderdetection-31d60",
+  storageBucket: "mentaldisorderdetection-31d60.firebasestorage.app",
+  messagingSenderId: "1099104870756",
+  appId: "1:1099104870756:web:f1be22b10bbd0b1900da71",
+  measurementId: "G-MM9JR4H551"
+};
