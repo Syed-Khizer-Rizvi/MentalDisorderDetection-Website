@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assessment History | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('patient_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('patient_assessment') }}" class="nav-item"><span class="nav-icon">📋</span><span class="nav-label">New Assessment</span></a>
+      <a href="{{ url_for('patient_history') }}" class="nav-item active"><span class="nav-icon">📊</span><span class="nav-label">History</span></a>
+      <a href="{{ url_for('patient_activities') }}" class="nav-item"><span class="nav-icon">🧩</span><span class="nav-label">Activities</span></a>
+      <a href="{{ url_for('patient_wristband') }}" class="nav-item"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
+      <a href="{{ url_for('patient_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">{{ user_name }}</span><span class="user-role">Patient</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="welcome-banner">
+      <div class="welcome-text">
+        <h1>Assessment History</h1>
+        <p>{{ history|length }} assessment{{ 's' if history|length != 1 }} · most recent first. Select one to view its full results.</p>
+      </div>
+      <a href="{{ url_for('patient_assessment') }}" class="welcome-badge" style="text-decoration:none;">
+        <span class="badge-label">Action</span>
+        <span class="badge-value">+ New Assessment</span>
+      </a>
+    </section>
+
+    {% if history %}
+    <section class="history-list">
+      {% for h in history %}
+      <a href="{{ url_for('patient_history_detail', assessment_id=h.id) }}" class="history-card" style="border-left-color: {{ h.risk_color }};">
+        <div class="history-head">
+          <div class="history-date">
+            <strong>{{ h.date }}</strong>
+            <span>{{ h.time }}</span>
+          </div>
+          <span class="risk-badge" style="background: {{ h.risk_color }}1A; color: {{ h.risk_color }};">⚠ {{ h.risk_label }} Risk</span>
+        </div>
+
+        <div class="history-body">
+          <div class="history-composite">
+            <span class="stat-label">Composite</span>
+            <span class="history-composite-value" style="color: {{ h.risk_color }};">{{ h.composite_score }}<small>/100</small></span>
+          </div>
+          <div class="history-scores">
+            <div class="history-score"><span class="stat-label">PHQ-9</span><strong>{{ h.phq_score }}<small>/27</small></strong><span class="history-sev" style="color: {{ h.phq[1] }};">{{ h.phq[0] }}</span></div>
+            <div class="history-score"><span class="stat-label">GAD-7</span><strong>{{ h.gad_score }}<small>/21</small></strong><span class="history-sev" style="color: {{ h.gad[1] }};">{{ h.gad[0] }}</span></div>
+            <div class="history-score"><span class="stat-label">PSS-10</span><strong>{{ h.pss_score }}<small>/40</small></strong><span class="history-sev" style="color: {{ h.pss[1] }};">{{ h.pss[0] }}</span></div>
+            <div class="history-score"><span class="stat-label">Facial</span><strong>{{ h.facial_dominant }}</strong><span class="history-sev">Dominant emotion</span></div>
+          </div>
+        </div>
+
+        <span class="history-open">View results →</span>
+      </a>
+      {% endfor %}
+    </section>
+    {% else %}
+    <section class="chart-panel">
+      <p class="trend-empty">You haven't taken any assessments yet.</p>
+      <div class="quick-actions" style="max-width:320px;margin:0 auto;">
+        <a href="{{ url_for('patient_assessment') }}" class="action-btn"><span>📋</span><span>Take Your First Assessment</span></a>
+      </div>
+    </section>
+    {% endif %}
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

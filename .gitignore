@@ -4,3 +4,7 @@ __pycache__/
 .vscode/
 .env
 firebase_key.json
+
+# Iriun Webcam (local tool, not part of the project)
+Iriun Webcam/
+IriunWebcam-2.9.9.exe

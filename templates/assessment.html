@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mental Health Assessment | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/assessment.css') }}">
+</head>
+<body>
+<div class="progress-bar-top"></div>
+
+<header class="assess-header">
+  <div class="brand-mini">
+    <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo">
+    <span>Mental Disorder Detection</span>
+  </div>
+  <div class="step-title">Step 1 of 3 — Questionnaire</div>
+  <a href="{{ url_for('patient_dashboard') }}" class="save-exit">Save &amp; Exit</a>
+</header>
+
+<div class="stepper">
+  <div class="step active"><div class="step-num">1</div><div class="step-label">Questionnaire</div></div>
+  <div class="step-line"></div>
+  <div class="step"><div class="step-num">2</div><div class="step-label">Facial Scan</div></div>
+  <div class="step-line"></div>
+  <div class="step"><div class="step-num">3</div><div class="step-label">Results</div></div>
+</div>
+
+<main class="assess-main">
+  <div class="assess-card">
+    <div class="assess-intro">
+      <div class="intro-icon">📋</div>
+      <h1>Mental Health Assessment</h1>
+      <p>This questionnaire helps us understand your current mental health status. Please answer honestly — your responses are completely private.</p>
+      <div class="time-badge">🕒 Estimated time: 8-10 minutes</div>
+    </div>
+
+    <form id="assessForm">
+      <section class="section-banner banner-phq">
+        <h2>PHQ-9 — Depression Screening</h2>
+        <p>Over the last 2 weeks, how often have you been bothered by the following problems?</p>
+      </section>
+      <div class="questions phq-questions"></div>
+      <div class="score-display" id="phqScore">
+        <span>PHQ-9 Score: <strong id="phqValue">0/27</strong></span>
+        <span class="score-tag" id="phqTag">Minimal</span>
+      </div>
+
+      <section class="section-banner banner-gad">
+        <h2>GAD-7 — Anxiety Screening</h2>
+        <p>Over the last 2 weeks, how often have you been bothered by:</p>
+      </section>
+      <div class="questions gad-questions"></div>
+      <div class="score-display" id="gadScore">
+        <span>GAD-7 Score: <strong id="gadValue">0/21</strong></span>
+        <span class="score-tag" id="gadTag">Minimal</span>
+      </div>
+
+      <section class="section-banner banner-pss">
+        <h2>PSS-10 — Perceived Stress Scale</h2>
+        <p>In the last month, how often have you felt or thought a certain way?</p>
+      </section>
+      <div class="questions pss-questions"></div>
+      <div class="score-display" id="pssScore">
+        <span>PSS-10 Score: <strong id="pssValue">0/40</strong></span>
+        <span class="score-tag" id="pssTag">Low Stress</span>
+      </div>
+    </form>
+  </div>
+</main>
+
+<footer class="assess-footer">
+  <span class="footer-note" id="footerNote">⚠ All questions required</span>
+  <button type="button" id="proceedBtn" class="btn-proceed" disabled>Proceed to Facial Scan →</button>
+</footer>
+
+<script>
+  const PHQ9 = [
+    "Little interest or pleasure in doing things?",
+    "Feeling down, depressed, or hopeless?",
+    "Trouble falling or staying asleep, or sleeping too much?",
+    "Feeling tired or having little energy?",
+    "Poor appetite or overeating?",
+    "Feeling bad about yourself — or that you are a failure?",
+    "Trouble concentrating on things such as reading or watching TV?",
+    "Moving or speaking slowly OR being fidgety/restless?",
+    "Thoughts that you would be better off dead or hurting yourself?"
+  ];
+  const GAD7 = [
+    "Feeling nervous, anxious, or on edge?",
+    "Not being able to stop or control worrying?",
+    "Worrying too much about different things?",
+    "Trouble relaxing?",
+    "Being so restless that it's hard to sit still?",
+    "Becoming easily annoyed or irritable?",
+    "Feeling afraid as if something awful might happen?"
+  ];
+  const PSS10 = [
+    "Been upset because of something that happened unexpectedly?",
+    "Felt that you were unable to control the important things in your life?",
+    "Felt nervous and stressed?",
+    "Felt confident about your ability to handle your personal problems?",
+    "Felt that things were going your way?",
+    "Found that you could not cope with all the things that you had to do?",
+    "Been able to control irritations in your life?",
+    "Felt that you were on top of things?",
+    "Been angered because of things that were outside of your control?",
+    "Felt difficulties were piling up so high that you could not overcome them?"
+  ];
+  const PSS_REVERSE_INDEXES = [3, 4, 6, 7];
+
+  const OPTIONS_4 = [
+    {label: "Not at all", value: 0},
+    {label: "Several days", value: 1},
+    {label: "More than half days", value: 2},
+    {label: "Nearly every day", value: 3}
+  ];
+  const OPTIONS_5 = [
+    {label: "Never", value: 0},
+    {label: "Almost Never", value: 1},
+    {label: "Sometimes", value: 2},
+    {label: "Fairly Often", value: 3},
+    {label: "Very Often", value: 4}
+  ];
+
+  function renderQuestions(container, questions, prefix, options, criticalIndex = -1) {
+    container.innerHTML = questions.map((q, i) => `
+      <div class="q-card ${i === criticalIndex ? 'q-critical' : ''}" data-q="${prefix}-${i}">
+        <div class="q-head">
+          <div class="q-num">${i + 1}</div>
+          <div class="q-text">${q}</div>
+        </div>
+        <div class="q-options" style="grid-template-columns: repeat(${options.length}, 1fr);">
+          ${options.map(opt => `
+            <label class="q-option">
+              <input type="radio" name="${prefix}-${i}" value="${opt.value}">
+              <span class="radio-dot"></span>
+              <span class="radio-label">${opt.label}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  renderQuestions(document.querySelector('.phq-questions'), PHQ9, 'phq', OPTIONS_4, 8);
+  renderQuestions(document.querySelector('.gad-questions'), GAD7, 'gad', OPTIONS_4);
+  renderQuestions(document.querySelector('.pss-questions'), PSS10, 'pss', OPTIONS_5);
+
+  const phqValue = document.getElementById('phqValue');
+  const phqTag = document.getElementById('phqTag');
+  const gadValue = document.getElementById('gadValue');
+  const gadTag = document.getElementById('gadTag');
+  const pssValue = document.getElementById('pssValue');
+  const pssTag = document.getElementById('pssTag');
+  const proceedBtn = document.getElementById('proceedBtn');
+  const footerNote = document.getElementById('footerNote');
+
+  function phqSeverity(s) {
+    if (s <= 4) return ['Minimal', 'low'];
+    if (s <= 9) return ['Mild', 'mild'];
+    if (s <= 14) return ['Moderate', 'mod'];
+    if (s <= 19) return ['Moderately Severe', 'high'];
+    return ['Severe', 'severe'];
+  }
+  function gadSeverity(s) {
+    if (s <= 4) return ['Minimal', 'low'];
+    if (s <= 9) return ['Mild', 'mild'];
+    if (s <= 14) return ['Moderate', 'mod'];
+    return ['Severe', 'severe'];
+  }
+  function pssSeverity(s) {
+    if (s <= 13) return ['Low Stress', 'low'];
+    if (s <= 26) return ['Moderate Stress', 'mod'];
+    return ['High Stress', 'severe'];
+  }
+
+  function updateScores() {
+    let phq = 0, gad = 0, pss = 0;
+    let phqCount = 0, gadCount = 0, pssCount = 0;
+
+    for (let i = 0; i < 9; i++) {
+      const sel = document.querySelector(`input[name="phq-${i}"]:checked`);
+      if (sel) { phq += parseInt(sel.value); phqCount++; }
+    }
+    for (let i = 0; i < 7; i++) {
+      const sel = document.querySelector(`input[name="gad-${i}"]:checked`);
+      if (sel) { gad += parseInt(sel.value); gadCount++; }
+    }
+    for (let i = 0; i < 10; i++) {
+      const sel = document.querySelector(`input[name="pss-${i}"]:checked`);
+      if (sel) {
+        let v = parseInt(sel.value);
+        if (PSS_REVERSE_INDEXES.includes(i)) v = 4 - v;
+        pss += v;
+        pssCount++;
+      }
+    }
+
+    phqValue.textContent = `${phq}/27`;
+    gadValue.textContent = `${gad}/21`;
+    pssValue.textContent = `${pss}/40`;
+
+    const [phqS, phqC] = phqSeverity(phq);
+    const [gadS, gadC] = gadSeverity(gad);
+    const [pssS, pssC] = pssSeverity(pss);
+    phqTag.textContent = phqS; phqTag.className = `score-tag tag-${phqC}`;
+    gadTag.textContent = gadS; gadTag.className = `score-tag tag-${gadC}`;
+    pssTag.textContent = pssS; pssTag.className = `score-tag tag-${pssC}`;
+
+    const total = 26;
+    const answered = phqCount + gadCount + pssCount;
+    const allAnswered = answered === total;
+    proceedBtn.disabled = !allAnswered;
+    footerNote.textContent = allAnswered ? '✓ All questions answered' : `⚠ ${total - answered} questions remaining`;
+    footerNote.className = allAnswered ? 'footer-note done' : 'footer-note';
+  }
+
+  document.getElementById('assessForm').addEventListener('change', updateScores);
+
+  proceedBtn.addEventListener('click', async () => {
+    const answers = { phq: [], gad: [], pss: [] };
+    for (let i = 0; i < 9; i++) answers.phq.push(parseInt(document.querySelector(`input[name="phq-${i}"]:checked`).value));
+    for (let i = 0; i < 7; i++) answers.gad.push(parseInt(document.querySelector(`input[name="gad-${i}"]:checked`).value));
+    for (let i = 0; i < 10; i++) answers.pss.push(parseInt(document.querySelector(`input[name="pss-${i}"]:checked`).value));
+
+    proceedBtn.disabled = true;
+    proceedBtn.textContent = 'Saving...';
+
+    const res = await fetch('/api/submit-assessment', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(answers)
+    });
+    const data = await res.json();
+    if (data.success) {
+      window.location.href = data.redirect;
+    } else {
+      alert(data.error || 'Submit failed');
+      proceedBtn.disabled = false;
+      proceedBtn.textContent = 'Proceed to Facial Scan →';
+    }
+  });
+</script>
+</body>
+</html>

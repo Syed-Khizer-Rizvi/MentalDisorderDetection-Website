@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wristband | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('patient_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('patient_assessment') }}" class="nav-item"><span class="nav-icon">📋</span><span class="nav-label">New Assessment</span></a>
+      <a href="{{ url_for('patient_history') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">History</span></a>
+      <a href="{{ url_for('patient_activities') }}" class="nav-item"><span class="nav-icon">🧩</span><span class="nav-label">Activities</span></a>
+      <a href="{{ url_for('patient_wristband') }}" class="nav-item active"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
+      <a href="{{ url_for('patient_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">{{ user_name }}</span><span class="user-role">Patient</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="welcome-banner">
+      <div class="welcome-text">
+        <h1>PsyMonitor Band ⌚</h1>
+        {% if order %}
+          <p>Track your wristband order and delivery status.</p>
+        {% else %}
+          <p>Continuous physiological monitoring that keeps your doctor informed in real time.</p>
+        {% endif %}
+      </div>
+      {% if order %}
+      <div class="welcome-badge">
+        <span class="badge-label">Order Status</span>
+        <span class="badge-value">{{ order.status | capitalize }}</span>
+      </div>
+      {% else %}
+      <a href="{{ url_for('patient_order_wristband') }}" class="welcome-badge" style="text-decoration:none;">
+        <span class="badge-label">Action</span>
+        <span class="badge-value">🛒 Order Now</span>
+      </a>
+      {% endif %}
+    </section>
+
+    {% if order %}
+    <section class="chart-panel">
+      <div class="panel-head"><h3>Order Status</h3><span class="panel-sub">Placed {{ order.order_date }}</span></div>
+      <ol class="wb-timeline">
+        {% for s in statuses %}
+        <li class="wb-step {{ 'done' if loop.index0 < order.status_index else 'current' if loop.index0 == order.status_index }}">
+          <span class="wb-dot">{{ '✓' if loop.index0 < order.status_index else loop.index }}</span>
+          <span class="wb-step-label">{{ s | capitalize }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+
+    <section class="dashboard-row">
+      <div class="chart-panel">
+        <div class="panel-head"><h3>Delivery Information</h3></div>
+        <dl class="wb-details">
+          <div><dt>Order date</dt><dd>{{ order.order_date }}</dd></div>
+          <div><dt>Full name</dt><dd>{{ order.fullname or '-' }}</dd></div>
+          <div class="wb-span"><dt>Delivery address</dt><dd>{{ order.address or '-' }}{% if order.city %}, {{ order.city }}{% endif %}</dd></div>
+          <div><dt>Phone</dt><dd>{{ order.phone or '-' }}</dd></div>
+          <div><dt>Wrist size</dt><dd>{{ order.size or '-' }}</dd></div>
+          <div class="wb-span"><dt>Notes</dt><dd>{{ order.notes or 'No notes added' }}</dd></div>
+        </dl>
+      </div>
+
+      <div class="actions-panel">
+        <div class="panel-head"><h3>Order Details</h3></div>
+        <dl class="wb-details wb-details-single">
+          <div><dt>Product</dt><dd>PsyMonitor Band v2</dd></div>
+          <div><dt>Quantity</dt><dd>1</dd></div>
+          <div><dt>Current status</dt><dd><span class="wb-status wb-status-{{ order.status }}">{{ order.status | capitalize }}</span></dd></div>
+          <div><dt>Estimated delivery</dt><dd>3-5 business days</dd></div>
+          <div><dt>Payment</dt><dd>To be confirmed by our team</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    {% else %}
+    <section class="chart-panel">
+      <div class="panel-head"><h3>What's Inside</h3><span class="panel-sub">PsyMonitor Band v2</span></div>
+      <div class="wb-features">
+        <div class="wb-feature"><span class="wb-feature-icon">🔌</span><strong>ESP32 Core</strong><small>Low-power microcontroller with built-in Wi-Fi</small></div>
+        <div class="wb-feature"><span class="wb-feature-icon">❤</span><strong>Heart Rate Sensor</strong><small>Continuous 24/7 heart rate monitoring</small></div>
+        <div class="wb-feature"><span class="wb-feature-icon">⚡</span><strong>GSR Sensor</strong><small>Galvanic skin response to track stress levels</small></div>
+        <div class="wb-feature"><span class="wb-feature-icon">🌡</span><strong>Temperature Sensor</strong><small>Skin temperature tracking</small></div>
+        <div class="wb-feature"><span class="wb-feature-icon">☁</span><strong>Firebase Sync</strong><small>Real-time data sync with your doctor's dashboard</small></div>
+        <div class="wb-feature"><span class="wb-feature-icon">💧</span><strong>Waterproof</strong><small>Wear it all day, every day</small></div>
+      </div>
+      <div class="wb-cta">
+        <div>
+          <strong>Ready to start monitoring?</strong>
+          <span>Estimated delivery in 3-5 business days. Payment is confirmed by our team.</span>
+        </div>
+        <a href="{{ url_for('patient_order_wristband') }}" class="wb-order-btn">🛒 Order Now →</a>
+      </div>
+    </section>
+    {% endif %}
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

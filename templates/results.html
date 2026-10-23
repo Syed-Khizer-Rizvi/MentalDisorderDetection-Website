@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Results | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/assessment.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/results.css') }}">
+</head>
+<body>
+<div class="progress-bar-top" style="background:#0F7A5F;"></div>
+
+<header class="assess-header">
+  <div class="brand-mini">
+    <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo">
+    <span>Mental Disorder Detection</span>
+  </div>
+  {% if read_only %}
+  <div class="step-title">Past Assessment — {{ assessment_date }}</div>
+  <a href="{{ url_for('patient_history') }}" class="save-exit">← Back to History</a>
+  {% else %}
+  <div class="step-title">Step 3 of 3 — Results</div>
+  <a href="{{ url_for('patient_dashboard') }}" class="save-exit">Save &amp; Exit</a>
+  {% endif %}
+</header>
+
+{% if not read_only %}
+<div class="stepper">
+  <div class="step"><div class="step-num" style="background:#0F7A5F;color:#FFF;">✓</div><div class="step-label" style="color:#0F7A5F;">Questionnaire</div></div>
+  <div class="step-line" style="background:#0F7A5F;"></div>
+  <div class="step"><div class="step-num" style="background:#0F7A5F;color:#FFF;">✓</div><div class="step-label" style="color:#0F7A5F;">Facial Scan</div></div>
+  <div class="step-line" style="background:#0F7A5F;"></div>
+  <div class="step active"><div class="step-num">3</div><div class="step-label">Results</div></div>
+</div>
+{% endif %}
+
+<main class="assess-main">
+  <div class="assess-card">
+    <h1 class="results-title">{{ 'Assessment from ' ~ assessment_date if read_only else 'Your Assessment Results' }}</h1>
+
+    <div class="composite-wrap">
+      <div class="donut" style="--pct: {{ composite_score }}; --color: {{ composite_color }};">
+        <svg viewBox="0 0 100 100"><circle class="donut-track" cx="50" cy="50" r="42"/><circle class="donut-fill" cx="50" cy="50" r="42" stroke="{{ composite_color }}" stroke-dasharray="{{ (composite_score * 2.64) | round(2) }} 999"/></svg>
+        <div class="donut-text"><strong>{{ composite_score }}</strong><span>/ 100</span><small>COMPOSITE</small></div>
+      </div>
+    </div>
+
+    <div class="score-cards">
+      <div class="score-card"><span class="sc-label">PHQ-9</span><strong class="sc-value" style="color: {{ phq_color }};">{{ phq_score }}/27</strong><span class="sc-tag">{{ phq_severity }}</span></div>
+      <div class="score-card"><span class="sc-label">GAD-7</span><strong class="sc-value" style="color: {{ gad_color }};">{{ gad_score }}/21</strong><span class="sc-tag">{{ gad_severity }}</span></div>
+      <div class="score-card"><span class="sc-label">PSS-10</span><strong class="sc-value" style="color: {{ pss_color }};">{{ pss_score }}/40</strong><span class="sc-tag">{{ pss_severity }}</span></div>
+      <div class="score-card">
+  <span class="sc-label">FACIAL</span>
+  <strong class="sc-value" style="color: #7C3AED;">{{ facial_dominant | capitalize }}</strong>
+  <span class="sc-tag">Dominant ({{ facial_dominant_pct }}%)</span>
+  <span class="sc-tag" style="color:#DC2626;font-weight:600;margin-top:4px;">Peak: {{ facial_peak | capitalize }} {{ facial_peak_pct }}%</span>
+</div>
+    </div>
+
+    {% if risk_level == 'critical' %}
+    <div class="alert-box alert-critical">
+      <div class="alert-icon">⚠</div>
+      <h2>Immediate Attention Required</h2>
+      <p>Your assessment indicates HIGH risk levels. Please seek professional help immediately. You are not alone — help is available.</p>
+      <div class="critical-badge">
+        <strong>🚨 CRITICAL ALERT</strong>
+        <span>Score: High Risk ({{ composite_score }}/100)</span>
+        <span>Your doctor has been automatically notified of your assessment results.</span>
+        <span class="alert-check">✓ Alert sent to Dr. Sarah Ahmed</span>
+      </div>
+    </div>
+
+    <div class="contact-doctor">
+      <h3>📞 Contact Your Doctor NOW</h3>
+      <div class="doctor-card">
+        <div class="doc-avatar">SA</div>
+        <div class="doc-info"><strong>Dr. Sarah Ahmed</strong><small>Psychiatrist</small></div>
+        <span class="doc-status">● Available for emergency</span>
+      </div>
+      <button class="btn-emergency">🩺 Doctor Consult — Request Now</button>
+      <a href="#" class="btn-outline-dark">📅 Book Emergency Appointment</a>
+      <a href="#" class="btn-outline">💬 Chat with Doctor</a>
+    </div>
+
+    <div class="wristband-section">
+      <div class="wristband-head">
+        <h3>Wristband Required ⌚</h3>
+        <span class="mandatory-badge">MANDATORY</span>
+      </div>
+      <p>For high-risk patients, continuous physiological monitoring is essential. Your doctor NEEDS your real-time data to provide proper care and intervene if your condition worsens.</p>
+      <div class="wristband-features">
+        <div class="wf-card">❤ Monitors HR<small>24/7</small></div>
+        <div class="wf-card">⚡ Tracks Stress<small>Real-time</small></div>
+        <div class="wf-card">🔔 Sends Alerts<small>To Doctor</small></div>
+      </div>
+      <a href="{{ url_for('patient_order_wristband') }}" class="btn-wristband">🛒 Order Your Wristband Now →</a>
+    </div>
+
+    {% elif risk_level == 'high' %}
+    <div class="rec-section rec-high">
+      <h3>Recommended Actions</h3>
+      <p>Your scores indicate elevated levels. We recommend combining mindfulness activities with professional support.</p>
+      <div class="rec-grid">
+        <a href="{{ url_for('patient_activities') }}#games" class="rec-card"><span class="rec-icon">🧘</span><strong>Mindfulness Games</strong><small>Breathing, meditation</small></a>
+        <a href="#" class="rec-card"><span class="rec-icon">👨‍⚕️</span><strong>Doctor Consultation</strong><small>Schedule session</small></a>
+        <a href="#" class="rec-card"><span class="rec-icon">📅</span><strong>Set Reminder</strong><small>Daily check-ins</small></a>
+      </div>
+    </div>
+
+    {% else %}
+    <div class="rec-section rec-low">
+      <h3>You're Doing Well! 🌱</h3>
+      <p>Your scores indicate low distress levels. Keep up the healthy habits with these recommended activities.</p>
+      <div class="rec-grid">
+        <a href="{{ url_for('patient_activities') }}#games" class="rec-card"><span class="rec-icon">🧩</span><strong>Mind Fresh Games</strong><small>Fun brain games</small></a>
+        <a href="{{ url_for('patient_activities') }}#meditations" class="rec-card"><span class="rec-icon">🫁</span><strong>Breathing Exercise</strong><small>5-min guided</small></a>
+        <a href="{{ url_for('patient_activities') }}#journal" class="rec-card"><span class="rec-icon">📖</span><strong>Daily Journal</strong><small>Track your mood</small></a>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="helplines">
+      <h4>Emergency Helplines</h4>
+      <p>Umang helpline: <strong>0317-4288665</strong></p>
+      <p>Rozan helpline: <strong>051-2890505</strong></p>
+      <small>If you feel you are in crisis, please call immediately.</small>
+    </div>
+
+    {% if read_only %}
+    <a href="{{ url_for('patient_history') }}" class="btn-dashboard">← Back to History</a>
+    {% else %}
+    <a href="{{ url_for('patient_dashboard') }}" class="btn-dashboard">Go to Dashboard →</a>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>

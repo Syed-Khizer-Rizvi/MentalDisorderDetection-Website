@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Activities | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('patient_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('patient_assessment') }}" class="nav-item"><span class="nav-icon">📋</span><span class="nav-label">New Assessment</span></a>
+      <a href="{{ url_for('patient_history') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">History</span></a>
+      <a href="{{ url_for('patient_activities') }}" class="nav-item active"><span class="nav-icon">🧩</span><span class="nav-label">Activities</span></a>
+      <a href="{{ url_for('patient_wristband') }}" class="nav-item"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
+      <a href="{{ url_for('patient_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">{{ user_name }}</span><span class="user-role">Patient</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="welcome-banner">
+      <div class="welcome-text">
+        <h1>Wellness Activities 🌿</h1>
+        <p>Take a few minutes for yourself: play a calming game, follow a guided meditation, or write in your journal.</p>
+      </div>
+    </section>
+
+    <section class="chart-panel" id="games">
+      <div class="panel-head"><h3>Mindfulness Games</h3><span class="panel-sub">Gentle games to relax and refocus</span></div>
+      <div class="act-games">
+        <div class="act-game">
+          <span class="act-game-icon" style="background:#D1FAE5;">🫁</span>
+          <strong>Breathing Exercise</strong>
+          <small>Follow the expanding circle to slow your breathing.</small>
+          <button type="button" class="act-play" data-coming-soon="Breathing Exercise">▶ Play</button>
+        </div>
+        <div class="act-game">
+          <span class="act-game-icon" style="background:#DBEAFE;">🧠</span>
+          <strong>Memory Match</strong>
+          <small>Flip cards and find matching pairs to sharpen focus.</small>
+          <button type="button" class="act-play" data-coming-soon="Memory Match">▶ Play</button>
+        </div>
+        <div class="act-game">
+          <span class="act-game-icon" style="background:#EDE9FE;">🎨</span>
+          <strong>Color Focus</strong>
+          <small>Tap the matching colour to practise calm attention.</small>
+          <button type="button" class="act-play" data-coming-soon="Color Focus">▶ Play</button>
+        </div>
+        <div class="act-game">
+          <span class="act-game-icon" style="background:#FEF3C7;">🪨</span>
+          <strong>Zen Garden</strong>
+          <small>Rake sand and place stones in a peaceful garden.</small>
+          <button type="button" class="act-play" data-coming-soon="Zen Garden">▶ Play</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="dashboard-row">
+      <div class="chart-panel" id="meditations">
+        <div class="panel-head"><h3>Guided Meditations</h3><span class="panel-sub">Audio sessions</span></div>
+        <ul class="act-sessions">
+          <li class="act-session">
+            <span class="act-session-icon">🌬</span>
+            <div class="act-session-info"><strong>Breathing</strong><small>Calm your mind with slow, guided breaths</small></div>
+            <span class="act-duration">5 min</span>
+            <button type="button" class="act-session-play" data-coming-soon="5 min Breathing" aria-label="Play 5 minute breathing meditation">▶</button>
+          </li>
+          <li class="act-session">
+            <span class="act-session-icon">🧘</span>
+            <div class="act-session-info"><strong>Body Scan</strong><small>Release tension from head to toe</small></div>
+            <span class="act-duration">10 min</span>
+            <button type="button" class="act-session-play" data-coming-soon="10 min Body Scan" aria-label="Play 10 minute body scan">▶</button>
+          </li>
+          <li class="act-session">
+            <span class="act-session-icon">💭</span>
+            <div class="act-session-info"><strong>Anxiety Relief</strong><small>Ground yourself when worries feel heavy</small></div>
+            <span class="act-duration">10 min</span>
+            <button type="button" class="act-session-play" data-coming-soon="10 min Anxiety Relief" aria-label="Play 10 minute anxiety relief meditation">▶</button>
+          </li>
+          <li class="act-session">
+            <span class="act-session-icon">🌙</span>
+            <div class="act-session-info"><strong>Sleep Meditation</strong><small>Wind down for a restful night</small></div>
+            <span class="act-duration">15 min</span>
+            <button type="button" class="act-session-play" data-coming-soon="15 min Sleep Meditation" aria-label="Play 15 minute sleep meditation">▶</button>
+          </li>
+        </ul>
+      </div>
+
+      <div class="actions-panel" id="journal">
+        <div class="panel-head"><h3>Daily Journal</h3><span class="panel-sub">Saved to your account</span></div>
+        <form id="journalForm" novalidate>
+          <fieldset class="act-moods">
+            <legend>How are you feeling?</legend>
+            {% for m in moods %}
+            <label class="act-mood"><input type="radio" name="mood" value="{{ m }}"><span>{{ m }}</span></label>
+            {% endfor %}
+          </fieldset>
+          <div class="form-field">
+            <label for="journalText">Write about your day</label>
+            <textarea id="journalText" name="text" rows="5" maxlength="{{ journal_max }}" placeholder="What's on your mind today?"></textarea>
+            <small><span id="charCount">0</span>/{{ journal_max }}</small>
+          </div>
+          <button type="submit" class="profile-save act-journal-save" id="journalSave">Save Entry</button>
+        </form>
+
+        <div class="act-entries">
+          <h4>Recent entries</h4>
+          <ul id="journalList">
+            {% for e in journal %}
+            <li class="act-entry">
+              <div class="act-entry-head">{% if e.mood %}<span class="act-entry-mood">{{ e.mood }}</span>{% endif %}<time>{{ e.date }}</time></div>
+              <p>{{ e.text }}</p>
+            </li>
+            {% endfor %}
+          </ul>
+          <p class="act-entries-empty" id="journalEmpty" {{ 'hidden' if journal }}>No entries yet. Your saved entries will appear here.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog class="act-modal" id="comingSoon" aria-labelledby="comingSoonTitle">
+  <span class="act-modal-icon">🚧</span>
+  <h3 id="comingSoonTitle">Coming soon</h3>
+  <p><strong id="comingSoonName"></strong> is still being built. Check back soon!</p>
+  <button type="button" class="profile-save" id="comingSoonClose">Got it</button>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+  const modal = document.getElementById('comingSoon');
+  document.querySelectorAll('[data-coming-soon]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('comingSoonName').textContent = btn.dataset.comingSoon;
+      modal.showModal();
+    });
+  });
+  document.getElementById('comingSoonClose').addEventListener('click', () => modal.close());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.close(); });
+
+  const toast = document.getElementById('toast');
+  let toastTimer;
+  function showToast(msg, success) {
+    toast.textContent = (success ? '✓ ' : '⚠ ') + msg;
+    toast.className = 'toast ' + (success ? 'toast-success' : 'toast-error');
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 3000);
+  }
+
+  const form = document.getElementById('journalForm');
+  const textEl = document.getElementById('journalText');
+  const saveBtn = document.getElementById('journalSave');
+  const charCount = document.getElementById('charCount');
+  textEl.addEventListener('input', () => { charCount.textContent = textEl.value.length; });
+
+  function addEntry(entry) {
+    const li = document.createElement('li');
+    li.className = 'act-entry';
+    const head = document.createElement('div');
+    head.className = 'act-entry-head';
+    if (entry.mood) {
+      const mood = document.createElement('span');
+      mood.className = 'act-entry-mood';
+      mood.textContent = entry.mood;
+      head.appendChild(mood);
+    }
+    const time = document.createElement('time');
+    time.textContent = entry.date;
+    head.appendChild(time);
+    const p = document.createElement('p');
+    p.textContent = entry.text;
+    li.append(head, p);
+    const list = document.getElementById('journalList');
+    list.prepend(li);
+    while (list.children.length > 5) list.lastElementChild.remove();
+    document.getElementById('journalEmpty').hidden = true;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = textEl.value.trim();
+    if (!text) {
+      showToast('Please write something before saving.', false);
+      textEl.focus();
+      return;
+    }
+    const moodEl = form.querySelector('input[name="mood"]:checked');
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    try {
+      const res = await fetch('/api/save-journal', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ text, mood: moodEl ? moodEl.value : '' })
+      });
+      const data = await res.json();
+      if (data.success) {
+        addEntry(data.entry);
+        form.reset();
+        charCount.textContent = '0';
+        showToast(data.message, true);
+      } else {
+        showToast(data.error || 'Could not save entry.', false);
+      }
+    } catch (err) {
+      showToast(err.message || 'Network error, please try again.', false);
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Entry';
+    }
+  });
+</script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

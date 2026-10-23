@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patient Dashboard | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('patient_dashboard') }}" class="nav-item active"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('patient_assessment') }}" class="nav-item"><span class="nav-icon">📋</span><span class="nav-label">New Assessment</span></a>
+      <a href="{{ url_for('patient_history') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">History</span></a>
+      <a href="{{ url_for('patient_activities') }}" class="nav-item"><span class="nav-icon">🧩</span><span class="nav-label">Activities</span></a>
+      <a href="{{ url_for('patient_wristband') }}" class="nav-item"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
+      <a href="{{ url_for('patient_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <button class="icon-btn notif-btn"><span>🔔</span>{% if risk_level == 'critical' %}<span class="notif-dot"></span>{% endif %}</button>
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">{{ user_name }}</span><span class="user-role">Patient</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="welcome-banner">
+      <div class="welcome-text">
+        <h1>Hello, {{ user_name }} 👋</h1>
+        {% if has_assessment %}
+          <p>Here is a quick overview of your mental health journey.</p>
+        {% else %}
+          <p>Welcome! Take your first assessment to get personalized insights.</p>
+        {% endif %}
+      </div>
+      <a href="{{ url_for('patient_assessment') }}" class="welcome-badge" style="text-decoration:none;">
+        <span class="badge-label">Action</span>
+        <span class="badge-value">+ New Assessment</span>
+      </a>
+    </section>
+
+    {% if has_assessment %}
+    <section class="stats-grid">
+      <div class="stat-card" style="border-left: 4px solid {{ risk_color }};">
+        <div class="stat-icon" style="background: {{ risk_color }}20; color: {{ risk_color }};">⚠</div>
+        <div class="stat-content"><span class="stat-label">Current Risk</span><span class="stat-value" style="color: {{ risk_color }};">{{ risk_label }}</span><span class="stat-sub">{{ composite_score }}/100 composite</span></div>
+      </div>
+      <div class="stat-card stat-blue">
+        <div class="stat-icon">📋</div>
+        <div class="stat-content"><span class="stat-label">Last Assessment</span><span class="stat-value">{{ assessment_date }}</span><span class="stat-sub">PHQ: {{ phq_score }}, GAD: {{ gad_score }}, PSS: {{ pss_score }}</span></div>
+      </div>
+      <div class="stat-card stat-purple">
+        <div class="stat-icon">😊</div>
+        <div class="stat-content"><span class="stat-label">Facial Mood</span><span class="stat-value">{{ facial_dominant }}</span><span class="stat-sub">Last scan</span></div>
+      </div>
+      <div class="stat-card stat-orange">
+        <div class="stat-icon">⌚</div>
+        <div class="stat-content">
+          <span class="stat-label">Wristband</span>
+          {% if wristband_order %}
+            <span class="stat-value" style="font-size:18px;">{{ wristband_order.status | capitalize }}</span>
+            <span class="stat-sub">Order placed</span>
+          {% else %}
+            <span class="stat-value" style="font-size:18px;">Not Ordered</span>
+            <span class="stat-sub">Available for critical</span>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    {% if risk_level == 'critical' %}
+    <section class="activity-panel" style="border: 2px solid #DC2626; background: #FEF2F2;">
+      <div class="panel-head"><h3 style="color:#991B1B;">⚠ Immediate Attention Required</h3></div>
+      <p style="color:#7F1D1D; font-size:14px; margin-bottom:14px;">Your scores indicate HIGH risk. Please contact your doctor and consider ordering a monitoring wristband.</p>
+      <div class="quick-actions">
+        <a href="#" class="action-btn" style="background:#DC2626;color:#FFF;border-color:#DC2626;"><span>🩺</span><span>Contact Doctor Now</span></a>
+        {% if not wristband_order %}
+        <a href="{{ url_for('patient_order_wristband') }}" class="action-btn" style="background:#10B981;color:#FFF;border-color:#10B981;"><span>⌚</span><span>Order Wristband</span></a>
+        {% endif %}
+      </div>
+    </section>
+    {% elif risk_level in ['moderate', 'high'] %}
+    <section class="activity-panel" style="border: 2px solid #D97706; background: #FEF3C7;">
+      <div class="panel-head"><h3 style="color:#92400E;">Recommended Actions</h3></div>
+      <p style="color:#78350F; font-size:14px; margin-bottom:14px;">Elevated scores detected. Combine mindfulness with doctor consultation.</p>
+      <div class="quick-actions">
+        <a href="{{ url_for('patient_activities') }}#games" class="action-btn"><span>🧘</span><span>Mindfulness Games</span></a>
+        <a href="#" class="action-btn"><span>👨‍⚕️</span><span>Book Consultation</span></a>
+        <a href="#" class="action-btn"><span>📅</span><span>Schedule Reminder</span></a>
+      </div>
+    </section>
+    {% else %}
+    <section class="activity-panel" style="border: 2px solid #10B981; background: #F0FDF9;">
+      <div class="panel-head"><h3 style="color:#065F46;">You're Doing Well! 🌱</h3></div>
+      <p style="color:#065F46; font-size:14px; margin-bottom:14px;">Keep up healthy habits with these activities.</p>
+      <div class="quick-actions">
+        <a href="{{ url_for('patient_activities') }}#games" class="action-btn"><span>🧩</span><span>Mind Fresh Games</span></a>
+        <a href="{{ url_for('patient_activities') }}#meditations" class="action-btn"><span>🫁</span><span>Breathing Exercise</span></a>
+        <a href="{{ url_for('patient_activities') }}#journal" class="action-btn"><span>📖</span><span>Daily Journal</span></a>
+      </div>
+    </section>
+    {% endif %}
+    {% endif %}
+
+    <section class="chart-panel trend-panel">
+      <div class="panel-head"><h3>Risk Trend</h3><span class="panel-sub">Composite score · last {{ risk_trend|length }} assessment{{ 's' if risk_trend|length != 1 }}</span></div>
+      {% if risk_trend %}
+        {# Positions are percentages of the plot box: x by index, y = 100 - score #}
+        {% set n = risk_trend|length %}
+        {% set ns = namespace(line='') %}
+        {% for p in risk_trend %}
+          {% set ns.line = ns.line ~ ' ' ~ ((50 if n == 1 else loop.index0 * 100 / (n - 1))|round(2)) ~ ',' ~ (100 - p.score) %}
+        {% endfor %}
+        <div class="trend-chart" id="trendChart">
+          <div class="trend-plot">
+            {% for t in [100, 70, 50, 25, 0] %}
+              <div class="trend-grid{{ ' trend-grid-base' if t == 0 }}" style="top: {{ 100 - t }}%;"><span>{{ t }}</span></div>
+            {% endfor %}
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0F7A5F" stop-opacity="0.18"/><stop offset="100%" stop-color="#0F7A5F" stop-opacity="0"/></linearGradient></defs>
+              {% if n > 1 %}
+                <polygon points="0,100{{ ns.line }} 100,100" fill="url(#trendFill)"/>
+                <polyline points="{{ ns.line }}" fill="none" stroke="#0F7A5F" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+              {% endif %}
+            </svg>
+            <div class="trend-crosshair" id="trendCrosshair" hidden></div>
+            {% for p in risk_trend %}
+              {% set x = 50 if n == 1 else loop.index0 * 100 / (n - 1) %}
+              <button type="button" class="trend-point" style="left: {{ x|round(2) }}%; top: {{ 100 - p.score }}%;"
+                      data-score="{{ p.score }}" data-risk="{{ p.risk_label }}" data-date="{{ p.full_date }}"
+                      aria-label="{{ p.full_date }}: {{ p.score }} out of 100, {{ p.risk_label }} risk">
+                {% if loop.last %}<span class="trend-value{{ ' trend-value-end' if n > 1 }}">{{ p.score }}</span>{% endif %}
+              </button>
+            {% endfor %}
+            <div class="trend-tooltip" id="trendTooltip" hidden></div>
+          </div>
+          <div class="trend-dates">
+            {% for p in risk_trend %}
+              <span style="left: {{ (50 if n == 1 else loop.index0 * 100 / (n - 1))|round(2) }}%;">{{ p.date }}{% if p.time %}<small>{{ p.time }}</small>{% endif %}</span>
+            {% endfor %}
+          </div>
+        </div>
+        <details class="trend-table">
+          <summary>View as table</summary>
+          <table>
+            <thead><tr><th>Date</th><th>Score</th><th>Risk</th></tr></thead>
+            <tbody>{% for p in risk_trend %}<tr><td>{{ p.full_date }}</td><td>{{ p.score }}</td><td>{{ p.risk_label }}</td></tr>{% endfor %}</tbody>
+          </table>
+        </details>
+      {% else %}
+        <p class="trend-empty">No assessments yet. Complete one to start tracking your trend.</p>
+      {% endif %}
+    </section>
+
+    <section class="dashboard-row">
+      <div class="chart-panel">
+        <div class="panel-head"><h3>Quick Actions</h3></div>
+        <div class="quick-actions">
+          <a href="{{ url_for('patient_assessment') }}" class="action-btn"><span>📋</span><span>Take New Assessment</span></a>
+          <a href="{{ url_for('patient_facial_scan') if has_assessment else url_for('patient_assessment') }}" class="action-btn"><span>📷</span><span>Facial Scan</span></a>
+          <a href="{{ url_for('patient_activities') }}" class="action-btn"><span>⭐</span><span>Activities</span></a>
+          <a href="{{ url_for('patient_history') }}" class="action-btn"><span>📊</span><span>View History</span></a>
+        </div>
+      </div>
+
+      <div class="actions-panel">
+        <div class="panel-head"><h3>Emergency Helplines</h3></div>
+        <div style="padding:10px 0;">
+          <p style="font-size:13px; margin-bottom:8px;"><strong>Umang:</strong> 0317-4288665</p>
+          <p style="font-size:13px; margin-bottom:8px;"><strong>Rozan:</strong> 051-2890505</p>
+          <p style="font-size:12px; color:#94A3B8;">Call immediately if in crisis.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const trendChart = document.getElementById('trendChart');
+  if (trendChart) {
+    const tooltip = document.getElementById('trendTooltip');
+    const crosshair = document.getElementById('trendCrosshair');
+    const plot = trendChart.querySelector('.trend-plot');
+    const hide = () => { tooltip.hidden = true; crosshair.hidden = true; };
+    trendChart.querySelectorAll('.trend-point').forEach(pt => {
+      const show = () => {
+        crosshair.style.left = pt.style.left;
+        crosshair.hidden = false;
+        tooltip.innerHTML = `<strong>${pt.dataset.score}/100 · ${pt.dataset.risk}</strong><span>${pt.dataset.date}</span>`;
+        tooltip.hidden = false;
+        const half = tooltip.offsetWidth / 2;
+        const x = pt.offsetLeft;
+        tooltip.style.left = Math.min(Math.max(x, half), plot.offsetWidth - half) + 'px';
+        tooltip.style.top = (pt.offsetTop - 14) + 'px';
+      };
+      pt.addEventListener('mouseenter', show);
+      pt.addEventListener('focus', show);
+      pt.addEventListener('mouseleave', hide);
+      pt.addEventListener('blur', hide);
+    });
+  }
+</script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

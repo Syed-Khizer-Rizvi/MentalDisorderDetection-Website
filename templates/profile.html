@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Profile | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('patient_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('patient_assessment') }}" class="nav-item"><span class="nav-icon">📋</span><span class="nav-label">New Assessment</span></a>
+      <a href="{{ url_for('patient_history') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">History</span></a>
+      <a href="{{ url_for('patient_activities') }}" class="nav-item"><span class="nav-icon">🧩</span><span class="nav-label">Activities</span></a>
+      <a href="{{ url_for('patient_wristband') }}" class="nav-item"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
+      <a href="{{ url_for('patient_profile') }}" class="nav-item active"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar" data-initials>{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name" data-name>{{ user_name }}</span><span class="user-role">Patient</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="chart-panel profile-hero">
+      <div class="profile-avatar" data-initials>{{ user_initials }}</div>
+      <div class="profile-hero-text">
+        <h1 data-name>{{ user_name }}</h1>
+        <span>{{ email }}</span>
+        <small>Patient · Member since {{ member_since }}</small>
+      </div>
+    </section>
+
+    <form class="chart-panel profile-form" id="profileForm" novalidate>
+      <div class="panel-head"><h3>Personal Information</h3><span class="panel-sub">Fields marked * are required</span></div>
+      <div class="profile-grid">
+        <div class="form-field">
+          <label for="name">Full name *</label>
+          <input type="text" id="name" name="name" value="{{ user_name }}" maxlength="100" required>
+        </div>
+        <div class="form-field">
+          <label for="email">Email</label>
+          <input type="email" id="email" value="{{ email }}" readonly>
+          <small>Your login email can't be changed here.</small>
+        </div>
+        <div class="form-field">
+          <label for="phone">Phone</label>
+          <input type="tel" id="phone" name="phone" value="{{ phone }}" maxlength="30" placeholder="+92 300 0000000">
+        </div>
+        <div class="form-field">
+          <label for="dob">Date of birth</label>
+          <input type="date" id="dob" name="dob" value="{{ profile.dob or '' }}">
+        </div>
+        <div class="form-field">
+          <label for="gender">Gender</label>
+          <select id="gender" name="gender">
+            <option value="">Select…</option>
+            {% for g in gender_options %}
+            <option value="{{ g }}" {{ 'selected' if profile.gender == g }}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-field form-field-full">
+          <label for="address">Address</label>
+          <textarea id="address" name="address" maxlength="300" rows="2" placeholder="Street, area, city">{{ profile.address or '' }}</textarea>
+        </div>
+      </div>
+
+      <div class="panel-head profile-section-head"><h3>Emergency Contact</h3><span class="panel-sub">Optional</span></div>
+      <div class="profile-grid">
+        <div class="form-field">
+          <label for="emergency_name">Contact name</label>
+          <input type="text" id="emergency_name" name="emergency_name" value="{{ profile.emergency_name or '' }}" maxlength="100">
+        </div>
+        <div class="form-field">
+          <label for="emergency_phone">Contact phone</label>
+          <input type="tel" id="emergency_phone" name="emergency_phone" value="{{ profile.emergency_phone or '' }}" maxlength="30" placeholder="+92 300 0000000">
+        </div>
+      </div>
+
+      <div class="profile-actions">
+        <button type="submit" class="profile-save" id="saveBtn">Save Changes</button>
+      </div>
+    </form>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+  const form = document.getElementById('profileForm');
+  const saveBtn = document.getElementById('saveBtn');
+  const toast = document.getElementById('toast');
+  let toastTimer;
+
+  document.getElementById('dob').max = new Date().toISOString().split('T')[0];
+
+  function showToast(msg, success) {
+    toast.textContent = (success ? '✓ ' : '⚠ ') + msg;
+    toast.className = 'toast ' + (success ? 'toast-success' : 'toast-error');
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 3000);
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = Object.fromEntries(new FormData(form).entries());
+    if (!payload.name.trim()) {
+      showToast('Full name is required.', false);
+      document.getElementById('name').focus();
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    try {
+      const res = await fetch('/api/update-profile', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        document.querySelectorAll('[data-name]').forEach(el => el.textContent = data.name);
+        document.querySelectorAll('[data-initials]').forEach(el => el.textContent = data.initials);
+        showToast(data.message, true);
+      } else {
+        showToast(data.error || 'Could not save profile.', false);
+      }
+    } catch (err) {
+      showToast(err.message || 'Network error, please try again.', false);
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Changes';
+    }
+  });
+</script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

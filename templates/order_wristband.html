@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order Wristband | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/assessment.css') }}">
+<style>
+  .order-wrap { max-width: 580px; margin: 24px auto; padding: 0 16px; }
+  .order-head {
+    background: linear-gradient(135deg, #0F7A5F, #0A5A47);
+    color: #FFF; padding: 22px 24px; border-radius: 14px 14px 0 0;
+  }
+  .order-head h2 { font-size: 20px; font-weight: 800; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
+  .order-head p { font-size: 13px; color: rgba(255,255,255,0.9); }
+  .order-body { background: #FFF; padding: 28px 24px; border-radius: 0 0 14px 14px; border: 1px solid #E2E8F0; border-top: none; }
+  .order-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .order-title-row h1 { font-size: 22px; font-weight: 800; }
+  .close-link { font-size: 20px; color: #94A3B8; text-decoration: none; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-row-full { grid-column: 1 / -1; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .form-group label { font-size: 13px; font-weight: 600; color: #0F172A; }
+  .form-group input, .form-group textarea {
+    padding: 11px 14px; border: 1px solid #E2E8F0; border-radius: 10px;
+    font-size: 14px; font-family: inherit; color: #0F172A;
+  }
+  .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #0F7A5F; }
+  .form-group textarea { resize: vertical; min-height: 70px; }
+  .size-group { display: flex; gap: 10px; }
+  .size-btn {
+    flex: 1; padding: 12px; border: 2px solid #E2E8F0; border-radius: 10px;
+    text-align: center; font-weight: 700; color: #475569; cursor: pointer;
+    background: #FFF; transition: all 0.2s;
+  }
+  .size-btn.active { border-color: #0F7A5F; color: #0F7A5F; background: #F0FDF9; }
+  .delivery-box {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #D1FAE5; padding: 12px 16px; border-radius: 10px;
+    margin-bottom: 16px; font-size: 13px; color: #065F46; font-weight: 600;
+  }
+  .btn-submit {
+    width: 100%; padding: 14px; background: linear-gradient(135deg, #0F7A5F, #0A5A47);
+    color: #FFF; border: none; border-radius: 10px; font-size: 15px;
+    font-weight: 700; cursor: pointer; display: flex; align-items: center;
+    justify-content: center; gap: 8px;
+  }
+  .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+  .confirm-note { text-align: center; font-size: 12px; color: #64748B; margin-top: 10px; }
+  .success-box {
+    background: #D1FAE5; color: #065F46; padding: 16px; border-radius: 10px;
+    text-align: center; border: 1px solid #6EE7B7; margin-bottom: 16px;
+  }
+  .error-box {
+    background: #FEE2E2; color: #B91C1C; padding: 12px; border-radius: 10px;
+    text-align: center; border: 1px solid #FCA5A5; margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+<div class="order-wrap">
+  <div class="order-head">
+    <h2>⌚ Order Your Wristband</h2>
+    <p>PsyMonitor Band v2 · ESP32 + HR + GSR + Temp + Real-time sync</p>
+  </div>
+  <div class="order-body">
+    <div class="order-title-row">
+      <h1>Delivery Details</h1>
+      <a href="{{ url_for('patient_dashboard') }}" class="close-link">✕</a>
+    </div>
+
+    <div id="alertBox" style="display:none;"></div>
+
+    <form id="orderForm">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="fullname">Full name</label>
+          <input type="text" id="fullname" value="{{ user_name }}" required>
+        </div>
+        <div class="form-group">
+          <label for="phone">Phone</label>
+          <input type="tel" id="phone" placeholder="+92 300 0000000" required>
+        </div>
+      </div>
+
+      <div class="form-group form-row-full">
+        <label for="address">Delivery address</label>
+        <input type="text" id="address" placeholder="Street, area" required>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="city">City</label>
+          <input type="text" id="city" value="Karachi" required>
+        </div>
+        <div class="form-group">
+          <label>Wrist size</label>
+          <div class="size-group">
+            <div class="size-btn" data-size="S">S</div>
+            <div class="size-btn active" data-size="M">M</div>
+            <div class="size-btn" data-size="L">L</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="notes">Notes (optional)</label>
+        <textarea id="notes" placeholder="Delivery instructions, landmarks..."></textarea>
+      </div>
+
+      <div class="delivery-box">
+        <span>Estimated delivery</span>
+        <strong>3-5 business days</strong>
+      </div>
+
+      <button type="submit" class="btn-submit" id="submitBtn">🛒 Submit Order</button>
+      <p class="confirm-note">Payment &amp; price will be confirmed by our team — [To be confirmed]</p>
+    </form>
+  </div>
+</div>
+
+<script>
+  let selectedSize = 'M';
+  document.querySelectorAll('.size-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedSize = btn.dataset.size;
+    });
+  });
+
+  const form = document.getElementById('orderForm');
+  const submitBtn = document.getElementById('submitBtn');
+  const alertBox = document.getElementById('alertBox');
+
+  function showAlert(msg, success) {
+    alertBox.textContent = msg;
+    alertBox.className = success ? 'success-box' : 'error-box';
+    alertBox.style.display = 'block';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+
+    const order = {
+      fullname: document.getElementById('fullname').value.trim(),
+      phone: document.getElementById('phone').value.trim(),
+      address: document.getElementById('address').value.trim(),
+      city: document.getElementById('city').value.trim(),
+      size: selectedSize,
+      notes: document.getElementById('notes').value.trim()
+    };
+
+    try {
+      const res = await fetch('/api/order-wristband', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(order)
+      });
+      const data = await res.json();
+      if (data.success) {
+        showAlert('✓ Order placed! Our team will contact you shortly to confirm.', true);
+        submitBtn.textContent = 'Order Placed';
+        setTimeout(() => { window.location.href = data.redirect || '/patient/wristband'; }, 2500);
+      } else if (res.status === 409) {
+        showAlert(data.error || 'You already have an active order.', false);
+        submitBtn.textContent = 'Redirecting...';
+        setTimeout(() => { window.location.href = data.redirect || '/patient/wristband'; }, 2000);
+      } else {
+        showAlert(data.error || 'Order failed', false);
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🛒 Submit Order';
+      }
+    } catch (err) {
+      showAlert(err.message || 'Error placing order', false);
+      submitBtn.disabled = false;
+      submitBtn.textContent = '🛒 Submit Order';
+    }
+  });
+</script>
+</body>
+</html>

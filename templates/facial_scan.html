@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Facial Scan | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/assessment.css') }}">
+<style>
+  .scan-card { text-align: center; }
+  .scan-icon { font-size: 36px; margin-bottom: 10px; }
+  .scan-card h1 { font-size: 24px; font-weight: 800; margin-bottom: 10px; }
+  .scan-card > p { font-size: 14px; color: #64748B; max-width: 540px; margin: 0 auto 20px; }
+  .privacy-badge {
+    display: flex; flex-direction: row; align-items: center; gap: 10px;
+    background: #D1FAE5; color: #065F46; padding: 12px 18px;
+    border-radius: 10px; font-size: 13px; max-width: 580px; margin: 0 auto 24px;
+    text-align: left; border: 1px solid #6EE7B7;
+  }
+  .video-wrap {
+    position: relative; max-width: 580px; margin: 0 auto 24px;
+    border-radius: 12px; overflow: hidden; background: #000;
+    aspect-ratio: 16/10;
+  }
+  #video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .rec-indicator {
+    position: absolute; top: 14px; left: 14px;
+    background: #DC2626; color: #FFF; padding: 4px 10px;
+    border-radius: 6px; font-size: 11px; font-weight: 700;
+    display: flex; flex-direction: row; align-items: center; gap: 6px;
+  }
+  .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #FFF; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .timer {
+    position: absolute; top: 14px; right: 14px;
+    background: rgba(0,0,0,0.7); color: #FFF;
+    padding: 4px 10px; border-radius: 6px; font-size: 12px;
+    font-weight: 700; font-family: 'Courier New', monospace;
+  }
+  .face-detected {
+    position: absolute; bottom: 14px; left: 14px;
+    background: #10B981; color: #FFF;
+    padding: 5px 12px; border-radius: 6px;
+    font-size: 12px; font-weight: 700;
+  }
+  .face-not-detected { background: #F59E0B; }
+
+  .emotions-wrap { max-width: 580px; margin: 0 auto; text-align: left; }
+  .emotions-head { font-size: 14px; font-weight: 700; color: #0F172A; margin-bottom: 14px; }
+  .emotion-row {
+    display: flex; flex-direction: row; align-items: center; gap: 12px;
+    margin-bottom: 10px;
+  }
+  .emotion-label { flex: 0 0 90px; font-size: 13px; color: #475569; text-transform: capitalize; }
+  .emotion-track { flex: 1; height: 8px; background: #F1F5F9; border-radius: 999px; overflow: hidden; }
+  .emotion-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+  .fill-happy { background: #10B981; }
+  .fill-neutral { background: #64748B; }
+  .fill-sad { background: #3B82F6; }
+  .fill-fear, .fill-fearful { background: #A855F7; }
+  .fill-angry { background: #EF4444; }
+  .fill-disgust { background: #8B5CF6; }
+  .fill-surprise { background: #F59E0B; }
+  .emotion-pct { flex: 0 0 40px; text-align: right; font-size: 13px; font-weight: 700; color: #0F172A; }
+  .start-overlay {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.75);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; color: #FFF; z-index: 10;
+  }
+  .start-overlay button {
+    padding: 12px 28px; background: #FFFFFF; color: #0F7A5F;
+    border-radius: 10px; font-size: 14px; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<div class="progress-bar-top" style="background: linear-gradient(90deg, #0F7A5F 66%, #E2E8F0 66%);"></div>
+
+<header class="assess-header">
+  <div class="brand-mini">
+    <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo">
+    <span>Mental Disorder Detection</span>
+  </div>
+  <div class="step-title">Step 2 of 3 — Facial Scan</div>
+  <a href="{{ url_for('patient_dashboard') }}" class="save-exit">Save &amp; Exit</a>
+</header>
+
+<div class="stepper">
+  <div class="step"><div class="step-num" style="background:#0F7A5F;color:#FFF;">✓</div><div class="step-label" style="color:#0F7A5F;">Questionnaire</div></div>
+  <div class="step-line" style="background:#0F7A5F;"></div>
+  <div class="step active"><div class="step-num">2</div><div class="step-label">Facial Scan</div></div>
+  <div class="step-line"></div>
+  <div class="step"><div class="step-num">3</div><div class="step-label">Results</div></div>
+</div>
+
+<main class="assess-main">
+  <div class="assess-card scan-card">
+    <div class="scan-icon">📷</div>
+    <h1>Facial Emotion Scan</h1>
+    <p>Position your face in the camera frame. The AI will analyze your facial expressions to detect emotional indicators.</p>
+
+    <div class="privacy-badge">
+      🛡 Your privacy is protected. Video frames are processed on our secure server and never stored. Only numeric scores are saved.
+    </div>
+
+    <div class="video-wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="canvas" style="display:none;"></canvas>
+      <div class="rec-indicator"><span class="rec-dot"></span>REC</div>
+      <div class="timer" id="timer">00:00</div>
+      <div class="face-detected face-not-detected" id="faceStatus">Starting...</div>
+      <div class="start-overlay" id="startOverlay">
+        <div>Camera access required</div>
+        <button id="startBtn">Start Camera</button>
+      </div>
+    </div>
+
+    <div class="emotions-wrap">
+      <div class="emotions-head">Detected Emotions</div>
+      <div id="emotionsList">
+        <div class="emotion-row"><span class="emotion-label">Happy</span><div class="emotion-track"><div class="emotion-fill fill-happy" style="width:0%"></div></div><span class="emotion-pct">0%</span></div>
+        <div class="emotion-row"><span class="emotion-label">Neutral</span><div class="emotion-track"><div class="emotion-fill fill-neutral" style="width:0%"></div></div><span class="emotion-pct">0%</span></div>
+        <div class="emotion-row"><span class="emotion-label">Sad</span><div class="emotion-track"><div class="emotion-fill fill-sad" style="width:0%"></div></div><span class="emotion-pct">0%</span></div>
+        <div class="emotion-row"><span class="emotion-label">Fear</span><div class="emotion-track"><div class="emotion-fill fill-fear" style="width:0%"></div></div><span class="emotion-pct">0%</span></div>
+        <div class="emotion-row"><span class="emotion-label">Angry</span><div class="emotion-track"><div class="emotion-fill fill-angry" style="width:0%"></div></div><span class="emotion-pct">0%</span></div>
+        <div class="emotion-row"><span class="emotion-label">Disgust</span><div class="emotion-track"><div class="emotion-fill fill-disgust" style="width:0%"></div></div><span class="emotion-pct">0%</span></div>
+        <div class="emotion-row"><span class="emotion-label">Surprise</span><div class="emotion-track"><div class="emotion-fill fill-surprise" style="width:0%"></div></div><span class="emotion-pct">0%</span></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="assess-footer">
+  <span class="footer-note" id="footerNote">⏱ Scan in progress...</span>
+  <button type="button" id="proceedBtn" class="btn-proceed" disabled>Proceed to Results →</button>
+</footer>
+
+<script>
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const timer = document.getElementById('timer');
+  const faceStatus = document.getElementById('faceStatus');
+  const startBtn = document.getElementById('startBtn');
+  const startOverlay = document.getElementById('startOverlay');
+  const proceedBtn = document.getElementById('proceedBtn');
+  const footerNote = document.getElementById('footerNote');
+
+  let stream = null;
+  let scanInterval = null;
+  let timerInterval = null;
+  let elapsed = 0;
+  let readingsCollected = 0;
+  const SCAN_DURATION = 15;
+  const MIN_READINGS = 3;
+  let aggregatedEmotions = {};
+  let peakEmotion = null;
+  let peakValue = 0;
+
+  startBtn.addEventListener('click', async () => {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+      video.srcObject = stream;
+      startOverlay.style.display = 'none';
+      startScanning();
+    } catch (err) {
+      alert('Camera access denied: ' + err.message);
+    }
+  });
+
+  function startScanning() {
+    timerInterval = setInterval(() => {
+      elapsed++;
+      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const s = String(elapsed % 60).padStart(2, '0');
+      timer.textContent = `${m}:${s}`;
+      if (elapsed >= SCAN_DURATION) {
+        stopScanning();
+      }
+    }, 1000);
+
+    scanInterval = setInterval(captureAndAnalyze, 2500);
+    captureAndAnalyze();
+  }
+
+ async function captureAndAnalyze() {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    const imageData = canvas.toDataURL('image/jpeg', 0.7);
+
+    try {
+      const res = await fetch('/api/analyze-emotion', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ image: imageData })
+      });
+      const data = await res.json();
+
+      if (data.success && data.emotions) {
+        readingsCollected++;
+        faceStatus.textContent = 'Face Detected ✓';
+        faceStatus.classList.remove('face-not-detected');
+        updateEmotionBars(data.emotions);
+        for (const [k, v] of Object.entries(data.emotions)) {
+          aggregatedEmotions[k] = (aggregatedEmotions[k] || 0) + v;
+        }
+        for (const [k, v] of Object.entries(data.emotions)) {
+          if (v > peakValue) {
+            peakValue = v;
+            peakEmotion = k;
+          }
+        }
+        if (readingsCollected >= MIN_READINGS) {
+          proceedBtn.disabled = false;
+          footerNote.textContent = `✓ ${readingsCollected} readings collected`;
+          footerNote.className = 'footer-note done';
+        } else {
+          footerNote.textContent = `⏱ Collecting readings (${readingsCollected}/${MIN_READINGS})...`;
+        }
+      } else {
+        faceStatus.textContent = 'No face detected';
+        faceStatus.classList.add('face-not-detected');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  function updateEmotionBars(emotions) {
+    const rows = document.querySelectorAll('.emotion-row');
+    rows.forEach(row => {
+      const label = row.querySelector('.emotion-label').textContent.toLowerCase();
+      const key = Object.keys(emotions).find(k => k.toLowerCase().includes(label.substring(0, 4)));
+      if (key) {
+        const pct = Math.round(emotions[key]);
+        row.querySelector('.emotion-fill').style.width = pct + '%';
+        row.querySelector('.emotion-pct').textContent = pct + '%';
+      }
+    });
+  }
+
+  function stopScanning() {
+    clearInterval(scanInterval);
+    clearInterval(timerInterval);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (readingsCollected >= MIN_READINGS) {
+      footerNote.textContent = `✓ Scan complete (${readingsCollected} readings)`;
+      footerNote.className = 'footer-note done';
+      proceedBtn.disabled = false;
+    } else {
+      footerNote.textContent = `⚠ Only ${readingsCollected} readings. Please retry.`;
+    }
+  }
+
+  proceedBtn.addEventListener('click', async () => {
+    if (readingsCollected === 0) return;
+    const avgEmotions = {};
+    for (const [k, v] of Object.entries(aggregatedEmotions)) {
+      avgEmotions[k] = v / readingsCollected;
+    }
+    proceedBtn.disabled = true;
+    proceedBtn.textContent = 'Saving...';
+    const res = await fetch('/api/submit-facial', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ emotions: avgEmotions, readings: readingsCollected, peak: { emotion: peakEmotion, value: peakValue } })
+    });
+    const data = await res.json();
+    if (data.success) {
+      window.location.href = data.redirect;
+    } else {
+      alert(data.error || 'Submit failed');
+      proceedBtn.disabled = false;
+      proceedBtn.textContent = 'Proceed to Results →';
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,178 +1,173 @@
-{% extends "base.html" %}
-
-{% block title %}Register - Mental Disorder Detection{% endblock %}
-
-{% block content %}
-
-<section class="auth-section">
-    <div class="auth-container">
-        <!-- Left side: Branding -->
-        <div class="auth-brand">
-            <div class="auth-brand-content">
-                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="auth-logo">
-                <h2>Join Us Today</h2>
-                <p>Create your account and start your journey towards better mental wellness with AI-powered support.</p>
-
-                <div class="auth-features">
-                    <div class="auth-feature"><div class="auth-feature-icon">✓</div><span>Free Registration</span></div>
-                    <div class="auth-feature"><div class="auth-feature-icon">✓</div><span>Instant Health Assessment</span></div>
-                    <div class="auth-feature"><div class="auth-feature-icon">✓</div><span>Personalized Recommendations</span></div>
-                    <div class="auth-feature"><div class="auth-feature-icon">✓</div><span>Connect with Specialists</span></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Right side: Form -->
-        <div class="auth-form-wrapper">
-            <div class="auth-form">
-                <h1>Create Account</h1>
-                <p class="auth-subtitle">Fill in your details to get started</p>
-
-                <div id="alertBox" class="alert-box" style="display:none;"></div>
-
-                <form id="registerForm">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>First Name</label>
-                            <input type="text" id="firstName" placeholder="John" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Last Name</label>
-                            <input type="text" id="lastName" placeholder="Doe" required>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Email Address</label>
-                        <input type="email" id="regEmail" placeholder="your@email.com" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Phone Number</label>
-                        <input type="tel" id="regPhone" placeholder="+92 300 1234567" required>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Password</label>
-                            <input type="password" id="regPassword" placeholder="Min 6 characters" minlength="6" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Confirm Password</label>
-                            <input type="password" id="regConfirmPassword" placeholder="Repeat password" minlength="6" required>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>I am a</label>
-                        <select id="regRole" required>
-                            <option value="">Select your role</option>
-                            <option value="patient">Patient</option>
-                            <option value="doctor">Doctor / Psychiatrist</option>
-                        </select>
-                    </div>
-
-                    <div class="auth-options">
-                        <label class="checkbox-label">
-                            <input type="checkbox" required>
-                            <span>I agree to the <a href="#" class="forgot-link">Terms & Privacy Policy</a></span>
-                        </label>
-                    </div>
-
-                    <button type="submit" id="registerBtn" class="btn btn-primary btn-lg auth-submit">Create Account</button>
-
-                    <p class="auth-footer">
-                        Already have an account? <a href="/login">Sign in here</a>
-                    </p>
-                </form>
-            </div>
-        </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create Account | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+</head>
+<body>
+<div class="auth-wrapper">
+  <aside class="auth-left">
+    <div class="auth-brand">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="auth-logo">
+      <span class="auth-brand-text">Mental Disorder Detection</span>
     </div>
-</section>
+    <div class="auth-hero">
+      <h1>Your mind matters.<br>Let's check in.</h1>
+      <p>Take a quick, private assessment combining clinical screening and facial emotion analysis. Your data stays yours.</p>
+      <ul class="auth-features">
+        <li>✓ PHQ-9 &amp; GAD-7 standardized screenings</li>
+        <li>✓ AI-powered facial emotion scan</li>
+        <li>✓ Personalized care recommendations</li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="auth-right">
+    <div class="auth-tabs">
+      <a href="{{ url_for('login') }}" class="auth-tab">Sign in</a>
+      <a href="{{ url_for('register') }}" class="auth-tab active">Create account</a>
+    </div>
+    <div class="auth-form-box">
+      <h2>Create your account</h2>
+      <p class="auth-sub">Register as a new patient to start your assessment</p>
+
+      <div id="jsAlert" class="auth-alert" style="display:none;"></div>
+
+      <form id="registerForm" class="auth-form">
+        <div class="form-group">
+          <label for="fullname">Full name</label>
+          <div class="input-wrap">
+            <span class="input-icon">👤</span>
+            <input type="text" id="fullname" placeholder="Jane Doe" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <div class="input-wrap">
+            <span class="input-icon">✉</span>
+            <input type="email" id="email" placeholder="you@example.com" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="role">Register as</label>
+          <div class="input-wrap">
+            <span class="input-icon">🎭</span>
+            <select id="role" required>
+              <option value="patient">Patient</option>
+              <option value="doctor">Doctor</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="input-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="password" placeholder="••••••••" required minlength="6">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="confirm">Confirm password</label>
+          <div class="input-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="confirm" placeholder="Repeat password" required>
+          </div>
+        </div>
+        <button type="submit" class="btn-auth" id="submitBtn">Create account &amp; start assessment</button>
+      </form>
+
+      <p class="auth-footer-text">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
+    </div>
+  </main>
+</div>
 
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
-    import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+  import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
 
-    const firebaseConfig = {{ firebase_config | tojson }};
+  const firebaseConfig = {
+    apiKey: "{{ firebase_config.apiKey }}",
+    authDomain: "{{ firebase_config.authDomain }}",
+    projectId: "{{ firebase_config.projectId }}",
+    storageBucket: "{{ firebase_config.storageBucket }}",
+    messagingSenderId: "{{ firebase_config.messagingSenderId }}",
+    appId: "{{ firebase_config.appId }}",
+    databaseURL: "{{ firebase_config.databaseURL }}"
+  };
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
 
-    const alertBox = document.getElementById('alertBox');
-    const registerBtn = document.getElementById('registerBtn');
-    const registerForm = document.getElementById('registerForm');
+  const form = document.getElementById('registerForm');
+  const alertBox = document.getElementById('jsAlert');
+  const submitBtn = document.getElementById('submitBtn');
 
-    function showAlert(message, type) {
-        alertBox.textContent = message;
-        alertBox.className = 'alert-box ' + (type === 'success' ? 'alert-success' : 'alert-error');
-        alertBox.style.display = 'block';
+  function showAlert(msg, isSuccess = false) {
+    alertBox.textContent = msg;
+    alertBox.style.display = 'block';
+    if (isSuccess) {
+      alertBox.style.background = '#D1FAE5';
+      alertBox.style.color = '#065F46';
+      alertBox.style.borderColor = '#6EE7B7';
+    } else {
+      alertBox.style.background = '#FEE2E2';
+      alertBox.style.color = '#B91C1C';
+      alertBox.style.borderColor = '#FCA5A5';
+    }
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    alertBox.style.display = 'none';
+
+    const fullname = document.getElementById('fullname').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const role = document.getElementById('role').value;
+    const password = document.getElementById('password').value;
+    const confirm = document.getElementById('confirm').value;
+
+    if (password !== confirm) {
+      showAlert('Passwords do not match');
+      return;
     }
 
-    registerForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating account...';
 
-        const firstName = document.getElementById('firstName').value.trim();
-        const lastName = document.getElementById('lastName').value.trim();
-        const email = document.getElementById('regEmail').value.trim();
-        const phone = document.getElementById('regPhone').value.trim();
-        const password = document.getElementById('regPassword').value;
-        const confirmPassword = document.getElementById('regConfirmPassword').value;
-        const role = document.getElementById('regRole').value;
-        const fullName = firstName + ' ' + lastName;
+    try {
+      const userCred = await createUserWithEmailAndPassword(auth, email, password);
+      const idToken = await userCred.user.getIdToken();
 
-        // Validation
-        if (password !== confirmPassword) {
-            showAlert('Passwords do not match.', 'error');
-            return;
+      const res = await fetch('/api/register-profile', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ idToken, name: fullname, phone: '', role })
+      });
+      const data = await res.json();
+
+      await signOut(auth);
+
+      if (data.success) {
+        if (role === 'doctor') {
+          showAlert(data.message, true);
+          submitBtn.textContent = 'Pending approval';
+        } else {
+          window.location.href = '/login';
         }
-        if (password.length < 6) {
-            showAlert('Password must be at least 6 characters.', 'error');
-            return;
-        }
-        if (!role) {
-            showAlert('Please select your role.', 'error');
-            return;
-        }
-
-        registerBtn.disabled = true;
-        registerBtn.textContent = 'Creating account...';
-        alertBox.style.display = 'none';
-
-        try {
-            // 1. Create Firebase account
-            const userCred = await createUserWithEmailAndPassword(auth, email, password);
-            const idToken = await userCred.user.getIdToken();
-
-            // 2. Send profile to Flask backend
-            const res = await fetch('/api/register-profile', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ idToken, name: fullName, phone, role })
-            });
-
-            const result = await res.json();
-
-            if (result.success) {
-                // Sign out immediately so user has to login manually
-                await signOut(auth);
-                showAlert(result.message + ' Redirecting to login...', 'success');
-                setTimeout(() => { window.location.href = '/login'; }, 2200);
-            } else {
-                showAlert(result.error || 'Registration failed.', 'error');
-                registerBtn.disabled = false;
-                registerBtn.textContent = 'Create Account';
-            }
-        } catch (err) {
-            let msg = 'Registration failed. Please try again.';
-            if (err.code === 'auth/email-already-in-use') msg = 'This email is already registered. Try logging in.';
-            else if (err.code === 'auth/weak-password') msg = 'Password is too weak. Use at least 6 characters.';
-            else if (err.code === 'auth/invalid-email') msg = 'Invalid email format.';
-            showAlert(msg, 'error');
-            registerBtn.disabled = false;
-            registerBtn.textContent = 'Create Account';
-        }
-    });
+      } else {
+        showAlert(data.error || 'Registration failed');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create account & start assessment';
+      }
+    } catch (err) {
+      showAlert(err.message || 'Registration error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create account & start assessment';
+    }
+  });
 </script>
-
-{% endblock %}
+</body>
+</html>
