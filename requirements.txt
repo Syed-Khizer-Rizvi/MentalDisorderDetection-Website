@@ -1,0 +1,10 @@
+# Mental Disorder Detection - Flask web app
+# Requires Python 3.11 or newer (tested on 3.14)
+Flask==3.1.3
+firebase-admin==7.7.0
+# 2.4.x is the last NumPy line for Python 3.11; 3.12+ gets 2.5.x
+numpy>=2.4.6,<2.6
+
+# Facial emotion analysis. DeepFace 0.0.103 runs on ONNX Runtime (no TensorFlow needed)
+# and installs opencv-contrib-python-headless, which provides cv2 for app.py.
+deepface==0.0.103

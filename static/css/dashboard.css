@@ -601,6 +601,14 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .consult-badge.badge-high { background: #FEE2E2; color: #DC2626; }
 .consult-badge.badge-mod { background: #FEF3C7; color: #D97706; }
 .consult-badge.badge-low { background: #D1FAE5; color: #059669; }
+.consult-score { flex: 0 0 44px; font-size: 22px; font-weight: 800; text-align: center; }
+.consult-view {
+  flex-shrink: 0; padding: 6px 12px; border-radius: 8px;
+  border: 1px solid #0F7A5F; color: #0F7A5F; font-size: 12px; font-weight: 700; transition: all 0.2s;
+}
+.consult-view:hover { background: #0F7A5F; color: #FFFFFF; }
+.stat-unit { font-size: 13px; font-weight: 600; color: #94A3B8; margin-left: 2px; }
+.dist-note { font-size: 12px; color: #94A3B8; margin-top: 10px; }
 
 /* ========== QUICK ACTIONS (PATIENT) ========== */
 .quick-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }

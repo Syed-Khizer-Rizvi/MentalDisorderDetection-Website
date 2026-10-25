@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Doctor Dashboard | MentalDisorerDetection</title>
+<title>Doctor Dashboard | Mental Disorder Detection</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
@@ -31,7 +31,7 @@
     <header class="top-header">
       <button class="menu-toggle" id="menuToggle">☰</button>
       <div class="header-right">
-        <button class="icon-btn notif-btn"><span>🔔</span><span class="notif-dot"></span></button>
+        <button class="icon-btn notif-btn"><span>🔔</span>{% if critical_count > 0 %}<span class="notif-dot"></span>{% endif %}</button>
         <div class="user-chip">
           <div class="user-avatar">{{ user_initials }}</div>
           <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
@@ -42,7 +42,11 @@
     <section class="welcome-banner">
       <div class="welcome-text">
         <h1>Welcome back, Dr. {{ user_name }}</h1>
-        <p>Aapke 12 assigned patients hain, 3 critical alerts review karne hain</p>
+        {% if critical_count > 0 %}
+        <p>{{ critical_count }} critical alert{{ 's' if critical_count != 1 }} need{{ 's' if critical_count == 1 }} your attention.</p>
+        {% else %}
+        <p>No critical alerts right now. {{ total_patients }} active patient{{ 's' if total_patients != 1 }} under monitoring.</p>
+        {% endif %}
       </div>
       <div class="welcome-badge">
         <span class="badge-label">Status</span>
@@ -51,37 +55,56 @@
     </section>
 
     <section class="stats-grid">
-      <div class="stat-card stat-blue"><div class="stat-icon">👥</div><div class="stat-content"><span class="stat-label">Total Patients</span><span class="stat-value">12</span><span class="stat-sub">+2 this week</span></div></div>
-      <div class="stat-card stat-critical"><div class="stat-icon">🚨</div><div class="stat-content"><span class="stat-label">Critical Alerts</span><span class="stat-value">3</span><span class="stat-sub">Needs attention</span></div></div>
-      <div class="stat-card stat-purple"><div class="stat-icon">📅</div><div class="stat-content"><span class="stat-label">Today's Appointments</span><span class="stat-value">5</span><span class="stat-sub">2 upcoming</span></div></div>
-      <div class="stat-card stat-orange"><div class="stat-icon">📊</div><div class="stat-content"><span class="stat-label">Avg Risk Score</span><span class="stat-value">6.2</span><span class="stat-sub">Moderate</span></div></div>
+      <div class="stat-card stat-blue"><div class="stat-icon">👥</div><div class="stat-content"><span class="stat-label">Total Patients</span><span class="stat-value">{{ total_patients }}</span><span class="stat-sub">{{ unassessed_count }} not yet assessed</span></div></div>
+      <div class="stat-card {{ 'stat-critical' if critical_count > 0 else 'stat-low' }}"><div class="stat-icon">🚨</div><div class="stat-content"><span class="stat-label">Critical Alerts</span><span class="stat-value">{{ critical_count }}</span><span class="stat-sub">{{ 'Needs attention' if critical_count > 0 else 'All clear' }}{% if high_count %} · {{ high_count }} high risk{% endif %}</span></div></div>
+      <div class="stat-card stat-purple"><div class="stat-icon">📅</div><div class="stat-content"><span class="stat-label">Today's Appointments</span><span class="stat-value">0</span><span class="stat-sub">Scheduling coming soon</span></div></div>
+      <div class="stat-card stat-orange"><div class="stat-icon">📊</div><div class="stat-content"><span class="stat-label">Avg Risk Score</span><span class="stat-value">{{ avg_score if avg_score is not none else '-' }}{% if avg_score is not none %}<small class="stat-unit">/100</small>{% endif %}</span><span class="stat-sub">{{ avg_label ~ ' on average' if avg_label else 'No assessments yet' }}</span></div></div>
     </section>
 
     <section class="dashboard-row">
       <div class="chart-panel">
-        <div class="panel-head"><h3>Patient Risk Distribution</h3><span class="panel-sub">Last 30 days</span></div>
+        <div class="panel-head"><h3>Patient Risk Distribution</h3><span class="panel-sub">Latest assessment per patient</span></div>
+        {% if distribution_total %}
         <div class="risk-bars">
-          <div class="risk-bar-row"><span class="risk-bar-label">Low</span><div class="risk-bar"><div class="risk-bar-fill risk-low" style="width:55%"></div></div><span class="risk-bar-count">7</span></div>
-          <div class="risk-bar-row"><span class="risk-bar-label">Moderate</span><div class="risk-bar"><div class="risk-bar-fill risk-mod" style="width:30%"></div></div><span class="risk-bar-count">2</span></div>
-          <div class="risk-bar-row"><span class="risk-bar-label">High</span><div class="risk-bar"><div class="risk-bar-fill risk-high" style="width:25%"></div></div><span class="risk-bar-count">3</span></div>
+          {% for level, label, color in [('low', 'Low', '#059669'), ('moderate', 'Moderate', '#D97706'), ('high', 'High', '#EA580C'), ('critical', 'Critical', '#DC2626')] %}
+          {% set count = distribution[level] %}
+          <div class="risk-bar-row"><span class="risk-bar-label">{{ label }}</span><div class="risk-bar"><div class="risk-bar-fill" style="width:{{ (count / distribution_total * 100)|round(1) }}%; background:{{ color }};"></div></div><span class="risk-bar-count">{{ count }}</span></div>
+          {% endfor %}
         </div>
+        {% if unassessed_count %}<p class="dist-note">{{ unassessed_count }} patient{{ 's' if unassessed_count != 1 }} without an assessment {{ 'are' if unassessed_count != 1 else 'is' }} not included.</p>{% endif %}
+        {% else %}
+        <p class="trend-empty">No patient assessments yet.</p>
+        {% endif %}
       </div>
       <div class="actions-panel">
-        <div class="panel-head"><h3>Upcoming Consultations</h3></div>
+        <div class="panel-head"><h3>Critical Patients</h3><span class="panel-sub">Highest risk first</span></div>
         <div class="consultation-list">
-          <div class="consult-item"><div class="consult-time">10:30 AM</div><div class="consult-info"><span class="consult-name">Ahmed Ali</span><span class="consult-type">Follow up</span></div><span class="consult-badge badge-high">High</span></div>
-          <div class="consult-item"><div class="consult-time">12:00 PM</div><div class="consult-info"><span class="consult-name">Sara Khan</span><span class="consult-type">Initial</span></div><span class="consult-badge badge-mod">Moderate</span></div>
-          <div class="consult-item"><div class="consult-time">02:30 PM</div><div class="consult-info"><span class="consult-name">Bilal Hassan</span><span class="consult-type">Review</span></div><span class="consult-badge badge-low">Low</span></div>
+          {% for p in top_patients %}
+          <div class="consult-item">
+            <div class="consult-score" style="color: {{ p.risk_color }};">{{ p.composite_score }}</div>
+            <div class="consult-info"><span class="consult-name">{{ p.name }}</span><span class="consult-type">Composite score /100</span></div>
+            <span class="consult-badge" style="background: {{ p.risk_color }}1A; color: {{ p.risk_color }};">{{ p.risk_label }}</span>
+            <a href="#" class="consult-view" aria-label="View {{ p.name }}">View</a>
+          </div>
+          {% else %}
+          <p class="trend-empty">No assessed patients yet.</p>
+          {% endfor %}
         </div>
       </div>
     </section>
 
     <section class="activity-panel">
-      <div class="panel-head"><h3>Recent Patient Activity</h3><a href="#" class="panel-link">View All</a></div>
+      <div class="panel-head"><h3>Recent Assessments</h3><a href="#" class="panel-link">View All</a></div>
       <div class="activity-list">
-        <div class="activity-item"><div class="act-icon act-icon-red">⚠️</div><div class="act-content"><span class="act-title">Fatima Shah submitted PHQ-9 (Score: 18)</span><span class="act-time">15 minutes ago</span></div><span class="act-tag tag-high">High Risk</span></div>
-        <div class="activity-item"><div class="act-icon act-icon-blue">📝</div><div class="act-content"><span class="act-title">Usman Tariq completed assessment</span><span class="act-time">1 hour ago</span></div><span class="act-tag tag-low">Low Risk</span></div>
-        <div class="activity-item"><div class="act-icon act-icon-purple">💬</div><div class="act-content"><span class="act-title">New message from Ahmed Ali</span><span class="act-time">3 hours ago</span></div></div>
+        {% for a in recent_assessments %}
+        <div class="activity-item">
+          <div class="act-icon" style="background: {{ a.risk_color }}1A;">{{ '⚠️' if a.risk_label in ['High', 'Critical'] else '📝' }}</div>
+          <div class="act-content"><span class="act-title">{{ a.name }} completed an assessment (Score: {{ a.composite_score }}/100)</span><span class="act-time">{{ a.time_ago }}</span></div>
+          <span class="act-tag" style="background: {{ a.risk_color }}1A; color: {{ a.risk_color }};">{{ a.risk_label }} Risk</span>
+        </div>
+        {% else %}
+        <p class="trend-empty">No assessments submitted yet.</p>
+        {% endfor %}
       </div>
     </section>
   </main>

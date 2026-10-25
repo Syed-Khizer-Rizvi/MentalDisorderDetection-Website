@@ -100,6 +100,21 @@ def format_timestamp(ms, fmt):
     return datetime.fromtimestamp(ms / 1000).strftime(fmt) if isinstance(ms, (int, float)) else '-'
 
 
+def time_ago(ms):
+    import time
+    if not isinstance(ms, (int, float)):
+        return '-'
+    seconds = max(0, int(time.time() - ms / 1000))
+    if seconds < 60:
+        return 'Just now'
+    if seconds >= 30 * 86400:
+        return format_timestamp(ms, '%d %b %Y')
+    for unit, size in [('day', 86400), ('hour', 3600), ('minute', 60)]:
+        if seconds >= size:
+            n = seconds // size
+            return f"{n} {unit}{'s' if n != 1 else ''} ago"
+
+
 def build_results_context(assessment):
     """Template variables for results.html, from a session or stored assessment."""
     phq = assessment.get('phq_score', 0)
@@ -706,8 +721,60 @@ def submit_wristband_order():
 @role_required('doctor')
 def doctor_dashboard():
     user_name = session['user'].get('name', 'Doctor')
+    # Avoid "Dr. Dr. ..." when the stored name already carries the title
+    if user_name.lower().replace('.', '').split()[:1] == ['dr']:
+        user_name = user_name.split(None, 1)[1] if ' ' in user_name else user_name
     user_initials = ''.join([word[0].upper() for word in user_name.split()[:2]]) or 'D'
-    return render_template('doctor_dashboard.html', user_name=user_name, user_initials=user_initials)
+
+    # One read of the users tree; each patient record already contains its assessments
+    users = db.reference('users').get() or {}
+
+    patients, recent = [], []
+    for uid, u in users.items():
+        if not isinstance(u, dict) or u.get('role') != 'patient' or u.get('status') != 'active':
+            continue
+        name = u.get('name') or 'Unnamed patient'
+        assessments = u.get('assessments') or {}
+
+        latest = assessments.get(u.get('latest_assessment_id')) if u.get('latest_assessment_id') else None
+        patient = {'uid': uid, 'name': name, 'composite_score': None}
+        if latest:
+            score = compute_composite(latest)
+            risk_level, risk_label, risk_color = risk_band(score)
+            patient.update(composite_score=score, risk_level=risk_level, risk_label=risk_label, risk_color=risk_color)
+        patients.append(patient)
+
+        for a in assessments.values():
+            if isinstance(a, dict) and isinstance(a.get('created_at'), (int, float)):
+                score = compute_composite(a)
+                _, risk_label, risk_color = risk_band(score)
+                recent.append({'name': name, 'composite_score': score, 'risk_label': risk_label,
+                               'risk_color': risk_color, 'created_at': a['created_at']})
+
+    assessed = [p for p in patients if p['composite_score'] is not None]
+    distribution = {level: 0 for level in ['low', 'moderate', 'high', 'critical']}
+    for p in assessed:
+        distribution[p['risk_level']] += 1
+
+    avg_score = round(sum(p['composite_score'] for p in assessed) / len(assessed)) if assessed else None
+
+    recent.sort(key=lambda a: a['created_at'], reverse=True)
+    recent = recent[:5]
+    for a in recent:
+        a['time_ago'] = time_ago(a['created_at'])
+
+    return render_template('doctor_dashboard.html',
+                           user_name=user_name, user_initials=user_initials,
+                           total_patients=len(patients),
+                           unassessed_count=len(patients) - len(assessed),
+                           critical_count=distribution['critical'],
+                           high_count=distribution['high'],
+                           avg_score=avg_score,
+                           avg_label=risk_band(avg_score)[1] if avg_score is not None else None,
+                           distribution=distribution,
+                           distribution_total=len(assessed),
+                           top_patients=sorted(assessed, key=lambda p: p['composite_score'], reverse=True)[:3],
+                           recent_assessments=recent)
 
 
 @app.route('/admin/dashboard')
