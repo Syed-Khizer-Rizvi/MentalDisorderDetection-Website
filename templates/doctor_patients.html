@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Patients | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item active"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="welcome-banner">
+      <div class="welcome-text">
+        <h1>My Patients</h1>
+        <p>{{ total_patients }} active patient{{ 's' if total_patients != 1 }}{% if unassessed_count %} · {{ unassessed_count }} not yet assessed{% endif %}</p>
+      </div>
+    </section>
+
+    {% set level_meta = {'critical': ('Critical', '#DC2626', '🚨'), 'high': ('High', '#EA580C', '⚠'), 'moderate': ('Moderate', '#D97706', '◐'), 'low': ('Low', '#059669', '✓')} %}
+    <section class="stats-grid pt-stats">
+      {% for level in ['critical', 'high', 'moderate', 'low'] %}
+      {% set label, color, icon = level_meta[level] %}
+      <a href="{{ url_for('doctor_patients', risk=level, q=query or None) }}" class="stat-card pt-stat{{ ' pt-stat-active' if risk == level }}" style="border-left: 4px solid {{ color }};">
+        <div class="stat-icon" style="background: {{ color }}1A; color: {{ color }};">{{ icon }}</div>
+        <div class="stat-content"><span class="stat-label">{{ label }} Risk</span><span class="stat-value">{{ counts[level] }}</span><span class="stat-sub">patient{{ 's' if counts[level] != 1 }}</span></div>
+      </a>
+      {% endfor %}
+    </section>
+
+    <section class="chart-panel">
+      <form class="pt-filters" method="get" action="{{ url_for('doctor_patients') }}" role="search">
+        <div class="form-field pt-search">
+          <label for="q">Search</label>
+          <input type="search" id="q" name="q" value="{{ query }}" placeholder="Search by name or email">
+        </div>
+        <div class="form-field pt-risk">
+          <label for="risk">Risk level</label>
+          <select id="risk" name="risk">
+            <option value="all" {{ 'selected' if risk == 'all' }}>All levels</option>
+            {% for level in risk_levels %}
+            <option value="{{ level }}" {{ 'selected' if risk == level }}>{{ level | capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="profile-save pt-apply">Apply</button>
+        {% if query or risk != 'all' %}<a href="{{ url_for('doctor_patients') }}" class="pt-clear">Clear</a>{% endif %}
+      </form>
+
+      <div class="panel-head pt-results-head">
+        <h3>Patients</h3>
+        <span class="panel-sub">Showing {{ patients|length }} of {{ total_patients }} · highest risk first</span>
+      </div>
+
+      {% if patients %}
+      <div class="pt-list" role="table" aria-label="Patients">
+        <div class="pt-row pt-row-head" role="row">
+          <span role="columnheader">Patient</span>
+          <span role="columnheader">Risk</span>
+          <span role="columnheader">Score</span>
+          <span role="columnheader">Last assessment</span>
+          <span role="columnheader">Facial mood</span>
+          <span role="columnheader"><span class="sr-only">Actions</span></span>
+        </div>
+        {% for p in patients %}
+        <div class="pt-row{{ ' pt-row-selected' if p.uid == selected_id }}" role="row" id="patient-{{ p.uid }}">
+          <div class="pt-patient" role="cell">
+            <div class="user-avatar">{{ (p.name.split()[:2] | map('first') | join | upper) or 'P' }}</div>
+            <div class="pt-patient-text"><strong>{{ p.name }}</strong><span>{{ p.email or 'No email on file' }}</span></div>
+          </div>
+          <div role="cell" data-label="Risk">
+            {% if p.risk_level %}
+            <span class="risk-badge" style="background: {{ p.risk_color }}1A; color: {{ p.risk_color }};">{{ p.risk_label }}</span>
+            {% else %}
+            <span class="risk-badge pt-badge-none">Not assessed</span>
+            {% endif %}
+          </div>
+          <div role="cell" data-label="Score" class="pt-score">
+            {% if p.composite_score is not none %}<strong style="color: {{ p.risk_color }};">{{ p.composite_score }}</strong><small>/100</small>{% else %}<span class="pt-muted">-</span>{% endif %}
+          </div>
+          <div role="cell" data-label="Last assessment" class="pt-cell">{{ p.last_assessment or '-' }}</div>
+          <div role="cell" data-label="Facial mood" class="pt-cell">{{ p.facial_dominant or '-' }}</div>
+          <div role="cell" class="pt-action">
+            <a href="{{ url_for('doctor_patients', id=p.uid) }}" class="consult-view">View Details</a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="trend-empty">
+        {% if total_patients == 0 %}No active patients yet.{% else %}No patients match these filters. <a href="{{ url_for('doctor_patients') }}" class="panel-link">Clear filters</a>{% endif %}
+      </p>
+      {% endif %}
+    </section>
+  </main>
+</div>
+
+{% if selected_id %}
+<div class="toast toast-success" role="status">Detailed patient view is coming soon.</div>
+{% endif %}
+
+<script>
+  const selected = document.querySelector('.pt-row-selected');
+  if (selected) selected.scrollIntoView({ block: 'center' });
+  const toast = document.querySelector('.toast');
+  if (toast) setTimeout(() => { toast.hidden = true; }, 3000);
+</script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

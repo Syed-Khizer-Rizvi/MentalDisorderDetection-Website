@@ -716,17 +716,21 @@ def submit_wristband_order():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
-@app.route('/doctor/dashboard')
-@login_required
-@role_required('doctor')
-def doctor_dashboard():
+RISK_LEVELS = ['low', 'moderate', 'high', 'critical']
+
+
+def doctor_identity():
     user_name = session['user'].get('name', 'Doctor')
     # Avoid "Dr. Dr. ..." when the stored name already carries the title
     if user_name.lower().replace('.', '').split()[:1] == ['dr']:
         user_name = user_name.split(None, 1)[1] if ' ' in user_name else user_name
     user_initials = ''.join([word[0].upper() for word in user_name.split()[:2]]) or 'D'
+    return user_name, user_initials
 
-    # One read of the users tree; each patient record already contains its assessments
+
+def load_active_patients():
+    """Summaries of all active patients (scored on their latest assessment) plus every
+    timestamped assessment across them, from a single read of the users tree."""
     users = db.reference('users').get() or {}
 
     patients, recent = [], []
@@ -737,11 +741,15 @@ def doctor_dashboard():
         assessments = u.get('assessments') or {}
 
         latest = assessments.get(u.get('latest_assessment_id')) if u.get('latest_assessment_id') else None
-        patient = {'uid': uid, 'name': name, 'composite_score': None}
+        patient = {'uid': uid, 'name': name, 'email': u.get('email', ''),
+                   'composite_score': None, 'risk_level': None, 'last_assessment': None, 'facial_dominant': None}
         if latest:
             score = compute_composite(latest)
             risk_level, risk_label, risk_color = risk_band(score)
-            patient.update(composite_score=score, risk_level=risk_level, risk_label=risk_label, risk_color=risk_color)
+            emotions = latest.get('facial_emotions', {}) or {}
+            patient.update(composite_score=score, risk_level=risk_level, risk_label=risk_label, risk_color=risk_color,
+                           last_assessment=format_timestamp(latest.get('created_at'), '%d %b %Y'),
+                           facial_dominant=max(emotions, key=emotions.get).capitalize() if emotions else None)
         patients.append(patient)
 
         for a in assessments.values():
@@ -751,10 +759,56 @@ def doctor_dashboard():
                 recent.append({'name': name, 'composite_score': score, 'risk_label': risk_label,
                                'risk_color': risk_color, 'created_at': a['created_at']})
 
+    return patients, recent
+
+
+def risk_distribution(patients):
+    counts = {level: 0 for level in RISK_LEVELS}
+    for p in patients:
+        if p['risk_level']:
+            counts[p['risk_level']] += 1
+    return counts
+
+
+@app.route('/doctor/patients')
+@login_required
+@role_required('doctor')
+def doctor_patients():
+    user_name, user_initials = doctor_identity()
+    patients, _ = load_active_patients()
+    counts = risk_distribution(patients)
+
+    risk = request.args.get('risk', 'all').lower()
+    if risk not in RISK_LEVELS:
+        risk = 'all'
+    query = request.args.get('q', '').strip()
+    selected_id = request.args.get('id', '')
+
+    shown = patients
+    if risk != 'all':
+        shown = [p for p in shown if p['risk_level'] == risk]
+    if query:
+        q = query.lower()
+        shown = [p for p in shown if q in p['name'].lower() or q in p['email'].lower()]
+    # Highest risk first; patients without an assessment go last, alphabetically
+    shown = sorted(shown, key=lambda p: (p['composite_score'] is None, -(p['composite_score'] or 0), p['name'].lower()))
+
+    return render_template('doctor_patients.html',
+                           user_name=user_name, user_initials=user_initials,
+                           patients=shown, total_patients=len(patients),
+                           counts=counts, unassessed_count=sum(1 for p in patients if p['risk_level'] is None),
+                           risk=risk, query=query, selected_id=selected_id, risk_levels=RISK_LEVELS)
+
+
+@app.route('/doctor/dashboard')
+@login_required
+@role_required('doctor')
+def doctor_dashboard():
+    user_name, user_initials = doctor_identity()
+    patients, recent = load_active_patients()
+
     assessed = [p for p in patients if p['composite_score'] is not None]
-    distribution = {level: 0 for level in ['low', 'moderate', 'high', 'critical']}
-    for p in assessed:
-        distribution[p['risk_level']] += 1
+    distribution = risk_distribution(patients)
 
     avg_score = round(sum(p['composite_score'] for p in assessed) / len(assessed)) if assessed else None
 

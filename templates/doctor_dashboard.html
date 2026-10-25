@@ -16,8 +16,8 @@
       <span class="sidebar-brand">Mental Disorder Detection</span>
     </div>
     <nav class="sidebar-nav">
-      <a href="#" class="nav-item active"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
-      <a href="#" class="nav-item"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item active"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
@@ -84,7 +84,7 @@
             <div class="consult-score" style="color: {{ p.risk_color }};">{{ p.composite_score }}</div>
             <div class="consult-info"><span class="consult-name">{{ p.name }}</span><span class="consult-type">Composite score /100</span></div>
             <span class="consult-badge" style="background: {{ p.risk_color }}1A; color: {{ p.risk_color }};">{{ p.risk_label }}</span>
-            <a href="#" class="consult-view" aria-label="View {{ p.name }}">View</a>
+            <a href="{{ url_for('doctor_patients', id=p.uid) }}" class="consult-view" aria-label="View {{ p.name }}">View</a>
           </div>
           {% else %}
           <p class="trend-empty">No assessed patients yet.</p>
