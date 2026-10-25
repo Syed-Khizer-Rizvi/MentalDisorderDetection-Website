@@ -58,11 +58,7 @@
           <span class="risk-badge pt-badge-none">Not assessed</span>
           {% endif %}
         </div>
-        <ul class="pd-contact">
-          <li><span>Email</span>{{ patient.email or '-' }}</li>
-          <li><span>Phone</span>{{ patient.phone or '-' }}</li>
-          <li><span>Member since</span>{{ patient.member_since }}</li>
-        </ul>
+        {% if patient.age is not none %}<p class="pd-age">{{ patient.age }} years old</p>{% endif %}
       </div>
       <div class="pd-composite">
         <span class="stat-label">Composite</span>
@@ -99,9 +95,9 @@
       <div class="stat-card pd-stat">
         <div class="stat-content">
           <span class="stat-label">Wristband</span>
-          {% if order %}
-          <span class="stat-value pd-stat-text"><span class="wb-status wb-status-{{ order.status }}">{{ order.status | capitalize }}</span></span>
-          <span class="stat-sub">Ordered {{ order.order_date }}</span>
+          {% if wristband %}
+          <span class="stat-value pd-stat-text"><span class="wb-status wb-status-{{ wristband.status }}">{{ wristband.status | capitalize }}</span></span>
+          <span class="stat-sub">Ordered {{ wristband.date }}</span>
           {% else %}
           <span class="stat-value pd-stat-text">Not ordered</span>
           <span class="stat-sub">No order placed</span>
@@ -147,58 +143,20 @@
       {% endif %}
     </section>
 
-    <section class="dashboard-row">
-      {# 5. Journal #}
-      <div class="chart-panel">
-        <div class="panel-head"><h3>Journal Entries</h3><span class="panel-sub">{% if journal_total > 5 %}Latest 5 of {{ journal_total }}{% else %}{{ journal_total }} entr{{ 'ies' if journal_total != 1 else 'y' }}{% endif %}</span></div>
-        {% if journal %}
-        <ul class="act-entries-list">
-          {% for e in journal %}
-          <li class="act-entry">
-            <div class="act-entry-head">{% if e.mood %}<span class="act-entry-mood">{{ e.mood }}</span>{% endif %}<time>{{ e.date }}</time></div>
-            <p>{{ e.text }}</p>
-          </li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="trend-empty">No journal entries yet.</p>
-        {% endif %}
-      </div>
-
-      {# 7. Profile info #}
-      <div class="actions-panel">
-        <div class="panel-head"><h3>Profile Information</h3></div>
-        <dl class="wb-details wb-details-single">
-          <div><dt>Date of birth</dt><dd>{% if profile.dob_display %}{{ profile.dob_display }}{% if profile.age is defined %} ({{ profile.age }} years){% endif %}{% else %}-{% endif %}</dd></div>
-          <div><dt>Gender</dt><dd>{{ profile.gender or '-' }}</dd></div>
-          <div><dt>Address</dt><dd>{{ profile.address or '-' }}</dd></div>
-          <div><dt>Emergency contact</dt><dd>{% if profile.emergency_name or profile.emergency_phone %}{{ profile.emergency_name or 'Unnamed' }}{% if profile.emergency_phone %} · {{ profile.emergency_phone }}{% endif %}{% else %}-{% endif %}</dd></div>
-        </dl>
-      </div>
-    </section>
-
-    {# 6. Wristband order #}
+    {# 5. Journal: only entries the patient chose to share #}
     <section class="chart-panel">
-      <div class="panel-head"><h3>Wristband Order</h3>{% if order %}<span class="panel-sub">Placed {{ order.order_date }}</span>{% endif %}</div>
-      {% if order %}
-      <ol class="wb-timeline">
-        {% set idx = statuses.index(order.status) %}
-        {% for s in statuses %}
-        <li class="wb-step {{ 'done' if loop.index0 < idx else 'current' if loop.index0 == idx }}">
-          <span class="wb-dot">{{ '✓' if loop.index0 < idx else loop.index }}</span>
-          <span class="wb-step-label">{{ s | capitalize }}</span>
+      <div class="panel-head"><h3>Shared Journal Entries</h3><span class="panel-sub">{% if journal_total > 5 %}Latest 5 of {{ journal_total }} shared{% else %}{{ journal_total }} shared entr{{ 'ies' if journal_total != 1 else 'y' }}{% endif %}</span></div>
+      {% if journal %}
+      <ul class="act-entries-list">
+        {% for e in journal %}
+        <li class="act-entry">
+          <div class="act-entry-head">{% if e.mood %}<span class="act-entry-mood">{{ e.mood }}</span>{% endif %}<time>{{ e.date }}</time></div>
+          <p>{{ e.text }}</p>
         </li>
         {% endfor %}
-      </ol>
-      <dl class="wb-details pd-order-details">
-        <div><dt>Deliver to</dt><dd>{{ order.fullname or '-' }}</dd></div>
-        <div><dt>Phone</dt><dd>{{ order.phone or '-' }}</dd></div>
-        <div class="wb-span"><dt>Address</dt><dd>{{ order.address or '-' }}{% if order.city %}, {{ order.city }}{% endif %}</dd></div>
-        <div><dt>Wrist size</dt><dd>{{ order.size or '-' }}</dd></div>
-        <div><dt>Notes</dt><dd>{{ order.notes or '-' }}</dd></div>
-      </dl>
+      </ul>
       {% else %}
-      <p class="trend-empty">This patient hasn't ordered a wristband.</p>
+      <p class="trend-empty">No journal entries shared with you yet.</p>
       {% endif %}
     </section>
   </main>

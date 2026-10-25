@@ -106,7 +106,7 @@
       </div>
 
       <div class="actions-panel" id="journal">
-        <div class="panel-head"><h3>Daily Journal</h3><span class="panel-sub">Saved to your account</span></div>
+        <div class="panel-head"><h3>Daily Journal</h3><span class="panel-sub">Private unless you share it</span></div>
         <form id="journalForm" novalidate>
           <fieldset class="act-moods">
             <legend>How are you feeling?</legend>
@@ -119,6 +119,10 @@
             <textarea id="journalText" name="text" rows="5" maxlength="{{ journal_max }}" placeholder="What's on your mind today?"></textarea>
             <small><span id="charCount">0</span>/{{ journal_max }}</small>
           </div>
+          <label class="act-share">
+            <input type="checkbox" id="shareWithDoctor" name="share_with_doctor">
+            <span>Share this entry with my doctor</span>
+          </label>
           <button type="submit" class="profile-save act-journal-save" id="journalSave">Save Entry</button>
         </form>
 
@@ -127,7 +131,7 @@
           <ul id="journalList">
             {% for e in journal %}
             <li class="act-entry">
-              <div class="act-entry-head">{% if e.mood %}<span class="act-entry-mood">{{ e.mood }}</span>{% endif %}<time>{{ e.date }}</time></div>
+              <div class="act-entry-head">{% if e.mood %}<span class="act-entry-mood">{{ e.mood }}</span>{% endif %}<time>{{ e.date }}</time>{% if e.share_with_doctor %}<span class="act-privacy act-privacy-shared">Shared with doctor</span>{% else %}<span class="act-privacy">Private</span>{% endif %}</div>
               <p>{{ e.text }}</p>
             </li>
             {% endfor %}
@@ -189,6 +193,10 @@
     const time = document.createElement('time');
     time.textContent = entry.date;
     head.appendChild(time);
+    const privacy = document.createElement('span');
+    privacy.className = 'act-privacy' + (entry.share_with_doctor ? ' act-privacy-shared' : '');
+    privacy.textContent = entry.share_with_doctor ? 'Shared with doctor' : 'Private';
+    head.appendChild(privacy);
     const p = document.createElement('p');
     p.textContent = entry.text;
     li.append(head, p);
@@ -214,7 +222,7 @@
       const res = await fetch('/api/save-journal', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ text, mood: moodEl ? moodEl.value : '' })
+        body: JSON.stringify({ text, mood: moodEl ? moodEl.value : '', share_with_doctor: document.getElementById('shareWithDoctor').checked })
       });
       const data = await res.json();
       if (data.success) {

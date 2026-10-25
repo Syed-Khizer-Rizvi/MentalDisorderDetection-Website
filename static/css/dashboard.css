@@ -545,6 +545,16 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .act-mood input:checked + span { background: #0F7A5F; border-color: #0F7A5F; color: #FFFFFF; }
 .act-mood input:focus-visible + span { outline: 2px solid #0F7A5F; outline-offset: 2px; }
 .act-journal-save { width: 100%; margin-top: 12px; }
+.act-share {
+  display: flex; flex-direction: row; align-items: center; gap: 8px; margin-top: 12px;
+  font-size: 13px; font-weight: 600; color: #334155; cursor: pointer;
+}
+.act-share input { width: 16px; height: 16px; accent-color: #0F7A5F; cursor: pointer; }
+.act-privacy {
+  margin-left: auto; padding: 2px 8px; border-radius: 999px;
+  background: #F1F5F9; color: #64748B; font-size: 11px; font-weight: 700;
+}
+.act-privacy-shared { background: #DBEAFE; color: #1D4ED8; }
 .act-entries { margin-top: 20px; padding-top: 16px; border-top: 1px solid #E2E8F0; }
 .act-entries h4 { font-size: 13px; font-weight: 700; color: #0F172A; margin-bottom: 10px; }
 .act-entries ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
@@ -652,11 +662,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .pd-header-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .pd-name-row { display: flex; flex-direction: row; align-items: center; gap: 12px; flex-wrap: wrap; }
 .pd-name-row h1 { font-size: 22px; font-weight: 800; color: #0F172A; word-break: break-word; }
-.pd-contact { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; color: #334155; }
-.pd-contact li { display: flex; flex-direction: column; gap: 1px; min-width: 0; word-break: break-all; }
-.pd-contact span {
-  font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px;
-}
+.pd-age { font-size: 14px; font-weight: 600; color: #475569; }
 .pd-composite {
   display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
   padding-left: 24px; border-left: 1px solid #E2E8F0;
@@ -681,7 +687,6 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .pd-score { font-size: 16px; font-weight: 800; margin-right: 4px; }
 .pd-table-action { text-align: right; }
 .act-entries-list { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-.pd-order-details { margin-top: 18px; }
 @media (max-width: 1100px) {
   .pd-status { grid-template-columns: repeat(3, 1fr); }
   .pd-stat-wide { grid-column: span 2; }

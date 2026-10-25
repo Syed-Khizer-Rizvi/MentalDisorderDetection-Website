@@ -115,6 +115,20 @@ def time_ago(ms):
             return f"{n} {unit}{'s' if n != 1 else ''} ago"
 
 
+def age_from_dob(dob):
+    """Whole years since an ISO date string (YYYY-MM-DD); None if missing or invalid."""
+    from datetime import date
+    try:
+        born = date.fromisoformat(str(dob)) if dob else None
+    except ValueError:
+        return None
+    if not born:
+        return None
+    today = date.today()
+    age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+    return age if age >= 0 else None
+
+
 def build_risk_trend(assessments, limit):
     """Chart points for templates/_risk_trend.html: the latest `limit` timestamped
     assessments, oldest first."""
@@ -653,7 +667,8 @@ def patient_activities():
     journal = [{
         'mood': entry.get('mood', ''),
         'text': entry.get('text', ''),
-        'date': format_timestamp(entry.get('created_at'), '%d %b %Y, %I:%M %p')
+        'date': format_timestamp(entry.get('created_at'), '%d %b %Y, %I:%M %p'),
+        'share_with_doctor': entry.get('share_with_doctor') is True
     } for _, entry in sorted(recent.items(), reverse=True)]
 
     return render_template('activities.html', user_name=user_name, user_initials=user_initials,
@@ -671,6 +686,8 @@ def save_journal():
         uid = session['user']['uid']
         text = str(data.get('text', '')).strip()
         mood = str(data.get('mood', '')).strip()
+        # Private unless the patient explicitly opts in; only a JSON true counts as sharing
+        share = data.get('share_with_doctor') is True
 
         if not text:
             return jsonify({'success': False, 'error': 'Please write something before saving.'}), 400
@@ -680,13 +697,14 @@ def save_journal():
             return jsonify({'success': False, 'error': 'Invalid mood option.'}), 400
 
         now_ms = int(time.time() * 1000)
-        entry = {'text': text, 'created_at': {'.sv': 'timestamp'}}
+        entry = {'text': text, 'created_at': {'.sv': 'timestamp'}, 'share_with_doctor': share}
         if mood:
             entry['mood'] = mood
         db.reference(f'users/{uid}/journal/{now_ms}').set(entry)
 
-        return jsonify({'success': True, 'message': 'Journal entry saved.',
-                        'entry': {'mood': mood, 'text': text,
+        return jsonify({'success': True,
+                        'message': 'Journal entry saved and shared with your doctor.' if share else 'Journal entry saved privately.',
+                        'entry': {'mood': mood, 'text': text, 'share_with_doctor': share,
                                   'date': datetime.fromtimestamp(now_ms / 1000).strftime('%d %b %Y, %I:%M %p')}})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -823,7 +841,6 @@ def get_active_patient(patient_uid):
 @login_required
 @role_required('doctor')
 def doctor_patient_detail(patient_uid):
-    from datetime import date
     user_name, user_initials = doctor_identity()
     patient = get_active_patient(patient_uid)
     if not patient:
@@ -837,9 +854,11 @@ def doctor_patient_detail(patient_uid):
                        reverse=True)
     latest = assessments.get(patient.get('latest_assessment_id')) or (by_newest[0][1] if by_newest else None)
 
-    header = {'name': name, 'email': patient.get('email', ''), 'phone': patient.get('phone', ''),
+    # Privacy: the doctor view gets only name, age and clinical data. Contact details,
+    # date of birth, address and emergency contact are never passed to the template.
+    header = {'name': name,
               'initials': ''.join(w[0].upper() for w in name.split()[:2]) or 'P',
-              'member_since': format_timestamp(patient.get('created_at'), '%d %b %Y'),
+              'age': age_from_dob((patient.get('profile') or {}).get('dob')),
               'composite_score': None}
     current = None
     if latest:
@@ -873,35 +892,27 @@ def doctor_patient_detail(patient_uid):
         })
 
     # Journal keys are millisecond timestamps, so key order is chronological
-    journal_raw = patient.get('journal') or {}
+    # Only entries the patient explicitly shared; entries saved before sharing existed have no
+    # flag and stay private. Journal keys are millisecond timestamps, so key order is chronological.
+    shared = [e for _, e in sorted((patient.get('journal') or {}).items(), reverse=True)
+              if isinstance(e, dict) and e.get('share_with_doctor') is True]
     journal = [{'mood': e.get('mood', ''), 'text': e.get('text', ''),
-                'date': format_timestamp(e.get('created_at'), '%d %b %Y, %I:%M %p')}
-               for _, e in sorted(journal_raw.items(), reverse=True)[:5] if isinstance(e, dict)]
+                'date': format_timestamp(e.get('created_at'), '%d %b %Y, %I:%M %p')} for e in shared[:5]]
 
+    # Wristband: status only; the order's delivery address and phone stay with the patient
     order = db.reference(f'wristband_orders/{patient_uid}').get()
+    wristband = None
     if isinstance(order, dict):
         status = (order.get('status') or 'pending').lower()
-        order = dict(order, status=status if status in WRISTBAND_STATUSES else 'pending',
-                     order_date=format_timestamp(order.get('created_at'), '%d %b %Y'))
-    else:
-        order = None
-
-    profile = dict(patient.get('profile') or {})
-    if profile.get('dob'):
-        try:
-            dob = date.fromisoformat(profile['dob'])
-            today = date.today()
-            profile['dob_display'] = dob.strftime('%d %b %Y')
-            profile['age'] = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-        except ValueError:
-            profile['dob_display'] = profile['dob']
+        wristband = {'status': status if status in WRISTBAND_STATUSES else 'pending',
+                     'date': format_timestamp(order.get('created_at'), '%d %b %Y')}
 
     return render_template('doctor_patient_detail.html',
                            user_name=user_name, user_initials=user_initials,
                            patient_uid=patient_uid, patient=header, current=current,
                            risk_trend=build_risk_trend(assessments.values(), 10),
-                           history=history, journal=journal, journal_total=len(journal_raw),
-                           order=order, statuses=WRISTBAND_STATUSES, profile=profile)
+                           history=history, journal=journal, journal_total=len(shared),
+                           wristband=wristband)
 
 
 @app.route('/doctor/patients/<patient_uid>/assessments/<assessment_id>')
