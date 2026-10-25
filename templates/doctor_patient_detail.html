@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ patient.name }} | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item active"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    <div class="pd-toolbar">
+      <a href="{{ url_for('doctor_patients') }}" class="pd-back">← My Patients</a>
+      <div class="pd-actions">
+        <button type="button" class="pd-btn pd-btn-alert" id="sendAlert">🚨 Send Alert</button>
+        <a href="#" class="pd-btn pd-btn-note">📝 Add Clinical Note</a>
+      </div>
+    </div>
+
+    {# 1. Patient header #}
+    <section class="chart-panel pd-header" {% if patient.risk_color %}style="border-left: 4px solid {{ patient.risk_color }};"{% endif %}>
+      <div class="profile-avatar">{{ patient.initials }}</div>
+      <div class="pd-header-main">
+        <div class="pd-name-row">
+          <h1>{{ patient.name }}</h1>
+          {% if patient.risk_level %}
+          <span class="risk-badge" style="background: {{ patient.risk_color }}1A; color: {{ patient.risk_color }};">⚠ {{ patient.risk_label }} Risk</span>
+          {% else %}
+          <span class="risk-badge pt-badge-none">Not assessed</span>
+          {% endif %}
+        </div>
+        <ul class="pd-contact">
+          <li><span>Email</span>{{ patient.email or '-' }}</li>
+          <li><span>Phone</span>{{ patient.phone or '-' }}</li>
+          <li><span>Member since</span>{{ patient.member_since }}</li>
+        </ul>
+      </div>
+      <div class="pd-composite">
+        <span class="stat-label">Composite</span>
+        {% if patient.composite_score is not none %}
+        <span class="history-composite-value" style="color: {{ patient.risk_color }};">{{ patient.composite_score }}<small>/100</small></span>
+        {% else %}
+        <span class="history-composite-value pt-muted">-</span>
+        {% endif %}
+      </div>
+    </section>
+
+    {# 2. Current status #}
+    <section class="pd-status">
+      {% if current %}
+        {% for label, s, max in [('PHQ-9', current.phq, 27), ('GAD-7', current.gad, 21), ('PSS-10', current.pss, 40)] %}
+        <div class="stat-card pd-stat">
+          <div class="stat-content">
+            <span class="stat-label">{{ label }}</span>
+            <span class="stat-value">{{ s[0] }}<small class="stat-unit">/{{ max }}</small></span>
+            <span class="history-sev" style="color: {{ s[2] }};">{{ s[1] }}</span>
+          </div>
+        </div>
+        {% endfor %}
+        <div class="stat-card pd-stat">
+          <div class="stat-content">
+            <span class="stat-label">Facial Mood</span>
+            <span class="stat-value pd-stat-text">{{ current.facial_dominant or '-' }}</span>
+            <span class="stat-sub">Dominant emotion</span>
+          </div>
+        </div>
+      {% else %}
+        <div class="stat-card pd-stat pd-stat-wide"><div class="stat-content"><span class="stat-label">Latest Assessment</span><span class="stat-value pd-stat-text">None yet</span><span class="stat-sub">This patient hasn't completed an assessment</span></div></div>
+      {% endif %}
+      <div class="stat-card pd-stat">
+        <div class="stat-content">
+          <span class="stat-label">Wristband</span>
+          {% if order %}
+          <span class="stat-value pd-stat-text"><span class="wb-status wb-status-{{ order.status }}">{{ order.status | capitalize }}</span></span>
+          <span class="stat-sub">Ordered {{ order.order_date }}</span>
+          {% else %}
+          <span class="stat-value pd-stat-text">Not ordered</span>
+          <span class="stat-sub">No order placed</span>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+    {% if current %}<p class="pd-status-note">Latest assessment: {{ current.date }}</p>{% endif %}
+
+    {# 3. Risk trend #}
+    <section class="chart-panel">
+      <div class="panel-head"><h3>Risk Trend</h3><span class="panel-sub">Composite score · last {{ risk_trend|length }} assessment{{ 's' if risk_trend|length != 1 }}</span></div>
+      {% set trend_empty_text = 'No assessments yet.' %}
+      {% include '_risk_trend.html' %}
+    </section>
+
+    {# 4. Assessment history #}
+    <section class="chart-panel">
+      <div class="panel-head"><h3>Assessment History</h3><span class="panel-sub">{{ history|length }} assessment{{ 's' if history|length != 1 }} · newest first</span></div>
+      {% if history %}
+      <div class="pd-table-wrap">
+        <table class="pd-table">
+          <thead>
+            <tr><th>Date</th><th>Composite</th><th>PHQ-9</th><th>GAD-7</th><th>PSS-10</th><th>Facial</th><th><span class="sr-only">Actions</span></th></tr>
+          </thead>
+          <tbody>
+            {% for h in history %}
+            <tr>
+              <td><strong>{{ h.date }}</strong><small>{{ h.time }}</small></td>
+              <td><span class="pd-score" style="color: {{ h.risk_color }};">{{ h.composite_score }}</span> <span class="risk-badge" style="background: {{ h.risk_color }}1A; color: {{ h.risk_color }};">{{ h.risk_label }}</span></td>
+              {% for s in [h.phq, h.gad, h.pss] %}
+              <td><strong>{{ s[0] }}</strong><small style="color: {{ s[2] }};">{{ s[1] }}</small></td>
+              {% endfor %}
+              <td>{{ h.facial_dominant }}</td>
+              <td class="pd-table-action">{% if h.viewable %}<a href="{{ url_for('doctor_assessment_detail', patient_uid=patient_uid, assessment_id=h.id) }}" class="consult-view">View</a>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="trend-empty">No assessments yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="dashboard-row">
+      {# 5. Journal #}
+      <div class="chart-panel">
+        <div class="panel-head"><h3>Journal Entries</h3><span class="panel-sub">{% if journal_total > 5 %}Latest 5 of {{ journal_total }}{% else %}{{ journal_total }} entr{{ 'ies' if journal_total != 1 else 'y' }}{% endif %}</span></div>
+        {% if journal %}
+        <ul class="act-entries-list">
+          {% for e in journal %}
+          <li class="act-entry">
+            <div class="act-entry-head">{% if e.mood %}<span class="act-entry-mood">{{ e.mood }}</span>{% endif %}<time>{{ e.date }}</time></div>
+            <p>{{ e.text }}</p>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="trend-empty">No journal entries yet.</p>
+        {% endif %}
+      </div>
+
+      {# 7. Profile info #}
+      <div class="actions-panel">
+        <div class="panel-head"><h3>Profile Information</h3></div>
+        <dl class="wb-details wb-details-single">
+          <div><dt>Date of birth</dt><dd>{% if profile.dob_display %}{{ profile.dob_display }}{% if profile.age is defined %} ({{ profile.age }} years){% endif %}{% else %}-{% endif %}</dd></div>
+          <div><dt>Gender</dt><dd>{{ profile.gender or '-' }}</dd></div>
+          <div><dt>Address</dt><dd>{{ profile.address or '-' }}</dd></div>
+          <div><dt>Emergency contact</dt><dd>{% if profile.emergency_name or profile.emergency_phone %}{{ profile.emergency_name or 'Unnamed' }}{% if profile.emergency_phone %} · {{ profile.emergency_phone }}{% endif %}{% else %}-{% endif %}</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    {# 6. Wristband order #}
+    <section class="chart-panel">
+      <div class="panel-head"><h3>Wristband Order</h3>{% if order %}<span class="panel-sub">Placed {{ order.order_date }}</span>{% endif %}</div>
+      {% if order %}
+      <ol class="wb-timeline">
+        {% set idx = statuses.index(order.status) %}
+        {% for s in statuses %}
+        <li class="wb-step {{ 'done' if loop.index0 < idx else 'current' if loop.index0 == idx }}">
+          <span class="wb-dot">{{ '✓' if loop.index0 < idx else loop.index }}</span>
+          <span class="wb-step-label">{{ s | capitalize }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+      <dl class="wb-details pd-order-details">
+        <div><dt>Deliver to</dt><dd>{{ order.fullname or '-' }}</dd></div>
+        <div><dt>Phone</dt><dd>{{ order.phone or '-' }}</dd></div>
+        <div class="wb-span"><dt>Address</dt><dd>{{ order.address or '-' }}{% if order.city %}, {{ order.city }}{% endif %}</dd></div>
+        <div><dt>Wrist size</dt><dd>{{ order.size or '-' }}</dd></div>
+        <div><dt>Notes</dt><dd>{{ order.notes or '-' }}</dd></div>
+      </dl>
+      {% else %}
+      <p class="trend-empty">This patient hasn't ordered a wristband.</p>
+      {% endif %}
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+  document.getElementById('sendAlert').addEventListener('click', () => {
+    const toast = document.getElementById('toast');
+    toast.textContent = 'Patient alerts are coming soon.';
+    toast.className = 'toast toast-success';
+    toast.hidden = false;
+    setTimeout(() => { toast.hidden = true; }, 3000);
+  });
+</script>
+<script src="{{ url_for('static', filename='js/risk_trend.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

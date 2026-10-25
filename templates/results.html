@@ -17,7 +17,10 @@
     <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo">
     <span>Mental Disorder Detection</span>
   </div>
-  {% if read_only %}
+  {% if doctor_view %}
+  <div class="step-title">{{ patient_name }} — {{ assessment_date }}</div>
+  <a href="{{ back_url }}" class="save-exit">← Back to Patient</a>
+  {% elif read_only %}
   <div class="step-title">Past Assessment — {{ assessment_date }}</div>
   <a href="{{ url_for('patient_history') }}" class="save-exit">← Back to History</a>
   {% else %}
@@ -38,7 +41,7 @@
 
 <main class="assess-main">
   <div class="assess-card">
-    <h1 class="results-title">{{ 'Assessment from ' ~ assessment_date if read_only else 'Your Assessment Results' }}</h1>
+    <h1 class="results-title">{{ patient_name ~ "'s Assessment" if doctor_view else 'Assessment from ' ~ assessment_date if read_only else 'Your Assessment Results' }}</h1>
 
     <div class="composite-wrap">
       <div class="donut" style="--pct: {{ composite_score }}; --color: {{ composite_color }};">
@@ -59,7 +62,9 @@
 </div>
     </div>
 
-    {% if risk_level == 'critical' %}
+    {% if doctor_view %}
+    {# Recommendations, wristband prompts and helplines below are addressed to the patient #}
+    {% elif risk_level == 'critical' %}
     <div class="alert-box alert-critical">
       <div class="alert-icon">⚠</div>
       <h2>Immediate Attention Required</h2>
@@ -121,14 +126,18 @@
     </div>
     {% endif %}
 
+    {% if not doctor_view %}
     <div class="helplines">
       <h4>Emergency Helplines</h4>
       <p>Umang helpline: <strong>0317-4288665</strong></p>
       <p>Rozan helpline: <strong>051-2890505</strong></p>
       <small>If you feel you are in crisis, please call immediately.</small>
     </div>
+    {% endif %}
 
-    {% if read_only %}
+    {% if doctor_view %}
+    <a href="{{ back_url }}" class="btn-dashboard">← Back to Patient</a>
+    {% elif read_only %}
     <a href="{{ url_for('patient_history') }}" class="btn-dashboard">← Back to History</a>
     {% else %}
     <a href="{{ url_for('patient_dashboard') }}" class="btn-dashboard">Go to Dashboard →</a>

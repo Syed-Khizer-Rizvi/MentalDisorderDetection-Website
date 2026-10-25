@@ -84,7 +84,7 @@
             <div class="consult-score" style="color: {{ p.risk_color }};">{{ p.composite_score }}</div>
             <div class="consult-info"><span class="consult-name">{{ p.name }}</span><span class="consult-type">Composite score /100</span></div>
             <span class="consult-badge" style="background: {{ p.risk_color }}1A; color: {{ p.risk_color }};">{{ p.risk_label }}</span>
-            <a href="{{ url_for('doctor_patients', id=p.uid) }}" class="consult-view" aria-label="View {{ p.name }}">View</a>
+            <a href="{{ url_for('doctor_patient_detail', patient_uid=p.uid) }}" class="consult-view" aria-label="View {{ p.name }}">View</a>
           </div>
           {% else %}
           <p class="trend-empty">No assessed patients yet.</p>

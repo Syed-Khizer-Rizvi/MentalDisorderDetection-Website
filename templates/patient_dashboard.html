@@ -118,52 +118,7 @@
 
     <section class="chart-panel trend-panel">
       <div class="panel-head"><h3>Risk Trend</h3><span class="panel-sub">Composite score · last {{ risk_trend|length }} assessment{{ 's' if risk_trend|length != 1 }}</span></div>
-      {% if risk_trend %}
-        {# Positions are percentages of the plot box: x by index, y = 100 - score #}
-        {% set n = risk_trend|length %}
-        {% set ns = namespace(line='') %}
-        {% for p in risk_trend %}
-          {% set ns.line = ns.line ~ ' ' ~ ((50 if n == 1 else loop.index0 * 100 / (n - 1))|round(2)) ~ ',' ~ (100 - p.score) %}
-        {% endfor %}
-        <div class="trend-chart" id="trendChart">
-          <div class="trend-plot">
-            {% for t in [100, 70, 50, 25, 0] %}
-              <div class="trend-grid{{ ' trend-grid-base' if t == 0 }}" style="top: {{ 100 - t }}%;"><span>{{ t }}</span></div>
-            {% endfor %}
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0F7A5F" stop-opacity="0.18"/><stop offset="100%" stop-color="#0F7A5F" stop-opacity="0"/></linearGradient></defs>
-              {% if n > 1 %}
-                <polygon points="0,100{{ ns.line }} 100,100" fill="url(#trendFill)"/>
-                <polyline points="{{ ns.line }}" fill="none" stroke="#0F7A5F" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
-              {% endif %}
-            </svg>
-            <div class="trend-crosshair" id="trendCrosshair" hidden></div>
-            {% for p in risk_trend %}
-              {% set x = 50 if n == 1 else loop.index0 * 100 / (n - 1) %}
-              <button type="button" class="trend-point" style="left: {{ x|round(2) }}%; top: {{ 100 - p.score }}%;"
-                      data-score="{{ p.score }}" data-risk="{{ p.risk_label }}" data-date="{{ p.full_date }}"
-                      aria-label="{{ p.full_date }}: {{ p.score }} out of 100, {{ p.risk_label }} risk">
-                {% if loop.last %}<span class="trend-value{{ ' trend-value-end' if n > 1 }}">{{ p.score }}</span>{% endif %}
-              </button>
-            {% endfor %}
-            <div class="trend-tooltip" id="trendTooltip" hidden></div>
-          </div>
-          <div class="trend-dates">
-            {% for p in risk_trend %}
-              <span style="left: {{ (50 if n == 1 else loop.index0 * 100 / (n - 1))|round(2) }}%;">{{ p.date }}{% if p.time %}<small>{{ p.time }}</small>{% endif %}</span>
-            {% endfor %}
-          </div>
-        </div>
-        <details class="trend-table">
-          <summary>View as table</summary>
-          <table>
-            <thead><tr><th>Date</th><th>Score</th><th>Risk</th></tr></thead>
-            <tbody>{% for p in risk_trend %}<tr><td>{{ p.full_date }}</td><td>{{ p.score }}</td><td>{{ p.risk_label }}</td></tr>{% endfor %}</tbody>
-          </table>
-        </details>
-      {% else %}
-        <p class="trend-empty">No assessments yet. Complete one to start tracking your trend.</p>
-      {% endif %}
+      {% include '_risk_trend.html' %}
     </section>
 
     <section class="dashboard-row">
@@ -189,31 +144,7 @@
   </main>
 </div>
 
-<script>
-  const trendChart = document.getElementById('trendChart');
-  if (trendChart) {
-    const tooltip = document.getElementById('trendTooltip');
-    const crosshair = document.getElementById('trendCrosshair');
-    const plot = trendChart.querySelector('.trend-plot');
-    const hide = () => { tooltip.hidden = true; crosshair.hidden = true; };
-    trendChart.querySelectorAll('.trend-point').forEach(pt => {
-      const show = () => {
-        crosshair.style.left = pt.style.left;
-        crosshair.hidden = false;
-        tooltip.innerHTML = `<strong>${pt.dataset.score}/100 · ${pt.dataset.risk}</strong><span>${pt.dataset.date}</span>`;
-        tooltip.hidden = false;
-        const half = tooltip.offsetWidth / 2;
-        const x = pt.offsetLeft;
-        tooltip.style.left = Math.min(Math.max(x, half), plot.offsetWidth - half) + 'px';
-        tooltip.style.top = (pt.offsetTop - 14) + 'px';
-      };
-      pt.addEventListener('mouseenter', show);
-      pt.addEventListener('focus', show);
-      pt.addEventListener('mouseleave', hide);
-      pt.addEventListener('blur', hide);
-    });
-  }
-</script>
+<script src="{{ url_for('static', filename='js/risk_trend.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 </body>
 </html>

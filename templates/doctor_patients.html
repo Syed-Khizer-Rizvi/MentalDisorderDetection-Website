@@ -91,7 +91,7 @@
           <span role="columnheader"><span class="sr-only">Actions</span></span>
         </div>
         {% for p in patients %}
-        <div class="pt-row{{ ' pt-row-selected' if p.uid == selected_id }}" role="row" id="patient-{{ p.uid }}">
+        <div class="pt-row" role="row">
           <div class="pt-patient" role="cell">
             <div class="user-avatar">{{ (p.name.split()[:2] | map('first') | join | upper) or 'P' }}</div>
             <div class="pt-patient-text"><strong>{{ p.name }}</strong><span>{{ p.email or 'No email on file' }}</span></div>
@@ -109,7 +109,7 @@
           <div role="cell" data-label="Last assessment" class="pt-cell">{{ p.last_assessment or '-' }}</div>
           <div role="cell" data-label="Facial mood" class="pt-cell">{{ p.facial_dominant or '-' }}</div>
           <div role="cell" class="pt-action">
-            <a href="{{ url_for('doctor_patients', id=p.uid) }}" class="consult-view">View Details</a>
+            <a href="{{ url_for('doctor_patient_detail', patient_uid=p.uid) }}" class="consult-view">View Details</a>
           </div>
         </div>
         {% endfor %}
@@ -123,15 +123,12 @@
   </main>
 </div>
 
-{% if selected_id %}
-<div class="toast toast-success" role="status">Detailed patient view is coming soon.</div>
-{% endif %}
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="toast {{ 'toast-error' if category == 'error' else 'toast-success' }}" role="status">{{ message }}</div>
+{% endfor %}
 
 <script>
-  const selected = document.querySelector('.pt-row-selected');
-  if (selected) selected.scrollIntoView({ block: 'center' });
-  const toast = document.querySelector('.toast');
-  if (toast) setTimeout(() => { toast.hidden = true; }, 3000);
+  document.querySelectorAll('.toast').forEach(t => setTimeout(() => { t.hidden = true; }, 4000));
 </script>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 </body>

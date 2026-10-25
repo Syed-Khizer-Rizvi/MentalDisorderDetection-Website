@@ -115,6 +115,35 @@ def time_ago(ms):
             return f"{n} {unit}{'s' if n != 1 else ''} ago"
 
 
+def build_risk_trend(assessments, limit):
+    """Chart points for templates/_risk_trend.html: the latest `limit` timestamped
+    assessments, oldest first."""
+    from datetime import datetime
+    dated = sorted((a for a in assessments if isinstance(a, dict) and isinstance(a.get('created_at'), (int, float))),
+                   key=lambda a: a['created_at'])[-limit:]
+
+    risk_trend = []
+    for a in dated:
+        score = compute_composite(a)
+        created = datetime.fromtimestamp(a['created_at'] / 1000)
+        risk_trend.append({
+            'score': score,
+            'risk_label': risk_band(score)[1],
+            'date': created.strftime('%d %b'),
+            'time': created.strftime('%I:%M %p'),
+            'full_date': created.strftime('%d %b %Y, %I:%M %p')
+        })
+
+    # Only show the time under a date label when that day has more than one assessment
+    day_counts = {}
+    for p in risk_trend:
+        day_counts[p['date']] = day_counts.get(p['date'], 0) + 1
+    for p in risk_trend:
+        if day_counts[p['date']] == 1:
+            p['time'] = ''
+    return risk_trend
+
+
 def build_results_context(assessment):
     """Template variables for results.html, from a session or stored assessment."""
     phq = assessment.get('phq_score', 0)
@@ -309,28 +338,7 @@ def patient_dashboard():
 
     # Assessment keys are millisecond timestamps, so key order is chronological
     recent = db.reference(f'users/{uid}/assessments').order_by_key().limit_to_last(7).get() or {}
-    recent = [a for a in recent.values() if isinstance(a.get('created_at'), (int, float))]
-    recent.sort(key=lambda a: a['created_at'])
-
-    risk_trend = []
-    for a in recent:
-        score = compute_composite(a)
-        created = datetime.fromtimestamp(a['created_at'] / 1000)
-        risk_trend.append({
-            'score': score,
-            'risk_label': risk_band(score)[1],
-            'date': created.strftime('%d %b'),
-            'time': created.strftime('%I:%M %p'),
-            'full_date': created.strftime('%d %b %Y, %I:%M %p')
-        })
-
-    # Only show the time under a date label when that day has more than one assessment
-    day_counts = {}
-    for p in risk_trend:
-        day_counts[p['date']] = day_counts.get(p['date'], 0) + 1
-    for p in risk_trend:
-        if day_counts[p['date']] == 1:
-            p['time'] = ''
+    risk_trend = build_risk_trend(recent.values(), 7)
 
     wristband_order = db.reference(f'wristband_orders/{uid}').get()
 
@@ -782,7 +790,6 @@ def doctor_patients():
     if risk not in RISK_LEVELS:
         risk = 'all'
     query = request.args.get('q', '').strip()
-    selected_id = request.args.get('id', '')
 
     shown = patients
     if risk != 'all':
@@ -797,7 +804,124 @@ def doctor_patients():
                            user_name=user_name, user_initials=user_initials,
                            patients=shown, total_patients=len(patients),
                            counts=counts, unassessed_count=sum(1 for p in patients if p['risk_level'] is None),
-                           risk=risk, query=query, selected_id=selected_id, risk_levels=RISK_LEVELS)
+                           risk=risk, query=query, risk_levels=RISK_LEVELS)
+
+
+def get_active_patient(patient_uid):
+    """The users/{uid} record if it is an active patient, else None."""
+    import re
+    # Firebase Auth UIDs are URL-safe; reject anything that could alter the database path
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', patient_uid or ''):
+        return None
+    user = db.reference(f'users/{patient_uid}').get()
+    if not isinstance(user, dict) or user.get('role') != 'patient' or user.get('status') != 'active':
+        return None
+    return user
+
+
+@app.route('/doctor/patients/<patient_uid>')
+@login_required
+@role_required('doctor')
+def doctor_patient_detail(patient_uid):
+    from datetime import date
+    user_name, user_initials = doctor_identity()
+    patient = get_active_patient(patient_uid)
+    if not patient:
+        flash('That patient could not be found or is no longer active.', 'error')
+        return redirect(url_for('doctor_patients'))
+
+    name = patient.get('name') or 'Unnamed patient'
+    assessments = {k: v for k, v in (patient.get('assessments') or {}).items() if isinstance(v, dict)}
+    by_newest = sorted(assessments.items(),
+                       key=lambda kv: kv[1].get('created_at') if isinstance(kv[1].get('created_at'), (int, float)) else 0,
+                       reverse=True)
+    latest = assessments.get(patient.get('latest_assessment_id')) or (by_newest[0][1] if by_newest else None)
+
+    header = {'name': name, 'email': patient.get('email', ''), 'phone': patient.get('phone', ''),
+              'initials': ''.join(w[0].upper() for w in name.split()[:2]) or 'P',
+              'member_since': format_timestamp(patient.get('created_at'), '%d %b %Y'),
+              'composite_score': None}
+    current = None
+    if latest:
+        score = compute_composite(latest)
+        risk_level, risk_label, risk_color = risk_band(score)
+        header.update(composite_score=score, risk_level=risk_level, risk_label=risk_label, risk_color=risk_color)
+        emotions = latest.get('facial_emotions', {}) or {}
+        current = {
+            'date': format_timestamp(latest.get('created_at'), '%d %b %Y, %I:%M %p'),
+            'phq': (latest.get('phq_score', 0),) + phq_severity(latest.get('phq_score', 0)),
+            'gad': (latest.get('gad_score', 0),) + gad_severity(latest.get('gad_score', 0)),
+            'pss': (latest.get('pss_score', 0),) + pss_severity(latest.get('pss_score', 0)),
+            'facial_dominant': max(emotions, key=emotions.get).capitalize() if emotions else None,
+        }
+
+    history = []
+    for assessment_id, a in by_newest:
+        score = compute_composite(a)
+        _, risk_label, risk_color = risk_band(score)
+        emotions = a.get('facial_emotions', {}) or {}
+        history.append({
+            'id': assessment_id,
+            'date': format_timestamp(a.get('created_at'), '%d %b %Y'),
+            'time': format_timestamp(a.get('created_at'), '%I:%M %p'),
+            'composite_score': score, 'risk_label': risk_label, 'risk_color': risk_color,
+            'phq': (a.get('phq_score', 0),) + phq_severity(a.get('phq_score', 0)),
+            'gad': (a.get('gad_score', 0),) + gad_severity(a.get('gad_score', 0)),
+            'pss': (a.get('pss_score', 0),) + pss_severity(a.get('pss_score', 0)),
+            'facial_dominant': max(emotions, key=emotions.get).capitalize() if emotions else '-',
+            'viewable': assessment_id.isdigit(),
+        })
+
+    # Journal keys are millisecond timestamps, so key order is chronological
+    journal_raw = patient.get('journal') or {}
+    journal = [{'mood': e.get('mood', ''), 'text': e.get('text', ''),
+                'date': format_timestamp(e.get('created_at'), '%d %b %Y, %I:%M %p')}
+               for _, e in sorted(journal_raw.items(), reverse=True)[:5] if isinstance(e, dict)]
+
+    order = db.reference(f'wristband_orders/{patient_uid}').get()
+    if isinstance(order, dict):
+        status = (order.get('status') or 'pending').lower()
+        order = dict(order, status=status if status in WRISTBAND_STATUSES else 'pending',
+                     order_date=format_timestamp(order.get('created_at'), '%d %b %Y'))
+    else:
+        order = None
+
+    profile = dict(patient.get('profile') or {})
+    if profile.get('dob'):
+        try:
+            dob = date.fromisoformat(profile['dob'])
+            today = date.today()
+            profile['dob_display'] = dob.strftime('%d %b %Y')
+            profile['age'] = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        except ValueError:
+            profile['dob_display'] = profile['dob']
+
+    return render_template('doctor_patient_detail.html',
+                           user_name=user_name, user_initials=user_initials,
+                           patient_uid=patient_uid, patient=header, current=current,
+                           risk_trend=build_risk_trend(assessments.values(), 10),
+                           history=history, journal=journal, journal_total=len(journal_raw),
+                           order=order, statuses=WRISTBAND_STATUSES, profile=profile)
+
+
+@app.route('/doctor/patients/<patient_uid>/assessments/<assessment_id>')
+@login_required
+@role_required('doctor')
+def doctor_assessment_detail(patient_uid, assessment_id):
+    patient = get_active_patient(patient_uid)
+    if not patient:
+        flash('That patient could not be found or is no longer active.', 'error')
+        return redirect(url_for('doctor_patients'))
+    assessment = (patient.get('assessments') or {}).get(assessment_id) if assessment_id.isdigit() else None
+    if not isinstance(assessment, dict):
+        flash('That assessment could not be found.', 'error')
+        return redirect(url_for('doctor_patient_detail', patient_uid=patient_uid))
+
+    return render_template('results.html', read_only=True, doctor_view=True,
+                           patient_name=patient.get('name') or 'Patient',
+                           back_url=url_for('doctor_patient_detail', patient_uid=patient_uid),
+                           assessment_date=format_timestamp(assessment.get('created_at'), '%d %b %Y, %I:%M %p'),
+                           **build_results_context(assessment))
 
 
 @app.route('/doctor/dashboard')

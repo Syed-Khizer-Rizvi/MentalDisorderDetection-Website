@@ -326,6 +326,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 @media (max-width: 720px) {
   .trend-plot { height: 160px; }
   .trend-dates span { font-size: 10px; }
+  .trend-dates .trend-date-minor { display: none; }
 }
 
 /* ========== ASSESSMENT HISTORY (PATIENT) ========== */
@@ -600,7 +601,6 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   background: none; border: none; padding-top: 4px; padding-bottom: 4px;
   font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px;
 }
-.pt-row-selected { border-color: #0F7A5F; box-shadow: 0 0 0 3px #D1FAE5; background: #F0FDF9; }
 .pt-patient { display: flex; flex-direction: row; align-items: center; gap: 12px; min-width: 0; }
 .pt-patient-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pt-patient-text strong { font-size: 14px; font-weight: 700; color: #0F172A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -632,6 +632,66 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .pt-stats .stat-card { padding: 14px; gap: 10px; }
   .pt-stats .stat-icon { width: 36px; height: 36px; font-size: 16px; }
   .pt-stats .stat-value { font-size: 20px; }
+}
+
+/* ========== PATIENT DETAIL (DOCTOR) ========== */
+.pd-toolbar { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pd-back { font-size: 14px; font-weight: 600; color: #0F7A5F; }
+.pd-back:hover { text-decoration: underline; }
+.pd-actions { display: flex; flex-direction: row; gap: 10px; flex-wrap: wrap; }
+.pd-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 10px;
+  font-size: 14px; font-weight: 700; transition: all 0.2s;
+}
+.pd-btn-alert { background: #DC2626; color: #FFFFFF; }
+.pd-btn-alert:hover { background: #B91C1C; }
+.pd-btn-note { background: #FFFFFF; color: #0F7A5F; border: 1px solid #0F7A5F; }
+.pd-btn-note:hover { background: #0F7A5F; color: #FFFFFF; }
+
+.pd-header { display: flex; flex-direction: row; align-items: center; gap: 20px; }
+.pd-header-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.pd-name-row { display: flex; flex-direction: row; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pd-name-row h1 { font-size: 22px; font-weight: 800; color: #0F172A; word-break: break-word; }
+.pd-contact { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; color: #334155; }
+.pd-contact li { display: flex; flex-direction: column; gap: 1px; min-width: 0; word-break: break-all; }
+.pd-contact span {
+  font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.pd-composite {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  padding-left: 24px; border-left: 1px solid #E2E8F0;
+}
+
+.pd-status { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+.pd-stat { padding: 16px 18px; }
+.pd-stat-wide { grid-column: span 4; }
+.pd-stat-text { font-size: 18px; }
+.pd-status-note { margin-top: -12px; font-size: 12px; color: #94A3B8; }
+
+.pd-table-wrap { overflow-x: auto; margin-top: 10px; }
+.pd-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px; }
+.pd-table th {
+  text-align: left; padding: 8px 10px; border-bottom: 1px solid #E2E8F0;
+  font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.pd-table td { padding: 10px; border-bottom: 1px solid #F1F5F9; color: #334155; vertical-align: middle; }
+.pd-table td strong { display: block; font-size: 14px; color: #0F172A; }
+.pd-table td small { display: block; font-size: 11px; color: #94A3B8; font-weight: 600; }
+.pd-table tbody tr:hover { background: #F8FAFC; }
+.pd-score { font-size: 16px; font-weight: 800; margin-right: 4px; }
+.pd-table-action { text-align: right; }
+.act-entries-list { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.pd-order-details { margin-top: 18px; }
+@media (max-width: 1100px) {
+  .pd-status { grid-template-columns: repeat(3, 1fr); }
+  .pd-stat-wide { grid-column: span 2; }
+}
+@media (max-width: 720px) {
+  .pd-header { flex-direction: column; align-items: flex-start; }
+  .pd-composite { align-items: flex-start; padding: 12px 0 0; border-left: none; border-top: 1px solid #E2E8F0; width: 100%; }
+  .pd-status { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pd-stat-wide { grid-column: 1 / -1; }
+  .pd-actions, .pd-btn { flex: 1 1 auto; justify-content: center; }
 }
 
 /* ========== RISK BARS (DOCTOR) ========== */
