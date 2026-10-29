@@ -699,6 +699,33 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .pd-actions, .pd-btn { flex: 1 1 auto; justify-content: center; }
 }
 
+/* ========== DOCTOR PROFILE ========== */
+.dp-layout { display: grid; grid-template-columns: minmax(260px, 1fr) 2fr; gap: 18px; align-items: start; }
+.dp-card { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+.dp-avatar { width: 96px; height: 96px; font-size: 34px; margin-bottom: 6px; }
+.dp-name { font-size: 20px; font-weight: 800; color: #0F172A; word-break: break-word; }
+.dp-specialization { font-size: 14px; color: #475569; }
+.dp-approved { background: #D1FAE5; color: #047857; }
+.dp-pending { background: #FEF3C7; color: #B45309; }
+.dp-readonly { width: 100%; text-align: left; margin-top: 16px; padding-top: 16px; border-top: 1px solid #E2E8F0; }
+.dp-readonly dd { word-break: break-all; }
+.dp-note { font-size: 11px; color: #94A3B8; margin-top: 6px; }
+.field-error { color: #B91C1C !important; font-weight: 600; }
+.form-field input[aria-invalid="true"], .form-field textarea[aria-invalid="true"] {
+  border-color: #DC2626; box-shadow: 0 0 0 3px #FEE2E2;
+}
+.dp-actions { gap: 12px; }
+.dp-cancel {
+  padding: 12px 24px; border-radius: 10px; border: 1px solid #E2E8F0; background: #FFFFFF;
+  font-size: 14px; font-weight: 700; color: #475569; transition: all 0.2s;
+}
+.dp-cancel:hover { background: #F1F5F9; }
+@media (max-width: 720px) {
+  .dp-layout { grid-template-columns: 1fr; }
+  .dp-actions { flex-direction: column-reverse; }
+  .dp-cancel { width: 100%; }
+}
+
 /* ========== RISK BARS (DOCTOR) ========== */
 .risk-bars { display: flex; flex-direction: column; gap: 18px; padding: 16px 0 6px; }
 .risk-bar-row { display: flex; flex-direction: row; align-items: center; gap: 12px; }

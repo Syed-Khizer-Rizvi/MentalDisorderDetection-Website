@@ -935,6 +935,105 @@ def doctor_assessment_detail(patient_uid, assessment_id):
                            **build_results_context(assessment))
 
 
+DOCTOR_PROFILE_FIELDS = ['specialization', 'license_number', 'affiliation', 'years_experience', 'bio']
+DOCTOR_EDITABLE_FIELDS = ['name', 'phone'] + DOCTOR_PROFILE_FIELDS
+SPECIALIZATION_SUGGESTIONS = ['Clinical Psychology', 'Psychiatry', 'Child & Adolescent Psychiatry',
+                              'Counselling Psychology', 'Neuropsychology', 'General Practice']
+
+
+def validate_doctor_field(field, raw):
+    """(clean_value, error) for one editable field; '' / None means clear the field."""
+    import re
+    value = '' if raw is None else str(raw).strip()
+    if field == 'name':
+        if not value:
+            return None, 'Full name is required.'
+        return (value, None) if len(value) <= 100 else (None, 'Name must be 100 characters or fewer.')
+    if not value:
+        return None, None  # optional field cleared
+    if field == 'phone':
+        # Accept common formatting ("+92 300 1234567", "0300-1234567") and store digits only
+        digits = re.sub(r'[\s\-+]', '', value)
+        return (digits, None) if re.fullmatch(r'\d{10,15}', digits) else (None, 'Phone must contain 10-15 digits.')
+    if field == 'license_number':
+        # PMDC formats use separators, e.g. "PMDC-12345" or "PMDC/RMP/12345"
+        if len(value) > 50 or not re.fullmatch(r'[A-Za-z0-9/-]+', value) or not re.search(r'[A-Za-z0-9]', value):
+            return None, 'License number can use letters, numbers, hyphens and slashes, up to 50 characters.'
+        return value, None
+    if field == 'years_experience':
+        if not re.fullmatch(r'\d{1,2}', value) or int(value) > 70:
+            return None, 'Years of experience must be a whole number from 0 to 70.'
+        return int(value), None
+    if field == 'bio':
+        return (value, None) if len(value) <= 500 else (None, 'Bio must be 500 characters or fewer.')
+    if field in ('specialization', 'affiliation'):
+        return (value, None) if len(value) <= 100 else (None, 'Must be 100 characters or fewer.')
+    return None, 'Unknown field.'
+
+
+@app.route('/doctor/profile')
+@login_required
+@role_required('doctor')
+def doctor_profile():
+    user_name, user_initials = doctor_identity()
+    uid = session['user']['uid']
+    user = db.reference(f'users/{uid}').get() or {}
+    profile = user.get('profile') or {}
+
+    values = {'name': user.get('name') or session['user'].get('name', ''), 'phone': user.get('phone', '')}
+    values.update({f: profile.get(f, '') for f in DOCTOR_PROFILE_FIELDS})
+
+    return render_template('doctor_profile.html',
+                           user_name=user_name, user_initials=user_initials,
+                           values=values,
+                           email=session['user'].get('email') or user.get('email', ''),
+                           member_since=format_timestamp(user.get('created_at'), '%d %b %Y'),
+                           status=(user.get('status') or session['user'].get('status') or '').lower(),
+                           specializations=SPECIALIZATION_SUGGESTIONS)
+
+
+@app.route('/api/update-doctor-profile', methods=['POST'])
+@login_required
+@role_required('doctor')
+def update_doctor_profile():
+    try:
+        data = request.get_json() or {}
+        uid = session['user']['uid']
+
+        # Partial update: only fields present in the request are validated and written
+        fields = [f for f in DOCTOR_EDITABLE_FIELDS if f in data]
+        unknown = [k for k in data if k not in DOCTOR_EDITABLE_FIELDS]
+        if unknown:
+            return jsonify({'success': False, 'error': 'Unknown field(s): ' + ', '.join(sorted(unknown))}), 400
+        if not fields:
+            return jsonify({'success': False, 'error': 'No changes to save.'}), 400
+
+        clean, errors = {}, {}
+        for f in fields:
+            value, error = validate_doctor_field(f, data[f])
+            if error:
+                errors[f] = error
+            else:
+                clean[f] = value
+        if errors:
+            return jsonify({'success': False, 'error': 'Please fix the highlighted fields.', 'errors': errors}), 400
+
+        # name/phone stay at the top level where registration and login read them; a None value
+        # in a multi-path update deletes that field
+        db.reference(f'users/{uid}').update(
+            {(f if f in ('name', 'phone') else f'profile/{f}'): v for f, v in clean.items()})
+
+        if 'name' in clean:
+            session['user']['name'] = clean['name']
+            session.modified = True
+        user_name, user_initials = doctor_identity()
+        return jsonify({'success': True, 'message': 'Profile updated successfully',
+                        'saved': {f: '' if v is None else v for f, v in clean.items()},
+                        'name': user_name, 'initials': user_initials})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
 @app.route('/doctor/dashboard')
 @login_required
 @role_required('doctor')

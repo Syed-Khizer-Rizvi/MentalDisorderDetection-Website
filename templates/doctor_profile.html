@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Profile | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="{{ url_for('doctor_profile') }}" class="nav-item active"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar" data-initials>{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. <span data-name>{{ user_name }}</span></span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="dp-layout">
+      {# Left: identity and read-only account details #}
+      <aside class="chart-panel dp-card">
+        <div class="profile-avatar dp-avatar" data-initials>{{ user_initials }}</div>
+        <h1 class="dp-name">Dr. <span data-name>{{ user_name }}</span></h1>
+        <p class="dp-specialization" id="specializationLine" {{ 'hidden' if not values.specialization }}>{{ values.specialization }}</p>
+        {% if status == 'approved' %}
+        <span class="risk-badge dp-approved">✓ Approved</span>
+        {% elif status %}
+        <span class="risk-badge dp-pending">{{ status | capitalize }}</span>
+        {% endif %}
+        <dl class="wb-details wb-details-single dp-readonly">
+          <div><dt>Email</dt><dd>{{ email or '-' }}</dd></div>
+          <div><dt>Role</dt><dd>Doctor</dd></div>
+          <div><dt>Member since</dt><dd>{{ member_since }}</dd></div>
+          <div><dt>Approval status</dt><dd>{{ 'Approved' if status == 'approved' else (status | capitalize) or '-' }}</dd></div>
+        </dl>
+        <p class="dp-note">Email is linked to your login and can't be changed here.</p>
+      </aside>
+
+      {# Right: editable professional details #}
+      <form class="chart-panel profile-form" id="doctorProfileForm" novalidate>
+        <div class="panel-head"><h3>Professional Details</h3><span class="panel-sub">Fields marked * are required</span></div>
+        <div class="profile-grid">
+          <div class="form-field">
+            <label for="name">Full name *</label>
+            <input type="text" id="name" name="name" value="{{ values.name }}" maxlength="100" autocomplete="name" aria-describedby="err-name">
+            <small class="field-error" id="err-name" hidden></small>
+          </div>
+          <div class="form-field">
+            <label for="phone">Phone number</label>
+            <input type="tel" id="phone" name="phone" value="{{ values.phone }}" maxlength="25" placeholder="+92 300 1234567" aria-describedby="hint-phone err-phone">
+            <small id="hint-phone">10-15 digits; spaces, dashes and + are fine</small>
+            <small class="field-error" id="err-phone" hidden></small>
+          </div>
+          <div class="form-field">
+            <label for="specialization">Specialization</label>
+            <input type="text" id="specialization" name="specialization" value="{{ values.specialization }}" maxlength="100" list="specializationList" placeholder="e.g. Clinical Psychology" aria-describedby="err-specialization">
+            <datalist id="specializationList">{% for s in specializations %}<option value="{{ s }}">{% endfor %}</datalist>
+            <small class="field-error" id="err-specialization" hidden></small>
+          </div>
+          <div class="form-field">
+            <label for="license_number">License number</label>
+            <input type="text" id="license_number" name="license_number" value="{{ values.license_number }}" maxlength="50" placeholder="e.g. PMDC-12345" aria-describedby="hint-license err-license_number">
+            <small id="hint-license">Letters, numbers, hyphens (-) and slashes (/)</small>
+            <small class="field-error" id="err-license_number" hidden></small>
+          </div>
+          <div class="form-field">
+            <label for="affiliation">Hospital / clinic affiliation</label>
+            <input type="text" id="affiliation" name="affiliation" value="{{ values.affiliation }}" maxlength="100" placeholder="e.g. Aga Khan University Hospital" aria-describedby="err-affiliation">
+            <small class="field-error" id="err-affiliation" hidden></small>
+          </div>
+          <div class="form-field">
+            <label for="years_experience">Years of experience</label>
+            <input type="number" id="years_experience" name="years_experience" value="{{ values.years_experience }}" min="0" max="70" step="1" inputmode="numeric" aria-describedby="err-years_experience">
+            <small class="field-error" id="err-years_experience" hidden></small>
+          </div>
+          <div class="form-field form-field-full">
+            <label for="bio">Short bio</label>
+            <textarea id="bio" name="bio" rows="4" maxlength="500" placeholder="A few lines about your practice and approach" aria-describedby="bioCount err-bio">{{ values.bio }}</textarea>
+            <small id="bioCount"><span id="bioLength">{{ values.bio | length }}</span>/500</small>
+            <small class="field-error" id="err-bio" hidden></small>
+          </div>
+        </div>
+
+        <div class="profile-actions dp-actions">
+          <button type="button" class="dp-cancel" id="cancelBtn">Cancel</button>
+          <button type="submit" class="profile-save" id="saveBtn">Save Changes</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+  const FIELDS = ['name', 'phone', 'specialization', 'license_number', 'affiliation', 'years_experience', 'bio'];
+  // Last saved values; the form compares against these so only changed fields are sent
+  let saved = {{ values | tojson }};
+  FIELDS.forEach(f => { saved[f] = saved[f] == null ? '' : String(saved[f]); });
+
+  const form = document.getElementById('doctorProfileForm');
+  const saveBtn = document.getElementById('saveBtn');
+  const toast = document.getElementById('toast');
+  const bio = document.getElementById('bio');
+  const bioLength = document.getElementById('bioLength');
+  let toastTimer;
+
+  function showToast(msg, success) {
+    toast.textContent = (success ? '✓ ' : '⚠ ') + msg;
+    toast.className = 'toast ' + (success ? 'toast-success' : 'toast-error');
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 3500);
+  }
+
+  function clearErrors() {
+    FIELDS.forEach(f => {
+      const err = document.getElementById('err-' + f);
+      err.hidden = true;
+      err.textContent = '';
+      form.elements[f].removeAttribute('aria-invalid');
+    });
+  }
+
+  function showErrors(errors) {
+    let first = null;
+    Object.entries(errors).forEach(([f, msg]) => {
+      const err = document.getElementById('err-' + f);
+      if (!err) return;
+      err.textContent = msg;
+      err.hidden = false;
+      form.elements[f].setAttribute('aria-invalid', 'true');
+      first = first || form.elements[f];
+    });
+    if (first) first.focus();
+  }
+
+  function resetForm() {
+    FIELDS.forEach(f => { form.elements[f].value = saved[f]; });
+    bioLength.textContent = bio.value.length;
+    clearErrors();
+  }
+
+  bio.addEventListener('input', () => { bioLength.textContent = bio.value.length; });
+  document.getElementById('cancelBtn').addEventListener('click', resetForm);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearErrors();
+    const changes = {};
+    FIELDS.forEach(f => {
+      const value = form.elements[f].value.trim();
+      if (value !== saved[f].trim()) changes[f] = value;
+    });
+    if (!Object.keys(changes).length) {
+      showToast('No changes to save.', true);
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    try {
+      const res = await fetch('/api/update-doctor-profile', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(changes)
+      });
+      const data = await res.json();
+      if (data.success) {
+        Object.entries(data.saved).forEach(([f, v]) => { saved[f] = String(v); form.elements[f].value = saved[f]; });
+        document.querySelectorAll('[data-name]').forEach(el => el.textContent = data.name);
+        document.querySelectorAll('[data-initials]').forEach(el => el.textContent = data.initials);
+        const line = document.getElementById('specializationLine');
+        line.textContent = saved.specialization;
+        line.hidden = !saved.specialization;
+        showToast(data.message, true);
+      } else {
+        if (data.errors) showErrors(data.errors);
+        showToast(data.error || 'Could not save profile.', false);
+      }
+    } catch (err) {
+      showToast(err.message || 'Network error, please try again.', false);
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Changes';
+    }
+  });
+</script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>
