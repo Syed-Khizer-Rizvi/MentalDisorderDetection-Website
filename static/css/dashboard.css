@@ -726,6 +726,55 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .dp-cancel { width: 100%; }
 }
 
+/* ========== CLINICAL NOTES (DOCTOR) ========== */
+.cn-head-actions { display: flex; flex-direction: row; align-items: center; gap: 12px; }
+.cn-add { padding: 8px 14px; font-size: 13px; }
+.cn-form {
+  margin: 8px 0 18px; padding: 18px; border-radius: 12px;
+  background: #F8FAFC; border: 1px solid #E2E8F0;
+}
+.cn-form h4 { font-size: 15px; font-weight: 700; color: #0F172A; }
+.cn-private small { font-weight: 500; color: #64748B; }
+.cn-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.cn-note {
+  display: block; padding: 14px 16px; border-radius: 10px;
+  background: #F8FAFC; border: 1px solid #E2E8F0; scroll-margin-top: 80px;
+}
+.cn-note:target { border-color: #0F7A5F; box-shadow: 0 0 0 3px #D1FAE5; background: #F0FDF9; }
+.cn-note-link { transition: border-color 0.2s, box-shadow 0.2s; }
+.cn-note-link:hover { border-color: #0F7A5F; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08); }
+.cn-note-head { display: flex; flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.cn-cat { padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+.cn-cat-observation { background: #DBEAFE; color: #1D4ED8; }
+.cn-cat-diagnosis { background: #FEE2E2; color: #B91C1C; }
+.cn-cat-treatment_plan { background: #D1FAE5; color: #047857; }
+.cn-cat-follow_up { background: #FEF3C7; color: #B45309; }
+.cn-cat-medication { background: #EDE9FE; color: #6D28D9; }
+.cn-cat-other { background: #F1F5F9; color: #475569; }
+.cn-private-label { font-size: 12px; font-weight: 600; color: #64748B; }
+.cn-time { margin-left: auto; font-size: 12px; color: #94A3B8; }
+.cn-title { font-size: 15px; font-weight: 700; color: #0F172A; margin-bottom: 4px; word-break: break-word; }
+.cn-body { font-size: 14px; color: #334155; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.cn-more { margin-left: 4px; font-size: 13px; font-weight: 700; color: #0F7A5F; white-space: nowrap; }
+.cn-more:hover { text-decoration: underline; }
+.cn-body-clamp { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cn-meta {
+  display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px; font-size: 12px; color: #64748B;
+}
+.cn-actions { display: flex; flex-direction: row; gap: 4px; }
+.cn-link { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #0F7A5F; }
+.cn-link:hover { background: #D1FAE5; }
+.cn-link-danger { color: #B91C1C; }
+.cn-link-danger:hover { background: #FEE2E2; }
+.cn-results { margin-top: 14px; font-size: 12px; color: #94A3B8; }
+.cn-group .panel-head h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .cn-head-actions .panel-sub { display: none; }
+  .cn-meta { flex-direction: column; align-items: flex-start; }
+  .cn-time { margin-left: 0; width: 100%; }
+}
+
 /* ========== RISK BARS (DOCTOR) ========== */
 .risk-bars { display: flex; flex-direction: column; gap: 18px; padding: 16px 0 6px; }
 .risk-bar-row { display: flex; flex-direction: row; align-items: center; gap: 12px; }

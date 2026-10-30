@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clinical Notes | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
+      <a href="{{ url_for('doctor_notes') }}" class="nav-item active"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="welcome-banner">
+      <div class="welcome-text">
+        <h1>Clinical Notes</h1>
+        <p>{{ total_notes }} note{{ 's' if total_notes != 1 }} you've written across your patients</p>
+      </div>
+    </section>
+
+    <section class="chart-panel">
+      <form class="pt-filters" method="get" action="{{ url_for('doctor_notes') }}" role="search">
+        <div class="form-field pt-search">
+          <label for="q">Search</label>
+          <input type="search" id="q" name="q" value="{{ query }}" placeholder="Patient name or note text">
+        </div>
+        <div class="form-field pt-risk">
+          <label for="category">Category</label>
+          <select id="category" name="category">
+            <option value="all" {{ 'selected' if category == 'all' }}>All categories</option>
+            {% for value, label in categories.items() %}
+            <option value="{{ value }}" {{ 'selected' if category == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="profile-save pt-apply">Apply</button>
+        {% if query or category != 'all' %}<a href="{{ url_for('doctor_notes') }}" class="pt-clear">Clear</a>{% endif %}
+      </form>
+      {% if total_notes %}
+      <p class="cn-results">Showing {{ shown_notes }} of {{ total_notes }} note{{ 's' if total_notes != 1 }}{% if groups %} · {{ groups|length }} patient{{ 's' if groups|length != 1 }}{% endif %}</p>
+      {% endif %}
+    </section>
+
+    {% if groups %}
+      {% for g in groups %}
+      <section class="chart-panel cn-group">
+        <div class="panel-head">
+          <h3>{{ g.name }}{% if not g.active %} <span class="risk-badge pt-badge-none">Inactive</span>{% endif %}</h3>
+          {% if g.active %}<a href="{{ url_for('doctor_patient_detail', patient_uid=g.uid) }}#clinical-notes" class="panel-link">Open patient →</a>{% endif %}
+        </div>
+        <div class="cn-list">
+          {% for n in g.notes %}
+          {% if g.active %}<a href="{{ url_for('doctor_patient_detail', patient_uid=g.uid) }}#note-{{ n.id }}" class="cn-note cn-note-link">{% else %}<div class="cn-note">{% endif %}
+            <div class="cn-note-head">
+              <span class="cn-cat cn-cat-{{ n.category }}">{{ n.category_label }}</span>
+              {% if n.is_private %}<span class="cn-private-label">🔒 Private</span>{% endif %}
+              <time class="cn-time" title="{{ n.created_full }}">{{ n.time_ago }}{% if n.edited %} • edited{% endif %}</time>
+            </div>
+            {% if n.title %}<h4 class="cn-title">{{ n.title }}</h4>{% endif %}
+            <p class="cn-body cn-body-clamp">{{ n.body }}</p>
+          {% if g.active %}</a>{% else %}</div>{% endif %}
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+    {% else %}
+    <section class="chart-panel">
+      {% if total_notes %}
+      <p class="trend-empty">No notes match these filters. <a href="{{ url_for('doctor_notes') }}" class="panel-link">Clear filters</a></p>
+      {% else %}
+      <p class="trend-empty">You haven't added any clinical notes yet.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

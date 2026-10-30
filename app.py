@@ -912,7 +912,9 @@ def doctor_patient_detail(patient_uid):
                            patient_uid=patient_uid, patient=header, current=current,
                            risk_trend=build_risk_trend(assessments.values(), 10),
                            history=history, journal=journal, journal_total=len(shared),
-                           wristband=wristband)
+                           wristband=wristband,
+                           clinical_notes=visible_clinical_notes(patient_uid, session['user']['uid']),
+                           note_categories=NOTE_CATEGORIES, note_title_max=NOTE_TITLE_MAX, note_body_max=NOTE_BODY_MAX)
 
 
 @app.route('/doctor/patients/<patient_uid>/assessments/<assessment_id>')
@@ -933,6 +935,195 @@ def doctor_assessment_detail(patient_uid, assessment_id):
                            back_url=url_for('doctor_patient_detail', patient_uid=patient_uid),
                            assessment_date=format_timestamp(assessment.get('created_at'), '%d %b %Y, %I:%M %p'),
                            **build_results_context(assessment))
+
+
+NOTE_CATEGORIES = {
+    'observation': 'Observation', 'diagnosis': 'Diagnosis', 'treatment_plan': 'Treatment Plan',
+    'follow_up': 'Follow-up', 'medication': 'Medication', 'other': 'Other',
+}
+NOTE_VISIBILITIES = ('all_doctors', 'private')
+NOTE_TITLE_MAX, NOTE_BODY_MAX = 100, 2000
+
+
+def is_safe_key(value):
+    """Firebase UIDs and push IDs are URL-safe; anything else could alter a database path."""
+    import re
+    return bool(re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value or ''))
+
+
+def validate_note(data):
+    """(clean_fields, errors) for a clinical note request body."""
+    title = str(data.get('title') or '').strip()
+    body = str(data.get('body') or '').strip()
+    category = str(data.get('category') or '').strip()
+    visibility = str(data.get('visibility') or '').strip()
+
+    errors = {}
+    if not body:
+        errors['body'] = 'Note text is required.'
+    elif len(body) > NOTE_BODY_MAX:
+        errors['body'] = f'Note text must be {NOTE_BODY_MAX} characters or fewer.'
+    if len(title) > NOTE_TITLE_MAX:
+        errors['title'] = f'Title must be {NOTE_TITLE_MAX} characters or fewer.'
+    if category not in NOTE_CATEGORIES:
+        errors['category'] = 'Choose a valid category.'
+    if visibility not in NOTE_VISIBILITIES:
+        errors['visibility'] = 'Visibility must be all_doctors or private.'
+    # An empty title is stored as None so a multi-path update removes it
+    return {'title': title or None, 'body': body, 'category': category, 'visibility': visibility}, errors
+
+
+def note_for_display(note_id, note, viewer_uid):
+    created = note.get('created_at') if isinstance(note.get('created_at'), (int, float)) else 0
+    updated = note.get('updated_at') if isinstance(note.get('updated_at'), (int, float)) else created
+    category = note.get('category') if note.get('category') in NOTE_CATEGORIES else 'other'
+    return {
+        'id': note_id, 'title': note.get('title') or '', 'body': note.get('body') or '',
+        'category': category, 'category_label': NOTE_CATEGORIES[category],
+        'visibility': note.get('visibility', 'all_doctors'),
+        'is_private': note.get('visibility') == 'private',
+        'is_mine': note.get('doctor_uid') == viewer_uid,
+        'doctor_name': note.get('doctor_name') or 'Unknown doctor',
+        'created_at': created, 'time_ago': time_ago(created) if created else '-',
+        'created_full': format_timestamp(created, '%d %b %Y, %I:%M %p') if created else '-',
+        'edited': bool(updated and created and updated - created > 60000),
+    }
+
+
+def clinical_notes_ref(patient_uid, note_id=None):
+    """Clinical notes live at top-level clinical_notes/{patient_uid}/{note_id}, outside the
+    patient's own users/{uid} record, so they are only reached through this server
+    (Admin SDK) and never through a patient's read access to their own user node."""
+    return db.reference(f'clinical_notes/{patient_uid}' + (f'/{note_id}' if note_id else ''))
+
+
+def visible_clinical_notes(patient_uid, viewer_uid):
+    """Notes this doctor may see on a patient: everyone's shared notes plus their own private
+    ones. Other doctors' private notes are dropped here, before anything reaches a template."""
+    notes = []
+    for note_id, n in (clinical_notes_ref(patient_uid).get() or {}).items():
+        if not isinstance(n, dict):
+            continue
+        if n.get('visibility') == 'private' and n.get('doctor_uid') != viewer_uid:
+            continue
+        notes.append(note_for_display(note_id, n, viewer_uid))
+    return sorted(notes, key=lambda n: n['created_at'], reverse=True)
+
+
+def note_json_error(message, status, errors=None):
+    body = {'success': False, 'error': message}
+    if errors:
+        body['errors'] = errors
+    return jsonify(body), status
+
+
+@app.route('/api/patients/<patient_uid>/clinical-notes', methods=['POST'])
+@login_required
+@role_required('doctor')
+def add_clinical_note(patient_uid):
+    if not get_active_patient(patient_uid):
+        return note_json_error('Patient not found or no longer active.', 404)
+    fields, errors = validate_note(request.get_json(silent=True) or {})
+    if errors:
+        return note_json_error('Please fix the highlighted fields.', 400, errors)
+
+    doctor_name, _ = doctor_identity()
+    note = {k: v for k, v in fields.items() if v is not None}
+    note.update(doctor_uid=session['user']['uid'], doctor_name=doctor_name,
+                created_at={'.sv': 'timestamp'}, updated_at={'.sv': 'timestamp'})
+    note_id = clinical_notes_ref(patient_uid).push(note).key
+
+    flash('Clinical note added.', 'success')
+    return jsonify({'success': True, 'note_id': note_id,
+                    'redirect': url_for('doctor_patient_detail', patient_uid=patient_uid) + f'#note-{note_id}'})
+
+
+def load_own_note(patient_uid, note_id):
+    """(reference, note, error_response) for a note the current doctor wrote."""
+    if not is_safe_key(patient_uid) or not is_safe_key(note_id):
+        return None, None, note_json_error('Note not found.', 404)
+    ref = clinical_notes_ref(patient_uid, note_id)
+    note = ref.get()
+    if not isinstance(note, dict):
+        return None, None, note_json_error('Note not found.', 404)
+    if note.get('doctor_uid') != session['user']['uid']:
+        return None, None, note_json_error('You can only change notes you wrote.', 403)
+    return ref, note, None
+
+
+@app.route('/api/patients/<patient_uid>/clinical-notes/<note_id>', methods=['PUT'])
+@login_required
+@role_required('doctor')
+def edit_clinical_note(patient_uid, note_id):
+    ref, _, error = load_own_note(patient_uid, note_id)
+    if error:
+        return error
+    fields, errors = validate_note(request.get_json(silent=True) or {})
+    if errors:
+        return note_json_error('Please fix the highlighted fields.', 400, errors)
+
+    # doctor_uid, doctor_name and created_at are never changed
+    ref.update(dict(fields, updated_at={'.sv': 'timestamp'}))
+    flash('Clinical note updated.', 'success')
+    return jsonify({'success': True, 'note_id': note_id,
+                    'redirect': url_for('doctor_patient_detail', patient_uid=patient_uid) + f'#note-{note_id}'})
+
+
+@app.route('/api/patients/<patient_uid>/clinical-notes/<note_id>', methods=['DELETE'])
+@login_required
+@role_required('doctor')
+def delete_clinical_note(patient_uid, note_id):
+    ref, _, error = load_own_note(patient_uid, note_id)
+    if error:
+        return error
+    ref.delete()
+    flash('Clinical note deleted.', 'success')
+    return jsonify({'success': True,
+                    'redirect': url_for('doctor_patient_detail', patient_uid=patient_uid) + '#clinical-notes'})
+
+
+@app.route('/doctor/notes')
+@login_required
+@role_required('doctor')
+def doctor_notes():
+    user_name, user_initials = doctor_identity()
+    me = session['user']['uid']
+    all_notes = db.reference('clinical_notes').get() or {}
+
+    query = request.args.get('q', '').strip()
+    category = request.args.get('category', 'all')
+    if category not in NOTE_CATEGORIES:
+        category = 'all'
+
+    groups, total = [], 0
+    for uid, patient_notes in all_notes.items():
+        if not isinstance(patient_notes, dict) or not is_safe_key(uid):
+            continue
+        mine = [note_for_display(nid, n, me) for nid, n in patient_notes.items()
+                if isinstance(n, dict) and n.get('doctor_uid') == me]
+        if not mine:
+            continue
+        # Only the fields this page shows, not the patient's whole record
+        if db.reference(f'users/{uid}/role').get() != 'patient':
+            continue
+        total += len(mine)
+        name = db.reference(f'users/{uid}/name').get() or 'Unnamed patient'
+        status = db.reference(f'users/{uid}/status').get()
+        if category != 'all':
+            mine = [n for n in mine if n['category'] == category]
+        if query:
+            q = query.lower()
+            if q not in name.lower():
+                mine = [n for n in mine if q in n['title'].lower() or q in n['body'].lower()]
+        if mine:
+            mine.sort(key=lambda n: n['created_at'], reverse=True)
+            groups.append({'uid': uid, 'name': name, 'active': status == 'active', 'notes': mine})
+    # Patients with the most recent note first
+    groups.sort(key=lambda g: g['notes'][0]['created_at'], reverse=True)
+
+    return render_template('doctor_notes.html', user_name=user_name, user_initials=user_initials,
+                           groups=groups, total_notes=total, shown_notes=sum(len(g['notes']) for g in groups),
+                           query=query, category=category, categories=NOTE_CATEGORIES)
 
 
 DOCTOR_PROFILE_FIELDS = ['specialization', 'license_number', 'affiliation', 'years_experience', 'bio']

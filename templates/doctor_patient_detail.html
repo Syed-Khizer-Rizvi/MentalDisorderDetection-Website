@@ -21,7 +21,7 @@
       <a href="#" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
-      <a href="#" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
       <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
       <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
     </nav>
@@ -42,7 +42,7 @@
       <a href="{{ url_for('doctor_patients') }}" class="pd-back">← My Patients</a>
       <div class="pd-actions">
         <button type="button" class="pd-btn pd-btn-alert" id="sendAlert">🚨 Send Alert</button>
-        <a href="#" class="pd-btn pd-btn-note">📝 Add Clinical Note</a>
+        <a href="#clinical-notes" class="pd-btn pd-btn-note" id="addNoteTop">📝 Add Clinical Note</a>
       </div>
     </div>
 
@@ -159,19 +159,228 @@
       <p class="trend-empty">No journal entries shared with you yet.</p>
       {% endif %}
     </section>
+
+    {# 6. Clinical notes: shared notes from all doctors plus this doctor's private ones #}
+    <section class="chart-panel" id="clinical-notes">
+      <div class="panel-head">
+        <h3>Clinical Notes</h3>
+        <div class="cn-head-actions">
+          <span class="panel-sub">{{ clinical_notes|length }} note{{ 's' if clinical_notes|length != 1 }}</span>
+          <button type="button" class="pd-btn pd-btn-note cn-add" id="addNoteBtn">+ Add Note</button>
+        </div>
+      </div>
+
+      <form class="cn-form" id="noteForm" novalidate hidden>
+        <h4 id="noteFormTitle">New clinical note</h4>
+        <div class="profile-grid">
+          <div class="form-field">
+            <label for="noteCategory">Category *</label>
+            <select id="noteCategory" name="category" aria-describedby="err-category">
+              {% for value, label in note_categories.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+            <small class="field-error" id="err-category" hidden></small>
+          </div>
+          <div class="form-field">
+            <label for="noteTitle">Title</label>
+            <input type="text" id="noteTitle" name="title" maxlength="{{ note_title_max }}" placeholder="Optional" aria-describedby="err-title">
+            <small class="field-error" id="err-title" hidden></small>
+          </div>
+          <div class="form-field form-field-full">
+            <label for="noteBody">Note *</label>
+            <textarea id="noteBody" name="body" rows="5" maxlength="{{ note_body_max }}" placeholder="Observations, assessment, plan..." aria-describedby="noteBodyCount err-body"></textarea>
+            <small id="noteBodyCount"><span id="noteBodyLength">0</span>/{{ note_body_max }}</small>
+            <small class="field-error" id="err-body" hidden></small>
+          </div>
+        </div>
+        <label class="act-share cn-private">
+          <input type="checkbox" id="notePrivate" name="private">
+          <span>🔒 Private to me <small>(other doctors won't see this note)</small></span>
+        </label>
+        <small class="field-error" id="err-visibility" hidden></small>
+        <div class="profile-actions dp-actions">
+          <button type="button" class="dp-cancel" id="noteCancel">Cancel</button>
+          <button type="submit" class="profile-save" id="noteSave">Save Note</button>
+        </div>
+      </form>
+
+      {% if clinical_notes %}
+      <div class="cn-list">
+        {% for n in clinical_notes %}
+        <article class="cn-note" id="note-{{ n.id }}"
+                 data-note-id="{{ n.id }}" data-title="{{ n.title }}" data-body="{{ n.body }}"
+                 data-category="{{ n.category }}" data-visibility="{{ n.visibility }}">
+          <div class="cn-note-head">
+            <span class="cn-cat cn-cat-{{ n.category }}">{{ n.category_label }}</span>
+            {% if n.is_private %}<span class="cn-private-label">🔒 Private</span>{% endif %}
+          </div>
+          {% if n.title %}<h4 class="cn-title">{{ n.title }}</h4>{% endif %}
+          {% if n.body | length > 300 %}
+          {# One line on purpose: .cn-body keeps whitespace (pre-wrap), so template indentation would show #}
+          <p class="cn-body"><span class="cn-body-short">{{ n.body[:300] | trim }}…</span><span class="cn-body-full" hidden>{{ n.body }}</span> <button type="button" class="cn-more" aria-expanded="false">Show more</button></p>
+          {% else %}
+          <p class="cn-body">{{ n.body }}</p>
+          {% endif %}
+          <div class="cn-meta">
+            <span>By Dr. {{ n.doctor_name }} • <time title="{{ n.created_full }}">{{ n.time_ago }}</time>{% if n.edited %} • edited{% endif %}</span>
+            {% if n.is_mine %}
+            <span class="cn-actions">
+              <button type="button" class="cn-link" data-action="edit">Edit</button>
+              <button type="button" class="cn-link cn-link-danger" data-action="delete">Delete</button>
+            </span>
+            {% endif %}
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="trend-empty">No clinical notes yet. Add the first observation.</p>
+      {% endif %}
+    </section>
   </main>
 </div>
 
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="toast {{ 'toast-error' if category == 'error' else 'toast-success' }}" data-flash role="status">{{ message }}</div>
+{% endfor %}
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script>
-  document.getElementById('sendAlert').addEventListener('click', () => {
-    const toast = document.getElementById('toast');
-    toast.textContent = 'Patient alerts are coming soon.';
-    toast.className = 'toast toast-success';
+  const toast = document.getElementById('toast');
+  let toastTimer;
+  function showToast(msg, success) {
+    toast.textContent = (success ? '✓ ' : '⚠ ') + msg;
+    toast.className = 'toast ' + (success ? 'toast-success' : 'toast-error');
     toast.hidden = false;
-    setTimeout(() => { toast.hidden = true; }, 3000);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 3500);
+  }
+  document.querySelectorAll('[data-flash]').forEach(t => setTimeout(() => { t.hidden = true; }, 3500));
+
+  document.getElementById('sendAlert').addEventListener('click', () => showToast('Patient alerts are coming soon.', true));
+
+  // ----- Clinical notes -----
+  const NOTES_URL = {{ url_for('add_clinical_note', patient_uid=patient_uid) | tojson }};
+  const noteForm = document.getElementById('noteForm');
+  const noteFields = ['category', 'title', 'body', 'visibility'];
+  const bodyEl = document.getElementById('noteBody');
+  const bodyLength = document.getElementById('noteBodyLength');
+  let editingId = null;
+
+  function clearNoteErrors() {
+    noteFields.forEach(f => { const e = document.getElementById('err-' + f); e.hidden = true; e.textContent = ''; });
+    noteForm.querySelectorAll('[aria-invalid]').forEach(el => el.removeAttribute('aria-invalid'));
+  }
+
+  function openNoteForm(note) {
+    editingId = note ? note.dataset.noteId : null;
+    document.getElementById('noteFormTitle').textContent = note ? 'Edit clinical note' : 'New clinical note';
+    document.getElementById('noteCategory').value = note ? note.dataset.category : 'observation';
+    document.getElementById('noteTitle').value = note ? note.dataset.title : '';
+    bodyEl.value = note ? note.dataset.body : '';
+    document.getElementById('notePrivate').checked = note ? note.dataset.visibility === 'private' : false;
+    bodyLength.textContent = bodyEl.value.length;
+    clearNoteErrors();
+    noteForm.hidden = false;
+    noteForm.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    bodyEl.focus({ preventScroll: true });
+  }
+
+  function closeNoteForm() {
+    noteForm.hidden = true;
+    editingId = null;
+  }
+
+  document.getElementById('addNoteBtn').addEventListener('click', () => openNoteForm(null));
+  document.getElementById('addNoteTop').addEventListener('click', (e) => { e.preventDefault(); openNoteForm(null); });
+  document.getElementById('noteCancel').addEventListener('click', closeNoteForm);
+  bodyEl.addEventListener('input', () => { bodyLength.textContent = bodyEl.value.length; });
+
+  async function sendNote(method, url, payload) {
+    const res = await fetch(url, {
+      method,
+      headers: payload ? {'Content-Type': 'application/json'} : {},
+      body: payload ? JSON.stringify(payload) : undefined
+    });
+    let data = {};
+    try { data = await res.json(); } catch (_) { data = { success: false, error: 'Unexpected server response.' }; }
+    return data;
+  }
+
+  function goTo(url) {
+    // The redirect is this page with a new #anchor, which alone wouldn't reload. Reloading
+    // makes the list reflect Firebase exactly, and the flashed message shows on the new page.
+    window.location.href = url;
+    window.location.reload();
+  }
+
+  noteForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearNoteErrors();
+    const payload = {
+      category: document.getElementById('noteCategory').value,
+      title: document.getElementById('noteTitle').value.trim(),
+      body: bodyEl.value.trim(),
+      visibility: document.getElementById('notePrivate').checked ? 'private' : 'all_doctors'
+    };
+    if (!payload.body) {
+      document.getElementById('err-body').textContent = 'Note text is required.';
+      document.getElementById('err-body').hidden = false;
+      bodyEl.setAttribute('aria-invalid', 'true');
+      bodyEl.focus();
+      return;
+    }
+    const save = document.getElementById('noteSave');
+    save.disabled = true;
+    save.textContent = 'Saving...';
+    try {
+      const data = await sendNote(editingId ? 'PUT' : 'POST', editingId ? `${NOTES_URL}/${editingId}` : NOTES_URL, payload);
+      if (data.success) return goTo(data.redirect);
+      Object.entries(data.errors || {}).forEach(([f, msg]) => {
+        const err = document.getElementById('err-' + f);
+        if (err) { err.textContent = msg; err.hidden = false; }
+      });
+      showToast(data.error || 'Could not save the note.', false);
+    } catch (err) {
+      showToast('Network error, please try again.', false);
+    } finally {
+      save.disabled = false;
+      save.textContent = 'Save Note';
+    }
   });
+
+  document.querySelectorAll('.cn-note [data-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const note = btn.closest('.cn-note');
+      if (btn.dataset.action === 'edit') return openNoteForm(note);
+      if (!confirm('Delete this clinical note? This cannot be undone.')) return;
+      btn.disabled = true;
+      try {
+        const data = await sendNote('DELETE', `${NOTES_URL}/${note.dataset.noteId}`);
+        if (data.success) return goTo(data.redirect);
+        showToast(data.error || 'Could not delete the note.', false);
+      } catch (err) {
+        showToast('Network error, please try again.', false);
+      }
+      btn.disabled = false;
+    });
+  });
+
+  document.querySelectorAll('.cn-more').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const body = btn.closest('.cn-body');
+      const expand = btn.getAttribute('aria-expanded') !== 'true';
+      body.querySelector('.cn-body-short').hidden = expand;
+      body.querySelector('.cn-body-full').hidden = !expand;
+      btn.setAttribute('aria-expanded', String(expand));
+      btn.textContent = expand ? 'Show less' : 'Show more';
+    });
+  });
+
+  // Arriving from the Clinical Notes page or after a save: bring the note into view
+  if (location.hash.startsWith('#note-')) {
+    const target = document.getElementById(location.hash.slice(1));
+    if (target) target.scrollIntoView({ block: 'center' });
+  }
 </script>
 <script src="{{ url_for('static', filename='js/risk_trend.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
