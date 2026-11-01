@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav" aria-label="Admin navigation">
+      <a href="{{ url_for('admin_dashboard') }}" class="nav-item active" aria-current="page"><span class="nav-icon">⌂</span><span class="nav-label">Dashboard</span></a>
+      <a href="#doctor-approvals" class="nav-item"><span class="nav-icon">✓</span><span class="nav-label">Doctor approvals{% if pending_count %} ({{ pending_count }}){% endif %}</span></a>
+      <a href="#account-management" class="nav-item"><span class="nav-icon">♙</span><span class="nav-label">Accounts</span></a>
+      <a href="#wristband-orders" class="nav-item"><span class="nav-icon">▣</span><span class="nav-label">Wristband orders</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">↪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle" type="button" aria-label="Toggle navigation">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">{{ user_name }}</span><span class="user-role">Administrator</span></div>
+        </div>
+      </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="admin-flashes" role="status" aria-live="polite">
+        {% for category, message in messages %}<p class="admin-flash admin-flash-{{ category }}">{{ message }}</p>{% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+
+    <section class="welcome-banner">
+      <div class="welcome-text">
+        <h1>Administration</h1>
+        <p>Platform overview and account approvals</p>
+      </div>
+      <div class="welcome-badge"><span class="badge-label">Access</span><span class="badge-value">Administrator</span></div>
+    </section>
+
+    <section class="stats-grid" aria-label="Platform totals">
+      <div class="stat-card stat-blue"><div class="stat-icon">♙</div><div class="stat-content"><span class="stat-label">Total Accounts</span><span class="stat-value">{{ total_users }}</span><span class="stat-sub">Across all roles</span></div></div>
+      <div class="stat-card stat-low"><div class="stat-icon">◎</div><div class="stat-content"><span class="stat-label">Patients</span><span class="stat-value">{{ total_patients }}</span><span class="stat-sub">Registered patient accounts</span></div></div>
+      <div class="stat-card stat-purple"><div class="stat-icon">✚</div><div class="stat-content"><span class="stat-label">Doctors</span><span class="stat-value">{{ total_doctors }}</span><span class="stat-sub">{{ pending_count }} awaiting approval</span></div></div>
+      <div class="stat-card stat-orange"><div class="stat-icon">▤</div><div class="stat-content"><span class="stat-label">Assessments</span><span class="stat-value">{{ assessment_count }}</span><span class="stat-sub">Completed screenings</span></div></div>
+    </section>
+
+    <section class="dashboard-row admin-overview">
+      <div class="chart-panel">
+        <div class="panel-head"><h3>Patient risk overview</h3><span class="panel-sub">Latest available assessment</span></div>
+        {% if risk_total %}
+        <div class="risk-bars">
+          {% for level, label, color in [('low', 'Low', '#059669'), ('moderate', 'Moderate', '#D97706'), ('high', 'High', '#EA580C'), ('critical', 'Critical', '#DC2626')] %}
+          {% set count = risk_counts[level] %}
+          <div class="risk-bar-row"><span class="risk-bar-label">{{ label }}</span><div class="risk-bar"><div class="risk-bar-fill" style="width:{{ (count / risk_total * 100)|round(1) }}%; background:{{ color }};"></div></div><span class="risk-bar-count">{{ count }}</span></div>
+          {% endfor %}
+        </div>
+        <p class="admin-note">Aggregate counts only; individual screening results are not shown here.</p>
+        {% else %}
+        <p class="trend-empty">No patient assessments yet.</p>
+        {% endif %}
+      </div>
+      <div class="actions-panel admin-approval-summary">
+        <div class="panel-head"><h3>Doctor approvals</h3><span class="panel-sub">Account access</span></div>
+        <p class="admin-approval-count">{{ pending_count }}</p>
+        <p class="admin-note">Pending doctor accounts cannot sign in until approved.</p>
+        <a class="admin-text-link" href="#doctor-approvals">Review pending accounts</a>
+      </div>
+    </section>
+
+    <section class="activity-panel admin-table-panel" id="doctor-approvals">
+      <div class="panel-head"><h3>Pending doctor accounts</h3><span class="panel-sub">{{ pending_count }} awaiting review</span></div>
+      {% if pending_doctors %}
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th scope="col">Doctor</th><th scope="col">Contact</th><th scope="col">Requested</th><th scope="col">Actions</th></tr></thead>
+          <tbody>
+            {% for doctor in pending_doctors %}
+            <tr>
+              <td><strong>{{ doctor.name }}</strong><span class="admin-secondary">{{ doctor.email }}</span></td>
+              <td>{{ doctor.phone or 'Not provided' }}</td>
+              <td>{{ doctor.created_date }}</td>
+              <td>
+                <form method="post" action="{{ url_for('admin_review_doctor', doctor_uid=doctor.uid, decision='approve') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="admin-approve" type="submit">Approve</button>
+                </form>
+                <form method="post" action="{{ url_for('admin_review_doctor', doctor_uid=doctor.uid, decision='reject') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="admin-reject" type="submit">Reject</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="trend-empty">No doctor accounts are waiting for approval.</p>
+      {% endif %}
+    </section>
+
+    <section class="activity-panel admin-table-panel" id="account-management">
+      <div class="panel-head"><h3>Account management</h3><span class="panel-sub">{{ accounts|length }} matching accounts</span></div>
+
+      <details class="admin-create">
+        <summary>Create account</summary>
+        <form method="post" action="{{ url_for('admin_create_user') }}" class="admin-create-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>Name<input name="name" maxlength="100" required></label>
+          <label>Email<input type="email" name="email" maxlength="254" autocomplete="off" required></label>
+          <label>Phone<input name="phone" maxlength="30"></label>
+          <label>Temporary password<input type="password" name="password" minlength="6" autocomplete="new-password" required></label>
+          <label>Role<select name="role" required><option value="patient">Patient</option><option value="doctor">Doctor</option></select></label>
+          <button type="submit" class="admin-approve">Create account</button>
+        </form>
+      </details>
+
+      <form method="get" action="{{ url_for('admin_dashboard') }}#account-management" class="admin-filters">
+        <label>Search<input type="search" name="q" value="{{ account_query }}" placeholder="Name or email"></label>
+        <label>Role<select name="role"><option value="all" {{ 'selected' if role_filter == 'all' }}>All roles</option><option value="patient" {{ 'selected' if role_filter == 'patient' }}>Patients</option><option value="doctor" {{ 'selected' if role_filter == 'doctor' }}>Doctors</option></select></label>
+        <label>Status<select name="status">
+          {% for status in ['all', 'active', 'pending', 'approved', 'rejected', 'suspended'] %}
+          <option value="{{ status }}" {{ 'selected' if status_filter == status }}>{{ status|capitalize if status != 'all' else 'All statuses' }}</option>
+          {% endfor %}
+        </select></label>
+        <button type="submit" class="admin-filter-button">Filter</button>
+        <a href="{{ url_for('admin_dashboard') }}#account-management" class="admin-clear">Clear</a>
+      </form>
+
+      {% if accounts %}
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th scope="col">Account</th><th scope="col">Role / status</th><th scope="col">Joined</th><th scope="col">Manage</th></tr></thead>
+          <tbody>
+            {% for account in accounts %}
+            <tr>
+              <td><strong>{{ account.name }}</strong><span class="admin-secondary">{{ account.email }}{% if account.phone %} · {{ account.phone }}{% endif %}</span></td>
+              <td><span class="admin-capitalize">{{ account.role }}</span><span class="admin-status admin-status-{{ account.status|lower }}">{{ account.status }}</span></td>
+              <td>{{ account.created_date }}</td>
+              <td class="admin-account-actions">
+                <details class="admin-edit">
+                  <summary>Edit</summary>
+                  <form method="post" action="{{ url_for('admin_update_user', user_uid=account.uid) }}" class="admin-edit-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <label>Name<input name="name" value="{{ account.name }}" maxlength="100" required></label>
+                    <label>Email<input type="email" name="email" value="{{ account.email }}" maxlength="254" required></label>
+                    <label>Phone<input name="phone" value="{{ account.phone }}" maxlength="30"></label>
+                    <label>New password<input type="password" name="password" minlength="6" autocomplete="new-password"></label>
+                    <label>Status<select name="status">
+                      {% set account_statuses = ['active', 'suspended'] if account.role == 'patient' else ['pending', 'approved', 'rejected', 'suspended'] %}
+                      {% for status in account_statuses %}<option value="{{ status }}" {{ 'selected' if account.status == status }}>{{ status|capitalize }}</option>{% endfor %}
+                    </select></label>
+                    <button type="submit" class="admin-approve">Save changes</button>
+                  </form>
+                </details>
+                <form method="post" action="{{ url_for('admin_delete_user', user_uid=account.uid) }}" onsubmit="return confirm('Permanently delete this account and its associated app data?')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="admin-reject">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="trend-empty">No accounts match these filters.</p>
+      {% endif %}
+    </section>
+
+    <section class="activity-panel admin-table-panel" id="wristband-orders">
+      <div class="panel-head"><h3>Wristband orders</h3><span class="panel-sub">{{ orders|length }} orders</span></div>
+      <details class="admin-create admin-order-create">
+        <summary>Create wristband order</summary>
+        {% if available_patients %}
+        <form method="post" action="{{ url_for('admin_create_order') }}" class="admin-create-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>Patient<select name="user_uid" required><option value="">Select patient</option>{% for patient in available_patients %}<option value="{{ patient.uid }}">{{ patient.name }}</option>{% endfor %}</select></label>
+          <label>Recipient name<input name="fullname" maxlength="100"></label>
+          <label>Phone<input name="phone" maxlength="30" required></label>
+          <label>Delivery address<input name="address" maxlength="300" required></label>
+          <label>City<input name="city" maxlength="100" required></label>
+          <label>Wrist size<select name="size"><option value="S">S</option><option value="M" selected>M</option><option value="L">L</option></select></label>
+          <label>Delivery notes<input name="notes" maxlength="500"></label>
+          <button type="submit" class="admin-approve">Create order</button>
+        </form>
+        {% else %}
+        <p class="admin-note">All active patients already have an order, or there are no active patients.</p>
+        {% endif %}
+      </details>
+      {% if orders %}
+      <div class="admin-table-wrap">
+        <table class="admin-table admin-orders-table">
+          <thead><tr><th scope="col">Recipient</th><th scope="col">Delivery details</th><th scope="col">Order</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
+          <tbody>
+            {% for order in orders %}
+            <tr>
+              <td><strong>{{ order.name }}</strong><span class="admin-secondary">{{ order.email }}</span><span class="admin-secondary">{{ order.phone }}</span></td>
+              <td>{{ order.address }}{% if order.city %}, {{ order.city }}{% endif %}</td>
+              <td>{{ order.size or '—' }}<span class="admin-secondary">{{ order.created_date }}</span></td>
+              <td><span class="admin-status admin-status-{{ order.status }}">{{ order.status }}</span></td>
+              <td class="admin-order-actions">
+                <form method="post" action="{{ url_for('admin_update_order_status', user_uid=order.uid) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <label class="sr-only" for="order-status-{{ loop.index }}">Order status for {{ order.name }}</label>
+                  <select id="order-status-{{ loop.index }}" name="status">
+                    {% for status in wristband_statuses %}<option value="{{ status }}" {{ 'selected' if order.status == status }}>{{ status|capitalize }}</option>{% endfor %}
+                  </select>
+                  <button type="submit" class="admin-approve">Update</button>
+                </form>
+                <form method="post" action="{{ url_for('admin_delete_order', user_uid=order.uid) }}" onsubmit="return confirm('Delete this wristband order?')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="admin-reject">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="trend-empty">No wristband orders yet.</p>
+      {% endif %}
+    </section>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

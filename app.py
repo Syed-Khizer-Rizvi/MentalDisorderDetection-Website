@@ -2,6 +2,8 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 import firebase_admin
 from firebase_admin import credentials, auth, db
 import os
+import hmac
+import secrets
 from functools import wraps
 from deepface import DeepFace
 import base64
@@ -11,6 +13,7 @@ import cv2
 # ========== INITIALIZE FLASK ==========
 app = Flask(__name__)
 app.secret_key = 'mental-disorder-detection-secret-key-change-in-production'
+ADMIN_UID = os.environ.get('ADMIN_UID', 'Wj1fEr9bp4WcdkHVpTTJGYjlpB13').strip()
 
 # ========== INITIALIZE FIREBASE ADMIN ==========
 cred = credentials.Certificate('firebase_key.json')
@@ -52,6 +55,24 @@ def role_required(*roles):
             return f(*args, **kwargs)
         return decorated
     return decorator
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if session.get('user', {}).get('role') != 'admin':
+            if 'user' not in session:
+                return redirect(url_for('login'))
+            flash('Access denied: administrator access is required.', 'error')
+            return redirect(url_for('home'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_csrf_valid():
+    submitted = request.form.get('csrf_token', '')
+    expected = session.get('_admin_csrf_token', '')
+    return bool(submitted and expected and hmac.compare_digest(submitted, expected))
 
 
 # ========== SCORING HELPERS ==========
@@ -286,6 +307,11 @@ def register():
     return render_template('register.html', firebase_config=FIREBASE_WEB_CONFIG, doctors=doctors)
 
 
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    return redirect(url_for('login'))
+
+
 # ========== API ROUTES (called by frontend JS) ==========
 @app.route('/api/verify-token', methods=['POST'])
 def verify_token():
@@ -300,11 +326,28 @@ def verify_token():
         user_ref = db.reference(f'users/{uid}')
         profile = user_ref.get()
 
-        if not profile:
+        if uid == ADMIN_UID:
+            profile = profile if isinstance(profile, dict) else {}
+            admin_profile = {
+                'uid': uid,
+                'email': email or profile.get('email', ''),
+                'name': profile.get('name') or decoded.get('name') or 'Administrator',
+                'role': 'admin',
+                'status': 'active'
+            }
+            if not profile.get('created_at'):
+                admin_profile['created_at'] = {'.sv': 'timestamp'}
+            user_ref.update(admin_profile)
+            profile = {**profile, **admin_profile}
+
+        if not isinstance(profile, dict):
             return jsonify({'success': False, 'error': 'User profile not found. Please contact support.'}), 404
 
         if profile.get('role') == 'doctor' and profile.get('status') != 'approved':
-            return jsonify({'success': False, 'error': 'Your doctor account is pending approval by admin.'}), 403
+            message = ('Your doctor account is pending approval by admin.'
+                       if profile.get('status') == 'pending'
+                       else 'Your doctor account was not approved. Please contact the administrator.')
+            return jsonify({'success': False, 'error': message}), 403
 
         session['user'] = {
             'uid': uid,
@@ -1386,11 +1429,402 @@ def doctor_dashboard():
                            recent_assessments=recent)
 
 
-@app.route('/admin/dashboard')
-@login_required
-@role_required('admin')
+# ========== ADMIN ==========
+# Admins see every account and patient; doctor-patient assignment filtering doesn't apply here
+@app.route('/admin')
+@admin_required
 def admin_dashboard():
-    return f"<h1>Admin Dashboard</h1><p>Welcome, {session['user']['name']}!</p><p>Role: {session['user']['role']}</p><a href='/logout'>Logout</a>"
+    users = db.reference('users').get() or {}
+    if not isinstance(users, dict):
+        users = {}
+
+    patients = []
+    doctors = []
+    pending_doctors = []
+    recent_users = []
+    accounts = []
+    patient_accounts = []
+    risk_counts = {level: 0 for level in RISK_LEVELS}
+    assessment_count = 0
+
+    for uid, user in users.items():
+        if not isinstance(user, dict):
+            continue
+
+        role = user.get('role', 'patient')
+        created_at = user.get('created_at')
+        user_summary = {
+            'name': user.get('name') or 'Unnamed user',
+            'email': user.get('email', ''),
+            'role': role,
+            'status': user.get('status', 'active'),
+            'created_at': created_at if isinstance(created_at, (int, float)) else 0,
+            'created_date': format_timestamp(created_at, '%d %b %Y')
+            if isinstance(created_at, (int, float)) and created_at else 'Date unavailable'
+        }
+        recent_users.append(user_summary)
+
+        if role in ('patient', 'doctor'):
+            accounts.append({
+                **user_summary,
+                'uid': uid,
+                'phone': user.get('phone', '')
+            })
+
+        if role == 'doctor':
+            doctors.append(user)
+            if user.get('status') == 'pending':
+                pending_doctors.append({
+                    **user_summary,
+                    'uid': uid,
+                    'phone': user.get('phone', '')
+                })
+        elif role == 'patient':
+            patients.append(user)
+            patient_accounts.append({
+                'uid': uid,
+                'name': user.get('name') or 'Unnamed patient',
+                'phone': user.get('phone', '')
+            })
+            assessments = user.get('assessments') or {}
+            if isinstance(assessments, dict):
+                assessment_count += len(assessments)
+            latest = assessments.get(user.get('latest_assessment_id')) if isinstance(assessments, dict) else None
+            if isinstance(latest, dict):
+                risk_counts[risk_band(compute_composite(latest))[0]] += 1
+
+    pending_doctors.sort(key=lambda doctor: doctor['created_at'], reverse=True)
+    recent_users.sort(key=lambda user: user['created_at'], reverse=True)
+    role_filter = request.args.get('role', 'all').lower()
+    if role_filter not in ('all', 'patient', 'doctor'):
+        role_filter = 'all'
+    status_filter = request.args.get('status', 'all').lower()
+    valid_statuses = {'all', 'active', 'pending', 'approved', 'rejected', 'suspended'}
+    if status_filter not in valid_statuses:
+        status_filter = 'all'
+    query = request.args.get('q', '').strip()
+    if role_filter != 'all':
+        accounts = [account for account in accounts if account['role'] == role_filter]
+    if status_filter != 'all':
+        accounts = [account for account in accounts if account['status'] == status_filter]
+    if query:
+        lowered_query = query.lower()
+        accounts = [account for account in accounts
+                    if lowered_query in account['name'].lower()
+                    or lowered_query in account['email'].lower()]
+    accounts.sort(key=lambda account: account['created_at'], reverse=True)
+
+    raw_orders = db.reference('wristband_orders').get() or {}
+    orders = []
+    ordered_uids = set(raw_orders) if isinstance(raw_orders, dict) else set()
+    available_patients = [patient for patient in patient_accounts if patient['uid'] not in ordered_uids]
+    if isinstance(raw_orders, dict):
+        for uid, order in raw_orders.items():
+            if not isinstance(order, dict):
+                continue
+            profile = users.get(uid) if isinstance(users.get(uid), dict) else {}
+            status = (order.get('status') or 'pending').lower()
+            orders.append({
+                'uid': uid,
+                'name': order.get('fullname') or profile.get('name') or 'Unnamed patient',
+                'email': profile.get('email', ''),
+                'phone': order.get('phone', ''),
+                'address': order.get('address', ''),
+                'city': order.get('city', ''),
+                'size': order.get('size', ''),
+                'notes': order.get('notes', ''),
+                'status': status if status in WRISTBAND_STATUSES else 'pending',
+                'created_at': order.get('created_at'),
+                'created_date': format_timestamp(order.get('created_at'), '%d %b %Y')
+                if isinstance(order.get('created_at'), (int, float)) else 'Date unavailable'
+            })
+    orders.sort(key=lambda order: order['created_at'] if isinstance(order['created_at'], (int, float)) else 0,
+                reverse=True)
+
+    user_name = session['user'].get('name') or 'Administrator'
+    user_initials = ''.join(word[0].upper() for word in user_name.split()[:2]) or 'A'
+    csrf_token = session.setdefault('_admin_csrf_token', secrets.token_urlsafe(32))
+
+    return render_template(
+        'admin_dashboard.html',
+        user_name=user_name,
+        user_initials=user_initials,
+        csrf_token=csrf_token,
+        total_users=len(users),
+        total_patients=len(patients),
+        total_doctors=len(doctors),
+        pending_count=len(pending_doctors),
+        pending_doctors=pending_doctors,
+        recent_users=recent_users[:8],
+        accounts=accounts,
+        account_query=query,
+        role_filter=role_filter,
+        status_filter=status_filter,
+        orders=orders,
+        available_patients=available_patients,
+        wristband_statuses=WRISTBAND_STATUSES,
+        risk_counts=risk_counts,
+        risk_total=sum(risk_counts.values()),
+        assessment_count=assessment_count
+    )
+
+
+@app.route('/admin/dashboard')
+def admin_dashboard_legacy():
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/users/create', methods=['POST'])
+@admin_required
+def admin_create_user():
+    import re
+
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+
+    name = request.form.get('name', '').strip()
+    email = request.form.get('email', '').strip().lower()
+    phone = request.form.get('phone', '').strip()
+    password = request.form.get('password', '')
+    role = request.form.get('role', '').strip().lower()
+    if (not name or len(name) > 100 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email)
+            or len(phone) > 30 or len(password) < 6 or role not in ('patient', 'doctor')):
+        flash('Enter a valid name, email, phone, password (at least 6 characters), and account role.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    status = 'pending' if role == 'doctor' else 'active'
+    created_user = None
+    try:
+        created_user = auth.create_user(
+            email=email,
+            password=password,
+            display_name=name,
+            disabled=role == 'doctor'
+        )
+        db.reference(f'users/{created_user.uid}').set({
+            'uid': created_user.uid,
+            'name': name,
+            'email': email,
+            'phone': phone,
+            'role': role,
+            'status': status,
+            'created_at': {'.sv': 'timestamp'}
+        })
+        flash(f'{role.capitalize()} account created. ' +
+              ('It is pending approval.' if role == 'doctor' else 'They can now sign in.'), 'success')
+    except Exception:
+        if created_user:
+            try:
+                auth.delete_user(created_user.uid)
+            except Exception:
+                pass
+        flash('The account could not be created. Check that the email is unused and Firebase is available.', 'error')
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/users/<user_uid>/update', methods=['POST'])
+@admin_required
+def admin_update_user(user_uid):
+    import re
+
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    if not is_safe_key(user_uid) or user_uid == ADMIN_UID:
+        flash('That account cannot be edited.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    user_ref = db.reference(f'users/{user_uid}')
+    profile = user_ref.get()
+    if not isinstance(profile, dict) or profile.get('role') not in ('patient', 'doctor'):
+        flash('That account could not be found.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    name = request.form.get('name', '').strip()
+    email = request.form.get('email', '').strip().lower()
+    phone = request.form.get('phone', '').strip()
+    password = request.form.get('password', '')
+    status = request.form.get('status', '').strip().lower()
+    role = profile['role']
+    allowed_statuses = {'active', 'suspended'} if role == 'patient' else {'pending', 'approved', 'rejected', 'suspended'}
+    if (not name or len(name) > 100 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email)
+            or len(phone) > 30 or status not in allowed_statuses or (password and len(password) < 6)):
+        flash('Review the account fields and try again. Passwords must be at least 6 characters.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    auth_changes = {
+        'email': email,
+        'display_name': name,
+        'disabled': status == 'suspended' or (role == 'doctor' and status != 'approved')
+    }
+    if password:
+        auth_changes['password'] = password
+    try:
+        auth.update_user(user_uid, **auth_changes)
+        user_ref.update({'name': name, 'email': email, 'phone': phone, 'status': status})
+        flash('Account updated successfully.', 'success')
+    except Exception:
+        flash('The account could not be updated. Check that the email is unused and Firebase is available.', 'error')
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/users/<user_uid>/delete', methods=['POST'])
+@admin_required
+def admin_delete_user(user_uid):
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    if not is_safe_key(user_uid) or user_uid == ADMIN_UID or user_uid == session['user'].get('uid'):
+        flash('That account cannot be deleted.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    user_ref = db.reference(f'users/{user_uid}')
+    profile = user_ref.get()
+    if not isinstance(profile, dict) or profile.get('role') not in ('patient', 'doctor'):
+        flash('That account could not be found.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    try:
+        auth.delete_user(user_uid)
+        deletions = {
+            f'users/{user_uid}': None,
+            f'wristband_orders/{user_uid}': None
+        }
+        if profile.get('role') == 'patient':
+            deletions[f'clinical_notes/{user_uid}'] = None
+        else:
+            # Unassign the deleted doctor's patients so they're auto-assigned a new
+            # doctor on their next dashboard visit instead of pointing at a missing account
+            for patient_uid, patient in (db.reference('users').get() or {}).items():
+                if patient_assigned_to(patient, user_uid):
+                    for field in ('assigned_doctor_uid', 'assigned_at', 'assigned_by'):
+                        deletions[f'users/{patient_uid}/{field}'] = None
+        db.reference().update(deletions)
+        flash('Account and associated app data deleted.', 'success')
+    except Exception:
+        flash('The account could not be fully deleted. Check Firebase Auth and Realtime Database.', 'error')
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/orders/<user_uid>/status', methods=['POST'])
+@admin_required
+def admin_update_order_status(user_uid):
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    if not is_safe_key(user_uid):
+        flash('That order could not be found.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    status = request.form.get('status', '').lower()
+    if status not in WRISTBAND_STATUSES:
+        flash('Choose a valid wristband order status.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    order_ref = db.reference(f'wristband_orders/{user_uid}')
+    order = order_ref.get()
+    if not isinstance(order, dict):
+        flash('That wristband order could not be found.', 'error')
+    else:
+        order_ref.update({'status': status})
+        flash('Wristband order status updated.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/orders/create', methods=['POST'])
+@admin_required
+def admin_create_order():
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+
+    user_uid = request.form.get('user_uid', '').strip()
+    if not is_safe_key(user_uid):
+        flash('Choose a valid patient account.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    patient = db.reference(f'users/{user_uid}').get()
+    if not isinstance(patient, dict) or patient.get('role') != 'patient' or patient.get('status') != 'active':
+        flash('Orders can only be created for active patient accounts.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    order_ref = db.reference(f'wristband_orders/{user_uid}')
+    if isinstance(order_ref.get(), dict):
+        flash('This patient already has a wristband order.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    fullname = request.form.get('fullname', '').strip() or patient.get('name', '')
+    phone = request.form.get('phone', '').strip()
+    address = request.form.get('address', '').strip()
+    city = request.form.get('city', '').strip()
+    size = request.form.get('size', 'M').strip().upper()
+    notes = request.form.get('notes', '').strip()
+    if (not fullname or len(fullname) > 100 or not phone or len(phone) > 30 or not address
+            or len(address) > 300 or not city or len(city) > 100 or size not in ('S', 'M', 'L')
+            or len(notes) > 500):
+        flash('Complete the delivery details and choose a valid wrist size.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    order_ref.set({
+        'uid': user_uid,
+        'fullname': fullname,
+        'phone': phone,
+        'address': address,
+        'city': city,
+        'size': size,
+        'notes': notes,
+        'status': 'pending',
+        'created_at': {'.sv': 'timestamp'}
+    })
+    flash('Wristband order created.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/orders/<user_uid>/delete', methods=['POST'])
+@admin_required
+def admin_delete_order(user_uid):
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    if not is_safe_key(user_uid):
+        flash('That order could not be found.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    order_ref = db.reference(f'wristband_orders/{user_uid}')
+    if not isinstance(order_ref.get(), dict):
+        flash('That wristband order could not be found.', 'error')
+    else:
+        order_ref.delete()
+        flash('Wristband order deleted.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/doctors/<doctor_uid>/<decision>', methods=['POST'])
+@admin_required
+def admin_review_doctor(doctor_uid, decision):
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+
+    if not is_safe_key(doctor_uid):
+        flash('That doctor account could not be found.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    if decision not in ('approve', 'reject'):
+        flash('That doctor review action is not valid.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    doctor_ref = db.reference(f'users/{doctor_uid}')
+    doctor = doctor_ref.get()
+    if not isinstance(doctor, dict) or doctor.get('role') != 'doctor' or doctor.get('status') != 'pending':
+        flash('That doctor account is no longer pending approval.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    # Approval only grants access; existing patients are not reassigned to the new doctor
+    status = 'approved' if decision == 'approve' else 'rejected'
+    try:
+        auth.update_user(doctor_uid, disabled=decision != 'approve')
+    except Exception:
+        flash('Firebase Auth could not apply this doctor review.', 'error')
+        return redirect(url_for('admin_dashboard'))
+    doctor_ref.update({'status': status})
+    action = 'approved' if decision == 'approve' else 'rejected'
+    flash(f"{doctor.get('name') or 'Doctor'} was {action}.", 'success')
+    return redirect(url_for('admin_dashboard'))
 
 
 @app.route('/api/admin/assign-patient-to-doctor', methods=['POST'])
@@ -1406,7 +1840,7 @@ def admin_assign_patient_to_doctor():
 # ========== LOGOUT ==========
 @app.route('/logout')
 def logout():
-    session.pop('user', None)
+    session.clear()  # also drops the admin CSRF token
     return redirect(url_for('home'))
 
 
