@@ -242,6 +242,16 @@ def doctor_summary(uid, user):
     }
 
 
+def load_doctor_summary(doctor_uid):
+    """Public summary of a patient's assigned doctor, or None if unset or the account is gone."""
+    if not doctor_uid or not is_safe_key(doctor_uid):
+        return None
+    doctor = db.reference(f'users/{doctor_uid}').get()
+    if not isinstance(doctor, dict) or doctor.get('role') != 'doctor':
+        return None
+    return doctor_summary(doctor_uid, doctor)
+
+
 def load_approved_doctors(users=None):
     """Approved doctors with the public details patients see when choosing one."""
     users = users if users is not None else (db.reference('users').get() or {})
@@ -476,11 +486,7 @@ def patient_dashboard():
         doctor_uid = auto_assign_doctor(uid)
         if doctor_uid:
             assign_doctor(uid, doctor_uid, 'auto')
-    assigned_doctor = None
-    if doctor_uid and is_safe_key(doctor_uid):
-        doctor_record = db.reference(f'users/{doctor_uid}').get()
-        if isinstance(doctor_record, dict):
-            assigned_doctor = doctor_summary(doctor_uid, doctor_record)
+    assigned_doctor = load_doctor_summary(doctor_uid)
 
     latest_id = db.reference(f'users/{uid}/latest_assessment_id').get()
     latest = db.reference(f'users/{uid}/assessments/{latest_id}').get() if latest_id else None
@@ -662,7 +668,13 @@ def patient_results():
     assessment = session.get('assessment', {})
     if not assessment:
         return redirect(url_for('patient_assessment'))
-    return render_template('results.html', **build_results_context(assessment))
+    return render_template('results.html', assigned_doctor=patient_assigned_doctor(),
+                           **build_results_context(assessment))
+
+
+def patient_assigned_doctor():
+    """The signed-in patient's current doctor (results pages show and 'alert' this doctor)."""
+    return load_doctor_summary(db.reference(f"users/{session['user']['uid']}/assigned_doctor_uid").get())
 
 
 @app.route('/patient/history')
@@ -710,7 +722,7 @@ def patient_history_detail(assessment_id):
     if not assessment:
         return redirect(url_for('patient_history'))
 
-    return render_template('results.html', read_only=True,
+    return render_template('results.html', read_only=True, assigned_doctor=patient_assigned_doctor(),
                            assessment_date=format_timestamp(assessment.get('created_at'), '%d %b %Y, %I:%M %p'),
                            **build_results_context(assessment))
 
@@ -764,13 +776,9 @@ def patient_profile():
     user_name = user.get('name') or session['user'].get('name', 'Patient')
     user_initials = ''.join([word[0].upper() for word in user_name.split()[:2]]) or 'P'
 
-    assigned_doctor = None
-    doctor_uid = user.get('assigned_doctor_uid')
-    if doctor_uid and is_safe_key(doctor_uid):
-        doctor_record = db.reference(f'users/{doctor_uid}').get()
-        if isinstance(doctor_record, dict):
-            assigned_doctor = dict(doctor_summary(doctor_uid, doctor_record),
-                                   assigned_since=format_timestamp(user.get('assigned_at'), '%d %b %Y'))
+    assigned_doctor = load_doctor_summary(user.get('assigned_doctor_uid'))
+    if assigned_doctor:
+        assigned_doctor['assigned_since'] = format_timestamp(user.get('assigned_at'), '%d %b %Y')
 
     return render_template('profile.html',
                            user_name=user_name, user_initials=user_initials,

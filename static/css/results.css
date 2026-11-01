@@ -62,12 +62,37 @@
 .doc-info strong { font-size: 15px; color: #0F172A; }
 .doc-info small { font-size: 12px; color: #64748B; }
 .doc-status { font-size: 12px; color: #059669; font-weight: 600; }
+.doc-pending {
+  padding: 12px 14px; border: 1px solid #FDE68A; border-radius: 10px;
+  background: #FEF3C7; color: #92400E; font-size: 14px; line-height: 1.5;
+}
 .btn-emergency, .btn-outline-dark, .btn-outline, .btn-wristband, .btn-dashboard {
   display: block; width: 100%; padding: 14px; text-align: center;
   border-radius: 10px; font-weight: 700; font-size: 14px;
   margin-bottom: 10px; cursor: pointer; text-decoration: none;
 }
 .btn-emergency { background: #DC2626; color: #FFF; border: none; }
+
+/* High risk: same layout as critical, orange and calmer */
+.alert-high { border-color: #EA580C; background: #FFF7ED; }
+.alert-high h2 { color: #9A3412; }
+.alert-high p { color: #7C2D12; }
+.elevated-badge {
+  background: #C2410C; color: #FFF; padding: 16px; border-radius: 10px;
+  display: flex; flex-direction: column; gap: 6px; text-align: left;
+}
+.elevated-badge strong { font-size: 14px; letter-spacing: 0.3px; }
+.elevated-badge span { font-size: 13px; }
+.contact-high { border-color: #FDBA74; }
+.contact-high h3 { color: #9A3412; }
+.contact-high .doctor-card { background: #FFF7ED; }
+.contact-high .doc-avatar { background: #C2410C; }
+.contact-high .btn-outline { color: #C2410C; border-color: #C2410C; }
+.btn-elevated {
+  display: block; width: 100%; padding: 14px; margin-bottom: 10px; border-radius: 10px;
+  background: #C2410C; color: #FFF; font-size: 14px; font-weight: 700; text-align: center; text-decoration: none;
+}
+.btn-elevated:hover { background: #9A3412; }
 .btn-outline-dark { background: #0A5A47; color: #FFF; }
 .btn-outline { background: #FFF; color: #0F7A5F; border: 1px solid #0F7A5F; }
 

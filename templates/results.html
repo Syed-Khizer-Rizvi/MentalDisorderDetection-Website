@@ -72,21 +72,30 @@
       <div class="critical-badge">
         <strong>🚨 CRITICAL ALERT</strong>
         <span>Score: High Risk ({{ composite_score }}/100)</span>
+        {% if assigned_doctor %}
         <span>Your doctor has been automatically notified of your assessment results.</span>
-        <span class="alert-check">✓ Alert sent to Dr. Sarah Ahmed</span>
+        <span class="alert-check">✓ Alert sent to Dr. {{ assigned_doctor.name }}</span>
+        {% else %}
+        <span>Your doctor will be notified once assigned.</span>
+        {% endif %}
       </div>
     </div>
 
     <div class="contact-doctor">
+      {% if assigned_doctor %}
       <h3>📞 Contact Your Doctor NOW</h3>
       <div class="doctor-card">
-        <div class="doc-avatar">SA</div>
-        <div class="doc-info"><strong>Dr. Sarah Ahmed</strong><small>Psychiatrist</small></div>
+        <div class="doc-avatar">{{ assigned_doctor.initials }}</div>
+        <div class="doc-info"><strong>Dr. {{ assigned_doctor.name }}</strong><small>{{ assigned_doctor.specialization or 'Mental Health Professional' }}</small></div>
         <span class="doc-status">● Available for emergency</span>
       </div>
       <button class="btn-emergency">🩺 Doctor Consult — Request Now</button>
       <a href="#" class="btn-outline-dark">📅 Book Emergency Appointment</a>
       <a href="#" class="btn-outline">💬 Chat with Doctor</a>
+      {% else %}
+      <h3>🩺 Your Doctor</h3>
+      <p class="doc-pending">Your doctor assignment is pending. Please contact support if you need immediate help — or call one of the helplines below right away.</p>
+      {% endif %}
     </div>
 
     <div class="wristband-section">
@@ -104,6 +113,32 @@
     </div>
 
     {% elif risk_level == 'high' %}
+    <div class="alert-box alert-high">
+      <div class="alert-icon">🩺</div>
+      <h2>Consult Your Doctor Soon</h2>
+      <p>Your assessment indicates elevated stress and distress levels. While not critical, we recommend speaking with your doctor to prevent escalation.</p>
+      <div class="elevated-badge">
+        <strong>ELEVATED RISK ({{ composite_score }}/100)</strong>
+        <span>Early intervention leads to better outcomes.</span>
+      </div>
+    </div>
+
+    <div class="contact-doctor contact-high">
+      {% if assigned_doctor %}
+      <h3>📅 Talk to Your Doctor</h3>
+      <div class="doctor-card">
+        <div class="doc-avatar">{{ assigned_doctor.initials }}</div>
+        <div class="doc-info"><strong>Dr. {{ assigned_doctor.name }}</strong><small>{{ assigned_doctor.specialization or 'Mental Health Professional' }}</small></div>
+        <span class="doc-status">● Accepting appointments</span>
+      </div>
+      <a href="#" class="btn-elevated">📅 Book Appointment</a>
+      <a href="#" class="btn-outline">💬 Message Doctor</a>
+      {% else %}
+      <h3>🩺 Your Doctor</h3>
+      <p class="doc-pending">Your doctor assignment is pending. Please contact support if you need immediate help — or call one of the helplines below right away.</p>
+      {% endif %}
+    </div>
+
     <div class="rec-section rec-high">
       <h3>Recommended Actions</h3>
       <p>Your scores indicate elevated levels. We recommend combining mindfulness activities with professional support.</p>
