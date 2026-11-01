@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Management | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+
+  <main class="main-area">
+{% include '_admin_header.html' %}
+
+    <section class="admin-page-head">
+      <div>
+        <h1>Account Management</h1>
+        <p>Create, edit, suspend and delete patient and doctor accounts.</p>
+      </div>
+    </section>
+
+    <section class="activity-panel admin-table-panel">
+      <details class="admin-create" id="create-account"{{ ' open' if open_create }}>
+        <summary class="admin-create-toggle">+ Create account</summary>
+        <form method="post" action="{{ url_for('admin_create_user') }}" class="admin-create-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>Name<input name="name" maxlength="100" required></label>
+          <label>Email<input type="email" name="email" maxlength="254" autocomplete="off" required></label>
+          <label>Phone<input name="phone" maxlength="30"></label>
+          <label>Temporary password<input type="password" name="password" minlength="6" autocomplete="new-password" required></label>
+          <label>Role<select name="role" required><option value="patient">Patient</option><option value="doctor">Doctor</option></select></label>
+          <button type="submit" class="admin-approve">Create account</button>
+        </form>
+      </details>
+
+      <form method="get" action="{{ url_for('admin_accounts') }}" class="admin-filters">
+        <label>Search<input type="search" name="q" value="{{ account_query }}" placeholder="Name or email"></label>
+        <label>Role<select name="role"><option value="all" {{ 'selected' if role_filter == 'all' }}>All roles</option><option value="patient" {{ 'selected' if role_filter == 'patient' }}>Patients</option><option value="doctor" {{ 'selected' if role_filter == 'doctor' }}>Doctors</option></select></label>
+        <label>Status<select name="status">
+          {% for status in ['all'] + account_statuses %}
+          <option value="{{ status }}" {{ 'selected' if status_filter == status }}>{{ status|capitalize if status != 'all' else 'All statuses' }}</option>
+          {% endfor %}
+        </select></label>
+        <button type="submit" class="admin-filter-button">Filter</button>
+        <a href="{{ url_for('admin_accounts') }}" class="admin-clear">Clear</a>
+      </form>
+
+      <div class="panel-head admin-results-head">
+        <h3>Accounts</h3>
+        <span class="panel-sub">{% if account_total %}Showing {{ first_index }}–{{ first_index + accounts|length - 1 }} of {{ account_total }}{% else %}0 matching accounts{% endif %}</span>
+      </div>
+
+      {% if accounts %}
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th scope="col">Account</th><th scope="col">Role / status</th><th scope="col">Joined</th><th scope="col">Manage</th></tr></thead>
+          <tbody>
+            {% for account in accounts %}
+            <tr>
+              <td><strong>{{ account.name }}</strong><span class="admin-secondary">{{ account.email }}{% if account.phone %} · {{ account.phone }}{% endif %}</span></td>
+              <td><span class="admin-capitalize">{{ account.role }}</span><span class="admin-status admin-status-{{ account.status|lower }}">{{ account.status }}</span></td>
+              <td>{{ account.created_date }}</td>
+              <td class="admin-account-actions">
+                <details class="admin-edit">
+                  <summary>Edit</summary>
+                  <form method="post" action="{{ url_for('admin_update_user', user_uid=account.uid) }}" class="admin-edit-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="next" value="{{ request.full_path }}">
+                    <label>Name<input name="name" value="{{ account.name }}" maxlength="100" required></label>
+                    <label>Email<input type="email" name="email" value="{{ account.email }}" maxlength="254" required></label>
+                    <label>Phone<input name="phone" value="{{ account.phone }}" maxlength="30"></label>
+                    <label>New password<input type="password" name="password" minlength="6" autocomplete="new-password"></label>
+                    <label>Status<select name="status">
+                      {% set statuses = ['active', 'suspended'] if account.role == 'patient' else ['pending', 'approved', 'rejected', 'suspended'] %}
+                      {% for status in statuses %}<option value="{{ status }}" {{ 'selected' if account.status == status }}>{{ status|capitalize }}</option>{% endfor %}
+                    </select></label>
+                    <button type="submit" class="admin-approve">Save changes</button>
+                  </form>
+                </details>
+                <form method="post" action="{{ url_for('admin_delete_user', user_uid=account.uid) }}" onsubmit="return confirm('Permanently delete this account and its associated app data?')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="next" value="{{ request.full_path }}">
+                  <button type="submit" class="admin-reject">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if total_pages > 1 %}
+      <nav class="admin-pagination" aria-label="Accounts pages">
+        {% if page > 1 %}<a href="{{ url_for('admin_accounts', page=page - 1, **filter_args) }}" rel="prev">← Previous</a>{% else %}<span class="is-disabled">← Previous</span>{% endif %}
+        {% for n in range(1, total_pages + 1) %}
+          {% if n == page %}<span class="is-current" aria-current="page">{{ n }}</span>{% else %}<a href="{{ url_for('admin_accounts', page=n, **filter_args) }}">{{ n }}</a>{% endif %}
+        {% endfor %}
+        {% if page < total_pages %}<a href="{{ url_for('admin_accounts', page=page + 1, **filter_args) }}" rel="next">Next →</a>{% else %}<span class="is-disabled">Next →</span>{% endif %}
+      </nav>
+      {% endif %}
+      {% else %}
+      <p class="trend-empty">No accounts match these filters.</p>
+      {% endif %}
+    </section>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

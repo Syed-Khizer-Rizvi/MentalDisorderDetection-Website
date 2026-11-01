@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wristband Orders | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+
+  <main class="main-area">
+{% include '_admin_header.html' %}
+
+    <section class="admin-page-head">
+      <div>
+        <h1>Wristband Orders</h1>
+        <p>Track monitoring wristband orders from placement to delivery.</p>
+      </div>
+    </section>
+
+    <section class="activity-panel admin-table-panel">
+      <details class="admin-create" id="create-order"{{ ' open' if open_create }}>
+        <summary class="admin-create-toggle">+ Create wristband order</summary>
+        {% if available_patients %}
+        <form method="post" action="{{ url_for('admin_create_order') }}" class="admin-create-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>Patient<select name="user_uid" required><option value="">Select patient</option>{% for patient in available_patients %}<option value="{{ patient.uid }}">{{ patient.name }}</option>{% endfor %}</select></label>
+          <label>Recipient name<input name="fullname" maxlength="100"></label>
+          <label>Phone<input name="phone" maxlength="30" required></label>
+          <label>Delivery address<input name="address" maxlength="300" required></label>
+          <label>City<input name="city" maxlength="100" required></label>
+          <label>Wrist size<select name="size"><option value="S">S</option><option value="M" selected>M</option><option value="L">L</option></select></label>
+          <label>Delivery notes<input name="notes" maxlength="500"></label>
+          <button type="submit" class="admin-approve">Create order</button>
+        </form>
+        {% else %}
+        <p class="admin-note">All active patients already have an order, or there are no active patients.</p>
+        {% endif %}
+      </details>
+
+      <nav class="admin-tabs" aria-label="Filter by status">
+        <a href="{{ url_for('admin_orders') }}" class="{{ 'is-current' if status_filter == 'all' }}"{% if status_filter == 'all' %} aria-current="page"{% endif %}>All <span>{{ order_total }}</span></a>
+        {% for status in wristband_statuses %}
+        <a href="{{ url_for('admin_orders', status=status) }}" class="{{ 'is-current' if status_filter == status }}"{% if status_filter == status %} aria-current="page"{% endif %}>{{ status|capitalize }} <span>{{ status_counts[status] }}</span></a>
+        {% endfor %}
+      </nav>
+
+      {% if orders %}
+      <div class="admin-table-wrap">
+        <table class="admin-table admin-orders-table">
+          <thead><tr><th scope="col">Recipient</th><th scope="col">Delivery details</th><th scope="col">Order</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
+          <tbody>
+            {% for order in orders %}
+            <tr>
+              <td><strong>{{ order.name }}</strong><span class="admin-secondary">{{ order.email }}</span><span class="admin-secondary">{{ order.phone }}</span></td>
+              <td>{{ order.address }}{% if order.city %}, {{ order.city }}{% endif %}{% if order.notes %}<span class="admin-secondary">Note: {{ order.notes }}</span>{% endif %}</td>
+              <td>{{ order.size or '—' }}<span class="admin-secondary">{{ order.created_date }}</span></td>
+              <td><span class="admin-status admin-status-{{ order.status }}">{{ order.status }}</span></td>
+              <td class="admin-order-actions">
+                <form method="post" action="{{ url_for('admin_update_order_status', user_uid=order.uid) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="next" value="{{ request.full_path }}">
+                  <label class="sr-only" for="order-status-{{ loop.index }}">Order status for {{ order.name }}</label>
+                  <select id="order-status-{{ loop.index }}" name="status">
+                    {% for status in wristband_statuses %}<option value="{{ status }}" {{ 'selected' if order.status == status }}>{{ status|capitalize }}</option>{% endfor %}
+                  </select>
+                  <button type="submit" class="admin-approve">Update</button>
+                </form>
+                <form method="post" action="{{ url_for('admin_delete_order', user_uid=order.uid) }}" onsubmit="return confirm('Delete this wristband order?')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="next" value="{{ request.full_path }}">
+                  <button type="submit" class="admin-reject">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% elif order_total %}
+      <p class="trend-empty">No {{ status_filter }} orders.</p>
+      {% else %}
+      <p class="trend-empty">No wristband orders yet.</p>
+      {% endif %}
+    </section>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

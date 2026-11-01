@@ -1431,76 +1431,175 @@ def doctor_dashboard():
 
 # ========== ADMIN ==========
 # Admins see every account and patient; doctor-patient assignment filtering doesn't apply here
+ADMIN_PAGE_SIZE = 20
+ADMIN_ACCOUNT_STATUSES = ['active', 'pending', 'approved', 'rejected', 'suspended']
+
+
+def admin_load_users():
+    users = db.reference('users').get() or {}
+    return users if isinstance(users, dict) else {}
+
+
+def admin_date(ms):
+    return format_timestamp(ms, '%d %b %Y') if isinstance(ms, (int, float)) and ms else 'Date unavailable'
+
+
+def admin_account_row(uid, user):
+    created_at = user.get('created_at')
+    return {
+        'uid': uid,
+        'name': user.get('name') or 'Unnamed user',
+        'email': user.get('email', ''),
+        'phone': user.get('phone', ''),
+        'role': user.get('role', 'patient'),
+        'status': user.get('status', 'active'),
+        'created_at': created_at if isinstance(created_at, (int, float)) else 0,
+        'created_date': admin_date(created_at)
+    }
+
+
+def admin_order_rows(users):
+    raw_orders = db.reference('wristband_orders').get() or {}
+    orders = []
+    if isinstance(raw_orders, dict):
+        for uid, order in raw_orders.items():
+            if not isinstance(order, dict):
+                continue
+            profile = users.get(uid) if isinstance(users.get(uid), dict) else {}
+            status = (order.get('status') or 'pending').lower()
+            created_at = order.get('created_at')
+            orders.append({
+                'uid': uid,
+                'name': order.get('fullname') or profile.get('name') or 'Unnamed patient',
+                'email': profile.get('email', ''),
+                'phone': order.get('phone', ''),
+                'address': order.get('address', ''),
+                'city': order.get('city', ''),
+                'size': order.get('size', ''),
+                'notes': order.get('notes', ''),
+                'status': status if status in WRISTBAND_STATUSES else 'pending',
+                'created_at': created_at if isinstance(created_at, (int, float)) else 0,
+                'created_date': admin_date(created_at)
+            })
+    orders.sort(key=lambda order: order['created_at'], reverse=True)
+    return orders
+
+
+def admin_page(template, active, users, **context):
+    """Renders an admin page with the shared sidebar/header context."""
+    user_name = session['user'].get('name') or 'Administrator'
+    pending_count = sum(1 for u in users.values()
+                        if isinstance(u, dict) and u.get('role') == 'doctor' and u.get('status') == 'pending')
+    return render_template(
+        template,
+        active_page=active,
+        user_name=user_name,
+        user_initials=''.join(word[0].upper() for word in user_name.split()[:2]) or 'A',
+        csrf_token=session.setdefault('_admin_csrf_token', secrets.token_urlsafe(32)),
+        pending_count=pending_count,
+        **context
+    )
+
+
+def admin_back(endpoint):
+    """Redirects to an admin page after a POST, keeping its filters/page when the form sent them back."""
+    target = url_for(endpoint)
+    back = request.form.get('next', '')
+    if back == target or back.startswith(target + '?'):
+        return redirect(back)
+    return redirect(target)
+
+
 @app.route('/admin')
 @admin_required
 def admin_dashboard():
-    users = db.reference('users').get() or {}
-    if not isinstance(users, dict):
-        users = {}
+    users = admin_load_users()
+    accounts = [admin_account_row(uid, u) for uid, u in users.items() if isinstance(u, dict)]
 
-    patients = []
-    doctors = []
-    pending_doctors = []
-    recent_users = []
-    accounts = []
-    patient_accounts = []
     risk_counts = {level: 0 for level in RISK_LEVELS}
     assessment_count = 0
-
+    recent_assessments = []
     for uid, user in users.items():
-        if not isinstance(user, dict):
+        if not isinstance(user, dict) or user.get('role') != 'patient':
             continue
+        assessments = user.get('assessments') or {}
+        if not isinstance(assessments, dict):
+            continue
+        assessment_count += len(assessments)
+        latest = assessments.get(user.get('latest_assessment_id'))
+        if isinstance(latest, dict):
+            risk_counts[risk_band(compute_composite(latest))[0]] += 1
+        for a in assessments.values():
+            if isinstance(a, dict) and isinstance(a.get('created_at'), (int, float)):
+                level, label, color = risk_band(compute_composite(a))
+                recent_assessments.append({'name': user.get('name') or 'Unnamed patient', 'risk_label': label,
+                                           'risk_color': color, 'created_at': a['created_at'],
+                                           'date': admin_date(a['created_at'])})
+    recent_assessments.sort(key=lambda a: a['created_at'], reverse=True)
 
-        role = user.get('role', 'patient')
-        created_at = user.get('created_at')
-        user_summary = {
-            'name': user.get('name') or 'Unnamed user',
-            'email': user.get('email', ''),
-            'role': role,
-            'status': user.get('status', 'active'),
-            'created_at': created_at if isinstance(created_at, (int, float)) else 0,
-            'created_date': format_timestamp(created_at, '%d %b %Y')
-            if isinstance(created_at, (int, float)) and created_at else 'Date unavailable'
-        }
-        recent_users.append(user_summary)
+    orders = admin_order_rows(users)
+    accounts.sort(key=lambda account: account['created_at'], reverse=True)
 
-        if role in ('patient', 'doctor'):
-            accounts.append({
-                **user_summary,
-                'uid': uid,
-                'phone': user.get('phone', '')
-            })
+    return admin_page(
+        'admin_dashboard.html', 'dashboard', users,
+        total_users=len(users),
+        total_patients=sum(1 for a in accounts if a['role'] == 'patient'),
+        total_doctors=sum(1 for a in accounts if a['role'] == 'doctor'),
+        assessment_count=assessment_count,
+        risk_counts=risk_counts,
+        risk_total=sum(risk_counts.values()),
+        critical_count=risk_counts['critical'],
+        pending_orders=sum(1 for o in orders if o['status'] == 'pending'),
+        recent_users=accounts[:5],
+        recent_assessments=recent_assessments[:5],
+        recent_orders=orders[:3]
+    )
 
-        if role == 'doctor':
-            doctors.append(user)
-            if user.get('status') == 'pending':
-                pending_doctors.append({
-                    **user_summary,
-                    'uid': uid,
-                    'phone': user.get('phone', '')
-                })
-        elif role == 'patient':
-            patients.append(user)
-            patient_accounts.append({
-                'uid': uid,
-                'name': user.get('name') or 'Unnamed patient',
-                'phone': user.get('phone', '')
-            })
-            assessments = user.get('assessments') or {}
-            if isinstance(assessments, dict):
-                assessment_count += len(assessments)
-            latest = assessments.get(user.get('latest_assessment_id')) if isinstance(assessments, dict) else None
-            if isinstance(latest, dict):
-                risk_counts[risk_band(compute_composite(latest))[0]] += 1
 
-    pending_doctors.sort(key=lambda doctor: doctor['created_at'], reverse=True)
-    recent_users.sort(key=lambda user: user['created_at'], reverse=True)
+@app.route('/admin/dashboard')
+def admin_dashboard_legacy():
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/approvals')
+@admin_required
+def admin_approvals():
+    users = admin_load_users()
+    by_status = {'pending': [], 'approved': [], 'rejected': []}
+    for uid, user in users.items():
+        if not isinstance(user, dict) or user.get('role') != 'doctor' or user.get('status') not in by_status:
+            continue
+        row = admin_account_row(uid, user)
+        profile = user.get('profile') if isinstance(user.get('profile'), dict) else {}
+        reviewed_at = user.get('reviewed_at')
+        row.update(specialization=profile.get('specialization', ''), affiliation=profile.get('affiliation', ''),
+                   reviewed_at=reviewed_at if isinstance(reviewed_at, (int, float)) else 0,
+                   reviewed_date=admin_date(reviewed_at))
+        by_status[user['status']].append(row)
+
+    by_status['pending'].sort(key=lambda d: d['created_at'], reverse=True)
+    for status in ('approved', 'rejected'):
+        # Doctors reviewed before reviewed_at was recorded fall back to their sign-up date
+        by_status[status].sort(key=lambda d: d['reviewed_at'] or d['created_at'], reverse=True)
+
+    return admin_page('admin_approvals.html', 'approvals', users,
+                      pending_doctors=by_status['pending'],
+                      approved_doctors=by_status['approved'][:10],
+                      rejected_doctors=by_status['rejected'][:10])
+
+
+@app.route('/admin/users')
+@admin_required
+def admin_accounts():
+    users = admin_load_users()
+    accounts = [admin_account_row(uid, u) for uid, u in users.items()
+                if isinstance(u, dict) and u.get('role') in ('patient', 'doctor')]
+
     role_filter = request.args.get('role', 'all').lower()
     if role_filter not in ('all', 'patient', 'doctor'):
         role_filter = 'all'
     status_filter = request.args.get('status', 'all').lower()
-    valid_statuses = {'all', 'active', 'pending', 'approved', 'rejected', 'suspended'}
-    if status_filter not in valid_statuses:
+    if status_filter not in ['all'] + ADMIN_ACCOUNT_STATUSES:
         status_filter = 'all'
     query = request.args.get('q', '').strip()
     if role_filter != 'all':
@@ -1514,64 +1613,54 @@ def admin_dashboard():
                     or lowered_query in account['email'].lower()]
     accounts.sort(key=lambda account: account['created_at'], reverse=True)
 
-    raw_orders = db.reference('wristband_orders').get() or {}
-    orders = []
-    ordered_uids = set(raw_orders) if isinstance(raw_orders, dict) else set()
-    available_patients = [patient for patient in patient_accounts if patient['uid'] not in ordered_uids]
-    if isinstance(raw_orders, dict):
-        for uid, order in raw_orders.items():
-            if not isinstance(order, dict):
-                continue
-            profile = users.get(uid) if isinstance(users.get(uid), dict) else {}
-            status = (order.get('status') or 'pending').lower()
-            orders.append({
-                'uid': uid,
-                'name': order.get('fullname') or profile.get('name') or 'Unnamed patient',
-                'email': profile.get('email', ''),
-                'phone': order.get('phone', ''),
-                'address': order.get('address', ''),
-                'city': order.get('city', ''),
-                'size': order.get('size', ''),
-                'notes': order.get('notes', ''),
-                'status': status if status in WRISTBAND_STATUSES else 'pending',
-                'created_at': order.get('created_at'),
-                'created_date': format_timestamp(order.get('created_at'), '%d %b %Y')
-                if isinstance(order.get('created_at'), (int, float)) else 'Date unavailable'
-            })
-    orders.sort(key=lambda order: order['created_at'] if isinstance(order['created_at'], (int, float)) else 0,
-                reverse=True)
+    total_pages = max(1, -(-len(accounts) // ADMIN_PAGE_SIZE))
+    try:
+        page = min(max(int(request.args.get('page', 1)), 1), total_pages)
+    except ValueError:
+        page = 1
+    start = (page - 1) * ADMIN_PAGE_SIZE
 
-    user_name = session['user'].get('name') or 'Administrator'
-    user_initials = ''.join(word[0].upper() for word in user_name.split()[:2]) or 'A'
-    csrf_token = session.setdefault('_admin_csrf_token', secrets.token_urlsafe(32))
-
-    return render_template(
-        'admin_dashboard.html',
-        user_name=user_name,
-        user_initials=user_initials,
-        csrf_token=csrf_token,
-        total_users=len(users),
-        total_patients=len(patients),
-        total_doctors=len(doctors),
-        pending_count=len(pending_doctors),
-        pending_doctors=pending_doctors,
-        recent_users=recent_users[:8],
-        accounts=accounts,
-        account_query=query,
-        role_filter=role_filter,
-        status_filter=status_filter,
-        orders=orders,
-        available_patients=available_patients,
-        wristband_statuses=WRISTBAND_STATUSES,
-        risk_counts=risk_counts,
-        risk_total=sum(risk_counts.values()),
-        assessment_count=assessment_count
-    )
+    return admin_page('admin_accounts.html', 'accounts', users,
+                      accounts=accounts[start:start + ADMIN_PAGE_SIZE],
+                      account_total=len(accounts),
+                      first_index=start + 1,
+                      page=page,
+                      total_pages=total_pages,
+                      account_query=query,
+                      role_filter=role_filter,
+                      status_filter=status_filter,
+                      account_statuses=ADMIN_ACCOUNT_STATUSES,
+                      # Only non-default filters, so pagination links stay short
+                      filter_args={k: v for k, v in (('q', query), ('role', role_filter), ('status', status_filter))
+                                   if v and v != 'all'},
+                      open_create=request.args.get('create') == '1')
 
 
-@app.route('/admin/dashboard')
-def admin_dashboard_legacy():
-    return redirect(url_for('admin_dashboard'))
+@app.route('/admin/orders', endpoint='admin_orders')
+@admin_required
+def admin_orders_page():
+    users = admin_load_users()
+    orders = admin_order_rows(users)
+    status_counts = {status: sum(1 for o in orders if o['status'] == status) for status in WRISTBAND_STATUSES}
+    status_filter = request.args.get('status', 'all').lower()
+    if status_filter not in WRISTBAND_STATUSES:
+        status_filter = 'all'
+    ordered_uids = {o['uid'] for o in orders}
+    # Orders can only be created for active patients without one (admin_create_order enforces this)
+    available_patients = sorted(
+        ({'uid': uid, 'name': u.get('name') or 'Unnamed patient'} for uid, u in users.items()
+         if isinstance(u, dict) and u.get('role') == 'patient' and u.get('status') == 'active'
+         and uid not in ordered_uids),
+        key=lambda p: p['name'].lower())
+
+    return admin_page('admin_orders.html', 'orders', users,
+                      orders=[o for o in orders if status_filter == 'all' or o['status'] == status_filter],
+                      order_total=len(orders),
+                      status_counts=status_counts,
+                      status_filter=status_filter,
+                      wristband_statuses=WRISTBAND_STATUSES,
+                      available_patients=available_patients,
+                      open_create=request.args.get('create') == '1')
 
 
 @app.route('/admin/users/create', methods=['POST'])
@@ -1590,7 +1679,7 @@ def admin_create_user():
     if (not name or len(name) > 100 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email)
             or len(phone) > 30 or len(password) < 6 or role not in ('patient', 'doctor')):
         flash('Enter a valid name, email, phone, password (at least 6 characters), and account role.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_accounts')
 
     status = 'pending' if role == 'doctor' else 'active'
     created_user = None
@@ -1619,7 +1708,7 @@ def admin_create_user():
             except Exception:
                 pass
         flash('The account could not be created. Check that the email is unused and Firebase is available.', 'error')
-    return redirect(url_for('admin_dashboard'))
+    return admin_back('admin_accounts')
 
 
 @app.route('/admin/users/<user_uid>/update', methods=['POST'])
@@ -1631,13 +1720,13 @@ def admin_update_user(user_uid):
         return 'Invalid or expired form token.', 400
     if not is_safe_key(user_uid) or user_uid == ADMIN_UID:
         flash('That account cannot be edited.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_accounts')
 
     user_ref = db.reference(f'users/{user_uid}')
     profile = user_ref.get()
     if not isinstance(profile, dict) or profile.get('role') not in ('patient', 'doctor'):
         flash('That account could not be found.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_accounts')
 
     name = request.form.get('name', '').strip()
     email = request.form.get('email', '').strip().lower()
@@ -1649,7 +1738,7 @@ def admin_update_user(user_uid):
     if (not name or len(name) > 100 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email)
             or len(phone) > 30 or status not in allowed_statuses or (password and len(password) < 6)):
         flash('Review the account fields and try again. Passwords must be at least 6 characters.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_accounts')
 
     auth_changes = {
         'email': email,
@@ -1660,11 +1749,15 @@ def admin_update_user(user_uid):
         auth_changes['password'] = password
     try:
         auth.update_user(user_uid, **auth_changes)
-        user_ref.update({'name': name, 'email': email, 'phone': phone, 'status': status})
+        changes = {'name': name, 'email': email, 'phone': phone, 'status': status}
+        if role == 'doctor' and status in ('approved', 'rejected') and status != profile.get('status'):
+            # Keeps the Approvals page's 'recently approved/rejected' lists accurate
+            changes.update(reviewed_at={'.sv': 'timestamp'}, reviewed_by=session['user']['uid'])
+        user_ref.update(changes)
         flash('Account updated successfully.', 'success')
     except Exception:
         flash('The account could not be updated. Check that the email is unused and Firebase is available.', 'error')
-    return redirect(url_for('admin_dashboard'))
+    return admin_back('admin_accounts')
 
 
 @app.route('/admin/users/<user_uid>/delete', methods=['POST'])
@@ -1674,13 +1767,13 @@ def admin_delete_user(user_uid):
         return 'Invalid or expired form token.', 400
     if not is_safe_key(user_uid) or user_uid == ADMIN_UID or user_uid == session['user'].get('uid'):
         flash('That account cannot be deleted.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_accounts')
 
     user_ref = db.reference(f'users/{user_uid}')
     profile = user_ref.get()
     if not isinstance(profile, dict) or profile.get('role') not in ('patient', 'doctor'):
         flash('That account could not be found.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_accounts')
 
     try:
         auth.delete_user(user_uid)
@@ -1701,7 +1794,7 @@ def admin_delete_user(user_uid):
         flash('Account and associated app data deleted.', 'success')
     except Exception:
         flash('The account could not be fully deleted. Check Firebase Auth and Realtime Database.', 'error')
-    return redirect(url_for('admin_dashboard'))
+    return admin_back('admin_accounts')
 
 
 @app.route('/admin/orders/<user_uid>/status', methods=['POST'])
@@ -1711,12 +1804,12 @@ def admin_update_order_status(user_uid):
         return 'Invalid or expired form token.', 400
     if not is_safe_key(user_uid):
         flash('That order could not be found.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_orders')
 
     status = request.form.get('status', '').lower()
     if status not in WRISTBAND_STATUSES:
         flash('Choose a valid wristband order status.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_orders')
 
     order_ref = db.reference(f'wristband_orders/{user_uid}')
     order = order_ref.get()
@@ -1725,7 +1818,7 @@ def admin_update_order_status(user_uid):
     else:
         order_ref.update({'status': status})
         flash('Wristband order status updated.', 'success')
-    return redirect(url_for('admin_dashboard'))
+    return admin_back('admin_orders')
 
 
 @app.route('/admin/orders/create', methods=['POST'])
@@ -1737,17 +1830,17 @@ def admin_create_order():
     user_uid = request.form.get('user_uid', '').strip()
     if not is_safe_key(user_uid):
         flash('Choose a valid patient account.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_orders')
 
     patient = db.reference(f'users/{user_uid}').get()
     if not isinstance(patient, dict) or patient.get('role') != 'patient' or patient.get('status') != 'active':
         flash('Orders can only be created for active patient accounts.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_orders')
 
     order_ref = db.reference(f'wristband_orders/{user_uid}')
     if isinstance(order_ref.get(), dict):
         flash('This patient already has a wristband order.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_orders')
 
     fullname = request.form.get('fullname', '').strip() or patient.get('name', '')
     phone = request.form.get('phone', '').strip()
@@ -1759,7 +1852,7 @@ def admin_create_order():
             or len(address) > 300 or not city or len(city) > 100 or size not in ('S', 'M', 'L')
             or len(notes) > 500):
         flash('Complete the delivery details and choose a valid wrist size.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_orders')
 
     order_ref.set({
         'uid': user_uid,
@@ -1773,7 +1866,7 @@ def admin_create_order():
         'created_at': {'.sv': 'timestamp'}
     })
     flash('Wristband order created.', 'success')
-    return redirect(url_for('admin_dashboard'))
+    return admin_back('admin_orders')
 
 
 @app.route('/admin/orders/<user_uid>/delete', methods=['POST'])
@@ -1783,7 +1876,7 @@ def admin_delete_order(user_uid):
         return 'Invalid or expired form token.', 400
     if not is_safe_key(user_uid):
         flash('That order could not be found.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_orders')
 
     order_ref = db.reference(f'wristband_orders/{user_uid}')
     if not isinstance(order_ref.get(), dict):
@@ -1791,7 +1884,7 @@ def admin_delete_order(user_uid):
     else:
         order_ref.delete()
         flash('Wristband order deleted.', 'success')
-    return redirect(url_for('admin_dashboard'))
+    return admin_back('admin_orders')
 
 
 @app.route('/admin/doctors/<doctor_uid>/<decision>', methods=['POST'])
@@ -1802,17 +1895,17 @@ def admin_review_doctor(doctor_uid, decision):
 
     if not is_safe_key(doctor_uid):
         flash('That doctor account could not be found.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_approvals')
 
     if decision not in ('approve', 'reject'):
         flash('That doctor review action is not valid.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_approvals')
 
     doctor_ref = db.reference(f'users/{doctor_uid}')
     doctor = doctor_ref.get()
     if not isinstance(doctor, dict) or doctor.get('role') != 'doctor' or doctor.get('status') != 'pending':
         flash('That doctor account is no longer pending approval.', 'error')
-        return redirect(url_for('admin_dashboard'))
+        return admin_back('admin_approvals')
 
     # Approval only grants access; existing patients are not reassigned to the new doctor
     status = 'approved' if decision == 'approve' else 'rejected'
@@ -1820,11 +1913,12 @@ def admin_review_doctor(doctor_uid, decision):
         auth.update_user(doctor_uid, disabled=decision != 'approve')
     except Exception:
         flash('Firebase Auth could not apply this doctor review.', 'error')
-        return redirect(url_for('admin_dashboard'))
-    doctor_ref.update({'status': status})
+        return admin_back('admin_approvals')
+    doctor_ref.update({'status': status, 'reviewed_at': {'.sv': 'timestamp'},
+                       'reviewed_by': session['user']['uid']})
     action = 'approved' if decision == 'approve' else 'rejected'
     flash(f"{doctor.get('name') or 'Doctor'} was {action}.", 'success')
-    return redirect(url_for('admin_dashboard'))
+    return admin_back('admin_approvals')
 
 
 @app.route('/api/admin/assign-patient-to-doctor', methods=['POST'])

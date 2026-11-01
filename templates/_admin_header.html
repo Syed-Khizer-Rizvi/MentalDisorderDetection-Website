@@ -1,0 +1,17 @@
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle" type="button" aria-label="Toggle navigation">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">{{ user_name }}</span><span class="user-role">Administrator</span></div>
+        </div>
+      </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="admin-flashes" role="status" aria-live="polite">
+        {% for category, message in messages %}<p class="admin-flash admin-flash-{{ category }}">{{ message }}</p>{% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}

@@ -1,0 +1,15 @@
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav" aria-label="Admin navigation">
+      {% for key, endpoint, icon, label in [('dashboard', 'admin_dashboard', '⌂', 'Dashboard'),
+                                             ('approvals', 'admin_approvals', '✓', 'Doctor approvals'),
+                                             ('accounts', 'admin_accounts', '♙', 'Accounts'),
+                                             ('orders', 'admin_orders', '▣', 'Wristband orders')] %}
+      <a href="{{ url_for(endpoint) }}" class="nav-item{{ ' active' if active_page == key }}"{% if active_page == key %} aria-current="page"{% endif %}><span class="nav-icon">{{ icon }}</span><span class="nav-label">{{ label }}{% if key == 'approvals' and pending_count %} ({{ pending_count }}){% endif %}</span></a>
+      {% endfor %}
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">↪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>

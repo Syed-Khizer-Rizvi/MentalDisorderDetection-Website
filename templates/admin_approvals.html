@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Doctor Approvals | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+
+  <main class="main-area">
+{% include '_admin_header.html' %}
+
+    <section class="admin-page-head">
+      <div>
+        <h1>Doctor Approvals</h1>
+        <p>Pending doctor accounts can't sign in until they're approved.</p>
+      </div>
+    </section>
+
+    <section class="activity-panel admin-table-panel">
+      <div class="panel-head"><h3>Pending doctor accounts</h3><span class="panel-sub">{{ pending_doctors|length }} awaiting review</span></div>
+      {% if pending_doctors %}
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th scope="col">Doctor</th><th scope="col">Contact</th><th scope="col">Requested</th><th scope="col">Actions</th></tr></thead>
+          <tbody>
+            {% for doctor in pending_doctors %}
+            <tr>
+              <td><strong>{{ doctor.name }}</strong><span class="admin-secondary">{{ doctor.email }}</span></td>
+              <td>{{ doctor.phone or 'Not provided' }}</td>
+              <td>{{ doctor.created_date }}</td>
+              <td>
+                <form method="post" action="{{ url_for('admin_review_doctor', doctor_uid=doctor.uid, decision='approve') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="admin-approve" type="submit">Approve</button>
+                </form>
+                <form method="post" action="{{ url_for('admin_review_doctor', doctor_uid=doctor.uid, decision='reject') }}" onsubmit="return confirm('Reject this doctor? They will not be able to sign in.')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="admin-reject" type="submit">Reject</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="admin-empty">
+        <span class="admin-empty-icon">✓</span>
+        <p><strong>All caught up.</strong> No doctor accounts are waiting for approval.</p>
+      </div>
+      {% endif %}
+    </section>
+
+    {% for title, sub, doctors, status, empty in [
+         ('Recently approved doctors', 'Last 10 approved', approved_doctors, 'approved', 'No approved doctors yet.'),
+         ('Rejected doctors', 'Last 10 rejected', rejected_doctors, 'rejected', 'No rejected doctors.')] %}
+    <section class="activity-panel admin-table-panel">
+      <div class="panel-head"><h3>{{ title }}</h3><span class="panel-sub">{{ sub }}</span></div>
+      {% if doctors %}
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th scope="col">Doctor</th><th scope="col">Practice</th><th scope="col">Joined</th><th scope="col">{{ status|capitalize }}</th></tr></thead>
+          <tbody>
+            {% for doctor in doctors %}
+            <tr>
+              <td><strong>{{ doctor.name }}</strong><span class="admin-secondary">{{ doctor.email }}</span></td>
+              <td>{{ doctor.specialization or '—' }}{% if doctor.affiliation %}<span class="admin-secondary">{{ doctor.affiliation }}</span>{% endif %}</td>
+              <td>{{ doctor.created_date }}</td>
+              <td><span class="admin-status admin-status-{{ status }}">{{ status }}</span><span class="admin-secondary">{{ doctor.reviewed_date if doctor.reviewed_at else 'Date not recorded' }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="trend-empty">{{ empty }}</p>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>
