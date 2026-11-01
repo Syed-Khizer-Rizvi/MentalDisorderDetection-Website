@@ -33,7 +33,7 @@
     </div>
     <div class="auth-form-box">
       <h2>Welcome back</h2>
-      <p class="auth-sub">Sign in to begin today's assessment</p>
+      <p class="auth-sub">Sign in</p>
 
       {% if error %}<div class="auth-alert">{{ error }}</div>{% endif %}
       <div id="jsAlert" class="auth-alert" style="display:none;"></div>
@@ -53,7 +53,7 @@
             <input type="password" id="password" placeholder="••••••••" required>
           </div>
         </div>
-        <button type="submit" class="btn-auth" id="submitBtn">Sign in &amp; start assessment</button>
+        <button type="submit" class="btn-auth" id="submitBtn">Sign in</button>
       </form>
 
       <p class="auth-footer-text">Don't have an account? <a href="{{ url_for('register') }}">Create account</a></p>
@@ -112,12 +112,12 @@
       } else {
         showAlert(data.error || 'Login failed');
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Sign in & start assessment';
+        submitBtn.textContent = 'Sign in';
       }
     } catch (err) {
       showAlert(err.message || 'Invalid credentials');
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Sign in & start assessment';
+      submitBtn.textContent = 'Sign in';
     }
   });
 </script>

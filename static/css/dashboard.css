@@ -775,6 +775,38 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .cn-time { margin-left: 0; width: 100%; }
 }
 
+/* ========== ASSIGNED DOCTOR (PATIENT) ========== */
+.yd-strip {
+  display: flex; flex-direction: row; align-items: center; gap: 14px;
+  padding: 14px 20px; transition: border-color 0.2s, box-shadow 0.2s;
+}
+.yd-strip:hover { border-color: #0F7A5F; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08); }
+.yd-strip-avatar { width: 44px; height: 44px; font-size: 15px; flex-shrink: 0; }
+.yd-strip-text { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.yd-strip-text strong { font-size: 15px; font-weight: 700; color: #0F172A; }
+.yd-strip-text small { font-size: 12px; color: #64748B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yd-pending {
+  display: flex; flex-direction: row; align-items: center; gap: 12px;
+  padding: 14px 18px; border-radius: 12px; background: #FEF3C7; border: 1px solid #FDE68A;
+}
+.yd-pending-icon { font-size: 20px; }
+.yd-pending p { font-size: 14px; color: #78350F; }
+.yd-card { display: flex; flex-direction: row; align-items: flex-start; gap: 20px; margin-top: 10px; }
+.yd-avatar { width: 72px; height: 72px; font-size: 26px; }
+.yd-info { flex: 1; min-width: 0; }
+.yd-info h4 { font-size: 18px; font-weight: 800; color: #0F172A; }
+.yd-specialization { font-size: 14px; color: #475569; margin-top: 2px; }
+.yd-details { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-top: 12px; }
+.yd-change { flex-shrink: 0; padding: 9px 16px; font-size: 13px; }
+@media (max-width: 720px) {
+  .yd-strip .panel-link { display: none; }
+  .yd-card { flex-direction: column; align-items: stretch; }
+  .yd-avatar { align-self: flex-start; }
+  .yd-details { grid-template-columns: 1fr; }
+  #your-doctor .panel-head { flex-wrap: wrap; gap: 10px; }
+  .yd-change { width: 100%; }
+}
+
 /* ========== RISK BARS (DOCTOR) ========== */
 .risk-bars { display: flex; flex-direction: column; gap: 18px; padding: 16px 0 6px; }
 .risk-bar-row { display: flex; flex-direction: row; align-items: center; gap: 12px; }

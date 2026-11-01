@@ -45,7 +45,7 @@
         {% if critical_count > 0 %}
         <p>{{ critical_count }} critical alert{{ 's' if critical_count != 1 }} need{{ 's' if critical_count == 1 }} your attention.</p>
         {% else %}
-        <p>No critical alerts right now. {{ total_patients }} active patient{{ 's' if total_patients != 1 }} under monitoring.</p>
+        <p>No critical alerts right now. {{ total_patients }} assigned patient{{ 's' if total_patients != 1 }} under monitoring.</p>
         {% endif %}
       </div>
       <div class="welcome-badge">

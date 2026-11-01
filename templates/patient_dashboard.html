@@ -53,6 +53,23 @@
       </a>
     </section>
 
+    {% if assigned_doctor %}
+    <a href="{{ url_for('patient_profile') }}#your-doctor" class="chart-panel yd-strip">
+      <div class="user-avatar yd-strip-avatar">{{ assigned_doctor.initials }}</div>
+      <div class="yd-strip-text">
+        <span class="stat-label">Your Doctor</span>
+        <strong>Dr. {{ assigned_doctor.name }}</strong>
+        {% if assigned_doctor.specialization or assigned_doctor.affiliation %}<small>{{ assigned_doctor.specialization }}{% if assigned_doctor.specialization and assigned_doctor.affiliation %} · {% endif %}{{ assigned_doctor.affiliation }}</small>{% endif %}
+      </div>
+      <span class="panel-link">View details →</span>
+    </a>
+    {% else %}
+    <section class="yd-pending" role="status">
+      <span class="yd-pending-icon">🩺</span>
+      <p><strong>Your doctor will be assigned soon.</strong> Core features remain available.</p>
+    </section>
+    {% endif %}
+
     {% if has_assessment %}
     <section class="stats-grid">
       <div class="stat-card" style="border-left: 4px solid {{ risk_color }};">

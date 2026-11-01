@@ -173,6 +173,45 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   box-shadow: 0 0 0 3px rgba(15, 122, 95, 0.1);
 }
 
+/* Step 2: choose your doctor (patients only) */
+.reg-step {
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 14px 16px 16px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.reg-step[hidden] { display: none; }
+.reg-step legend {
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0F172A;
+}
+.reg-step-num {
+  margin-right: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #D1FAE5;
+  color: #065F46;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.reg-step select { text-overflow: ellipsis; }
+.reg-hint { font-size: 12px; color: #64748B; }
+.reg-note {
+  font-size: 13px;
+  color: #92400E;
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+  border-radius: 10px;
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+
 .btn-auth {
   width: 100%;
   padding: 14px;

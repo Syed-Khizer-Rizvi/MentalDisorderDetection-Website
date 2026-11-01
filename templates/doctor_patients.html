@@ -41,7 +41,7 @@
     <section class="welcome-banner">
       <div class="welcome-text">
         <h1>My Patients</h1>
-        <p>{{ total_patients }} active patient{{ 's' if total_patients != 1 }}{% if unassessed_count %} · {{ unassessed_count }} not yet assessed{% endif %}</p>
+        <p>{{ total_patients }} patient{{ 's' if total_patients != 1 }} assigned to you{% if unassessed_count %} · {{ unassessed_count }} not yet assessed{% endif %}</p>
       </div>
     </section>
 
@@ -116,7 +116,7 @@
       </div>
       {% else %}
       <p class="trend-empty">
-        {% if total_patients == 0 %}No active patients yet.{% else %}No patients match these filters. <a href="{{ url_for('doctor_patients') }}" class="panel-link">Clear filters</a>{% endif %}
+        {% if total_patients == 0 %}No patients are assigned to you yet.{% else %}No patients match these filters. <a href="{{ url_for('doctor_patients') }}" class="panel-link">Clear filters</a>{% endif %}
       </p>
       {% endif %}
     </section>

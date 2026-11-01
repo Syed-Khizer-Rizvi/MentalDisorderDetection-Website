@@ -76,7 +76,29 @@
             <input type="password" id="confirm" placeholder="Repeat password" required>
           </div>
         </div>
-        <button type="submit" class="btn-auth" id="submitBtn">Create account &amp; start assessment</button>
+
+        <fieldset class="reg-step" id="doctorStep">
+          <legend><span class="reg-step-num">Step 2</span> Choose your doctor</legend>
+          {% if doctors %}
+          <div class="form-group">
+            <label for="doctor">Your doctor</label>
+            <div class="input-wrap">
+              <span class="input-icon">🩺</span>
+              <select id="doctor" required>
+                <option value="">Select a doctor…</option>
+                {% for d in doctors %}
+                <option value="{{ d.uid }}">Dr. {{ d.name }}{% if d.specialization %} - {{ d.specialization }}{% endif %}{% if d.affiliation %} ({{ d.affiliation }}){% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <small class="reg-hint">Your doctor will see your assessment results and any journal entries you choose to share.</small>
+          </div>
+          {% else %}
+          <p class="reg-note">No doctors available right now. You can complete registration — we'll assign a doctor as soon as one becomes available.</p>
+          {% endif %}
+        </fieldset>
+
+        <button type="submit" class="btn-auth" id="submitBtn">Create account</button>
       </form>
 
       <p class="auth-footer-text">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
@@ -104,6 +126,18 @@
   const form = document.getElementById('registerForm');
   const alertBox = document.getElementById('jsAlert');
   const submitBtn = document.getElementById('submitBtn');
+  const roleSelect = document.getElementById('role');
+  const doctorStep = document.getElementById('doctorStep');
+  const doctorSelect = document.getElementById('doctor');   // absent when no doctors are approved
+
+  // Doctors don't choose a doctor; only patients see Step 2
+  function syncDoctorStep() {
+    const isPatient = roleSelect.value === 'patient';
+    doctorStep.hidden = !isPatient;
+    if (doctorSelect) doctorSelect.required = isPatient;
+  }
+  roleSelect.addEventListener('change', syncDoctorStep);
+  syncDoctorStep();
 
   function showAlert(msg, isSuccess = false) {
     alertBox.textContent = msg;
@@ -134,6 +168,15 @@
       return;
     }
 
+    // Checked before the Firebase account is created, so a missing choice never leaves a
+    // half-registered account behind
+    const doctorUid = role === 'patient' && doctorSelect ? doctorSelect.value : '';
+    if (role === 'patient' && doctorSelect && !doctorUid) {
+      showAlert('Please choose your doctor.');
+      doctorSelect.focus();
+      return;
+    }
+
     submitBtn.disabled = true;
     submitBtn.textContent = 'Creating account...';
 
@@ -144,7 +187,7 @@
       const res = await fetch('/api/register-profile', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ idToken, name: fullname, phone: '', role })
+        body: JSON.stringify({ idToken, name: fullname, phone: '', role, doctor_uid: doctorUid })
       });
       const data = await res.json();
 
@@ -160,12 +203,12 @@
       } else {
         showAlert(data.error || 'Registration failed');
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Create account & start assessment';
+        submitBtn.textContent = 'Create account';
       }
     } catch (err) {
       showAlert(err.message || 'Registration error');
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Create account & start assessment';
+      submitBtn.textContent = 'Create account';
     }
   });
 </script>

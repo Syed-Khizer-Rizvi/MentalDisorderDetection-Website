@@ -46,6 +46,29 @@
       </div>
     </section>
 
+    <section class="chart-panel" id="your-doctor">
+      <div class="panel-head">
+        <h3>Your Doctor</h3>
+        {% if assigned_doctor %}<button type="button" class="dp-cancel yd-change" id="requestChange">Request Doctor Change</button>{% endif %}
+      </div>
+      {% if assigned_doctor %}
+      <div class="yd-card">
+        <div class="profile-avatar yd-avatar">{{ assigned_doctor.initials }}</div>
+        <div class="yd-info">
+          <h4>Dr. {{ assigned_doctor.name }}</h4>
+          <p class="yd-specialization">{{ assigned_doctor.specialization or 'Specialization not listed' }}</p>
+          <dl class="wb-details yd-details">
+            <div><dt>Hospital / clinic</dt><dd>{{ assigned_doctor.affiliation or '-' }}</dd></div>
+            <div><dt>Experience</dt><dd>{% if assigned_doctor.years_experience is not none %}{{ assigned_doctor.years_experience }} year{{ 's' if assigned_doctor.years_experience != 1 }}{% else %}-{% endif %}</dd></div>
+            <div><dt>Your doctor since</dt><dd>{{ assigned_doctor.assigned_since }}</dd></div>
+          </dl>
+        </div>
+      </div>
+      {% else %}
+      <p class="trend-empty">A doctor will be assigned to you soon. Core features remain available.</p>
+      {% endif %}
+    </section>
+
     <form class="chart-panel profile-form" id="profileForm" novalidate>
       <div class="panel-head"><h3>Personal Information</h3><span class="panel-sub">Fields marked * are required</span></div>
       <div class="profile-grid">
@@ -102,7 +125,20 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
+<dialog class="act-modal" id="changeDoctorModal" aria-labelledby="changeDoctorTitle">
+  <span class="act-modal-icon">🩺</span>
+  <h3 id="changeDoctorTitle">Request a doctor change</h3>
+  <p>Doctor changes are managed by the admin. Contact support.</p>
+  <button type="button" class="profile-save" id="changeDoctorClose">Got it</button>
+</dialog>
+
 <script>
+  const changeModal = document.getElementById('changeDoctorModal');
+  const changeBtn = document.getElementById('requestChange');
+  if (changeBtn) changeBtn.addEventListener('click', () => changeModal.showModal());
+  document.getElementById('changeDoctorClose').addEventListener('click', () => changeModal.close());
+  changeModal.addEventListener('click', (e) => { if (e.target === changeModal) changeModal.close(); });
+
   const form = document.getElementById('profileForm');
   const saveBtn = document.getElementById('saveBtn');
   const toast = document.getElementById('toast');

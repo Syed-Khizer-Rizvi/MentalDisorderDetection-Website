@@ -193,6 +193,76 @@ def build_results_context(assessment):
     )
 
 
+# ========== DOCTOR ASSIGNMENT ==========
+# users/{patient_uid}/assigned_doctor_uid, assigned_at (server timestamp) and assigned_by:
+# 'self' (patient chose at registration), 'auto' (least-loaded doctor) or 'admin:<admin_uid>'.
+
+def strip_dr(name):
+    """'Dr. Sarah Ahmed' -> 'Sarah Ahmed', so templates can add the title once."""
+    name = (name or '').strip()
+    if name.lower().replace('.', '').split()[:1] == ['dr'] and ' ' in name:
+        return name.split(None, 1)[1]
+    return name
+
+
+def doctor_summary(uid, user):
+    profile = user.get('profile') or {}
+    name = strip_dr(user.get('name')) or 'Doctor'
+    return {
+        'uid': uid, 'name': name,
+        'initials': ''.join(w[0].upper() for w in name.split()[:2]) or 'D',
+        'specialization': profile.get('specialization', ''),
+        'affiliation': profile.get('affiliation', ''),
+        'years_experience': profile.get('years_experience'),
+    }
+
+
+def load_approved_doctors(users=None):
+    """Approved doctors with the public details patients see when choosing one."""
+    users = users if users is not None else (db.reference('users').get() or {})
+    doctors = [doctor_summary(uid, u) for uid, u in users.items()
+               if isinstance(u, dict) and u.get('role') == 'doctor' and u.get('status') == 'approved']
+    return sorted(doctors, key=lambda d: d['name'].lower())
+
+
+def get_approved_doctor(doctor_uid):
+    """The doctor's summary if doctor_uid belongs to an approved doctor, else None."""
+    if not is_safe_key(doctor_uid):
+        return None
+    user = db.reference(f'users/{doctor_uid}').get()
+    if not isinstance(user, dict) or user.get('role') != 'doctor' or user.get('status') != 'approved':
+        return None
+    return doctor_summary(doctor_uid, user)
+
+
+def auto_assign_doctor(patient_uid):
+    """The approved doctor with the fewest active patients (random among ties), or None.
+    Only picks; the caller saves the assignment with assign_doctor()."""
+    import random
+    users = db.reference('users').get() or {}
+    load = {d['uid']: 0 for d in load_approved_doctors(users)}
+    if not load:
+        return None
+    for uid, u in users.items():
+        if (uid != patient_uid and isinstance(u, dict) and u.get('role') == 'patient'
+                and u.get('status') == 'active' and u.get('assigned_doctor_uid') in load):
+            load[u['assigned_doctor_uid']] += 1
+    fewest = min(load.values())
+    return random.choice([uid for uid, count in load.items() if count == fewest])
+
+
+def assign_doctor(patient_uid, doctor_uid, assigned_by):
+    db.reference(f'users/{patient_uid}').update({
+        'assigned_doctor_uid': doctor_uid,
+        'assigned_at': {'.sv': 'timestamp'},   # always server time, never client input
+        'assigned_by': assigned_by,
+    })
+
+
+def patient_assigned_to(patient, doctor_uid):
+    return isinstance(patient, dict) and bool(doctor_uid) and patient.get('assigned_doctor_uid') == doctor_uid
+
+
 # ========== PUBLIC ROUTES ==========
 @app.route('/')
 def home():
@@ -210,7 +280,10 @@ def login():
 def register():
     if 'user' in session:
         return redirect(url_for('dashboard'))
-    return render_template('register.html', firebase_config=FIREBASE_WEB_CONFIG)
+    # Public page: only the details a patient needs to choose (no contact info)
+    doctors = [{'uid': d['uid'], 'name': d['name'], 'specialization': d['specialization'],
+                'affiliation': d['affiliation']} for d in load_approved_doctors()]
+    return render_template('register.html', firebase_config=FIREBASE_WEB_CONFIG, doctors=doctors)
 
 
 # ========== API ROUTES (called by frontend JS) ==========
@@ -269,8 +342,7 @@ def register_profile():
 
         status = 'pending' if role == 'doctor' else 'active'
 
-        user_ref = db.reference(f'users/{uid}')
-        user_ref.set({
+        record = {
             'uid': uid,
             'name': name,
             'email': email,
@@ -278,7 +350,29 @@ def register_profile():
             'role': role,
             'status': status,
             'created_at': {'.sv': 'timestamp'}
-        })
+        }
+
+        if role == 'patient':
+            doctor_uid = str(data.get('doctor_uid') or '').strip()
+            error = None
+            if doctor_uid:
+                if not get_approved_doctor(doctor_uid):
+                    error = 'The selected doctor is not available. Please choose another doctor.'
+            elif load_approved_doctors():
+                error = 'Please choose your doctor.'
+            if error:
+                # The Firebase Auth account was created before this call; remove it so the
+                # patient can retry with the same email instead of being locked out
+                try:
+                    auth.delete_user(uid)
+                except Exception:
+                    pass
+                return jsonify({'success': False, 'error': error}), 400
+            if doctor_uid:
+                record.update(assigned_doctor_uid=doctor_uid, assigned_at={'.sv': 'timestamp'}, assigned_by='self')
+            # No approved doctors yet: register unassigned; the dashboard auto-assigns later
+
+        db.reference(f'users/{uid}').set(record)
 
         message = (
             'Account created! Your doctor account is pending admin approval. You will be notified once approved.'
@@ -314,6 +408,19 @@ def patient_dashboard():
     user_name = session['user'].get('name', 'Patient')
     user_initials = ''.join([word[0].upper() for word in user_name.split()[:2]]) or 'P'
     uid = session['user']['uid']
+
+    # Patients without a doctor (registered before assignment existed, or when no doctor
+    # was approved yet) are given the least-loaded approved doctor on their next visit
+    doctor_uid = db.reference(f'users/{uid}/assigned_doctor_uid').get()
+    if not doctor_uid:
+        doctor_uid = auto_assign_doctor(uid)
+        if doctor_uid:
+            assign_doctor(uid, doctor_uid, 'auto')
+    assigned_doctor = None
+    if doctor_uid and is_safe_key(doctor_uid):
+        doctor_record = db.reference(f'users/{doctor_uid}').get()
+        if isinstance(doctor_record, dict):
+            assigned_doctor = doctor_summary(doctor_uid, doctor_record)
 
     latest_id = db.reference(f'users/{uid}/latest_assessment_id').get()
     latest = db.reference(f'users/{uid}/assessments/{latest_id}').get() if latest_id else None
@@ -358,7 +465,8 @@ def patient_dashboard():
 
     return render_template('patient_dashboard.html',
                            user_name=user_name, user_initials=user_initials,
-                           wristband_order=wristband_order, risk_trend=risk_trend, **data)
+                           wristband_order=wristband_order, risk_trend=risk_trend,
+                           assigned_doctor=assigned_doctor, **data)
 
 
 @app.route('/patient/assessment')
@@ -596,13 +704,21 @@ def patient_profile():
     user_name = user.get('name') or session['user'].get('name', 'Patient')
     user_initials = ''.join([word[0].upper() for word in user_name.split()[:2]]) or 'P'
 
+    assigned_doctor = None
+    doctor_uid = user.get('assigned_doctor_uid')
+    if doctor_uid and is_safe_key(doctor_uid):
+        doctor_record = db.reference(f'users/{doctor_uid}').get()
+        if isinstance(doctor_record, dict):
+            assigned_doctor = dict(doctor_summary(doctor_uid, doctor_record),
+                                   assigned_since=format_timestamp(user.get('assigned_at'), '%d %b %Y'))
+
     return render_template('profile.html',
                            user_name=user_name, user_initials=user_initials,
                            email=session['user'].get('email') or user.get('email', ''),
                            phone=user.get('phone', ''),
                            profile=user.get('profile') or {},
                            member_since=format_timestamp(user.get('created_at'), '%d %b %Y'),
-                           gender_options=GENDER_OPTIONS)
+                           gender_options=GENDER_OPTIONS, assigned_doctor=assigned_doctor)
 
 
 @app.route('/api/update-profile', methods=['POST'])
@@ -746,22 +862,22 @@ RISK_LEVELS = ['low', 'moderate', 'high', 'critical']
 
 
 def doctor_identity():
-    user_name = session['user'].get('name', 'Doctor')
     # Avoid "Dr. Dr. ..." when the stored name already carries the title
-    if user_name.lower().replace('.', '').split()[:1] == ['dr']:
-        user_name = user_name.split(None, 1)[1] if ' ' in user_name else user_name
+    user_name = strip_dr(session['user'].get('name', 'Doctor')) or 'Doctor'
     user_initials = ''.join([word[0].upper() for word in user_name.split()[:2]]) or 'D'
     return user_name, user_initials
 
 
-def load_active_patients():
-    """Summaries of all active patients (scored on their latest assessment) plus every
-    timestamped assessment across them, from a single read of the users tree."""
+def load_active_patients(doctor_uid):
+    """Summaries of the active patients assigned to doctor_uid (scored on their latest
+    assessment) plus every timestamped assessment across them, from one read of users."""
     users = db.reference('users').get() or {}
 
     patients, recent = [], []
     for uid, u in users.items():
         if not isinstance(u, dict) or u.get('role') != 'patient' or u.get('status') != 'active':
+            continue
+        if not patient_assigned_to(u, doctor_uid):
             continue
         name = u.get('name') or 'Unnamed patient'
         assessments = u.get('assessments') or {}
@@ -801,7 +917,7 @@ def risk_distribution(patients):
 @role_required('doctor')
 def doctor_patients():
     user_name, user_initials = doctor_identity()
-    patients, _ = load_active_patients()
+    patients, _ = load_active_patients(session['user']['uid'])
     counts = risk_distribution(patients)
 
     risk = request.args.get('risk', 'all').lower()
@@ -845,6 +961,9 @@ def doctor_patient_detail(patient_uid):
     patient = get_active_patient(patient_uid)
     if not patient:
         flash('That patient could not be found or is no longer active.', 'error')
+        return redirect(url_for('doctor_patients'))
+    if not patient_assigned_to(patient, session['user']['uid']):
+        flash("That patient isn't assigned to you.", 'error')
         return redirect(url_for('doctor_patients'))
 
     name = patient.get('name') or 'Unnamed patient'
@@ -924,6 +1043,9 @@ def doctor_assessment_detail(patient_uid, assessment_id):
     patient = get_active_patient(patient_uid)
     if not patient:
         flash('That patient could not be found or is no longer active.', 'error')
+        return redirect(url_for('doctor_patients'))
+    if not patient_assigned_to(patient, session['user']['uid']):
+        flash("That patient isn't assigned to you.", 'error')
         return redirect(url_for('doctor_patients'))
     assessment = (patient.get('assessments') or {}).get(assessment_id) if assessment_id.isdigit() else None
     if not isinstance(assessment, dict):
@@ -1021,8 +1143,11 @@ def note_json_error(message, status, errors=None):
 @login_required
 @role_required('doctor')
 def add_clinical_note(patient_uid):
-    if not get_active_patient(patient_uid):
+    patient = get_active_patient(patient_uid)
+    if not patient:
         return note_json_error('Patient not found or no longer active.', 404)
+    if not patient_assigned_to(patient, session['user']['uid']):
+        return note_json_error("That patient isn't assigned to you.", 403)
     fields, errors = validate_note(request.get_json(silent=True) or {})
     if errors:
         return note_json_error('Please fix the highlighted fields.', 400, errors)
@@ -1048,6 +1173,8 @@ def load_own_note(patient_uid, note_id):
         return None, None, note_json_error('Note not found.', 404)
     if note.get('doctor_uid') != session['user']['uid']:
         return None, None, note_json_error('You can only change notes you wrote.', 403)
+    if db.reference(f'users/{patient_uid}/assigned_doctor_uid').get() != session['user']['uid']:
+        return None, None, note_json_error("That patient isn't assigned to you.", 403)
     return ref, note, None
 
 
@@ -1105,6 +1232,9 @@ def doctor_notes():
             continue
         # Only the fields this page shows, not the patient's whole record
         if db.reference(f'users/{uid}/role').get() != 'patient':
+            continue
+        # A patient reassigned to another doctor takes these notes out of this doctor's view
+        if db.reference(f'users/{uid}/assigned_doctor_uid').get() != me:
             continue
         total += len(mine)
         name = db.reference(f'users/{uid}/name').get() or 'Unnamed patient'
@@ -1230,7 +1360,7 @@ def update_doctor_profile():
 @role_required('doctor')
 def doctor_dashboard():
     user_name, user_initials = doctor_identity()
-    patients, recent = load_active_patients()
+    patients, recent = load_active_patients(session['user']['uid'])
 
     assessed = [p for p in patients if p['composite_score'] is not None]
     distribution = risk_distribution(patients)
@@ -1261,6 +1391,16 @@ def doctor_dashboard():
 @role_required('admin')
 def admin_dashboard():
     return f"<h1>Admin Dashboard</h1><p>Welcome, {session['user']['name']}!</p><p>Role: {session['user']['role']}</p><a href='/logout'>Logout</a>"
+
+
+@app.route('/api/admin/assign-patient-to-doctor', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_assign_patient_to_doctor():
+    # Placeholder for the admin module. Expected body: {patient_uid, doctor_uid}. The
+    # implementation should validate both, then call
+    # assign_doctor(patient_uid, doctor_uid, f"admin:{session['user']['uid']}")
+    return jsonify({'success': False, 'error': 'Pending admin module'}), 501
 
 
 # ========== LOGOUT ==========
