@@ -68,9 +68,26 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 16px; color: #FFF; z-index: 10;
   }
-  .start-overlay button {
-    padding: 12px 28px; background: #FFFFFF; color: #0F7A5F;
-    border-radius: 10px; font-size: 14px; font-weight: 700;
+  .overlay-icon { font-size: 32px; opacity: 0.8; }
+  .scan-choice { max-width: 580px; margin: 0 auto 28px; }
+  .scan-optional { font-size: 13px; color: #64748B; margin-bottom: 14px; }
+  .scan-error {
+    margin-bottom: 14px; padding: 10px 14px; border: 1px solid #FCD34D; border-radius: 10px;
+    background: #FEF3C7; color: #92400E; font-size: 13px; text-align: left;
+  }
+  .scan-error[hidden] { display: none; }
+  .scan-actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .btn-scan-start, .btn-scan-skip {
+    min-width: 190px; padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  .btn-scan-start { background: #0F7A5F; color: #FFFFFF; border: 1px solid #0F7A5F; }
+  .btn-scan-start:hover { background: #0A5A47; }
+  .btn-scan-skip { background: #FFFFFF; color: #475569; border: 1px solid #CBD5E1; }
+  .btn-scan-skip:hover { border-color: #64748B; color: #0F172A; }
+  .btn-scan-start:disabled, .btn-scan-skip:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-scan-start:focus-visible, .btn-scan-skip:focus-visible { outline: 2px solid #0F7A5F; outline-offset: 2px; }
+  @media (max-width: 600px) {
+    .btn-scan-start, .btn-scan-skip { flex: 1 1 100%; }
   }
 </style>
 </head>
@@ -111,8 +128,17 @@
       <div class="timer" id="timer">00:00</div>
       <div class="face-detected face-not-detected" id="faceStatus">Starting...</div>
       <div class="start-overlay" id="startOverlay">
-        <div>Camera access required</div>
-        <button id="startBtn">Start Camera</button>
+        <div class="overlay-icon">📷</div>
+        <div>Camera is off</div>
+      </div>
+    </div>
+
+    <div class="scan-choice">
+      <p class="scan-optional">Facial emotion data helps improve accuracy but is not required. You can skip if you prefer.</p>
+      <p class="scan-error" id="cameraError" role="alert" hidden></p>
+      <div class="scan-actions">
+        <button type="button" class="btn-scan-start" id="startBtn">📷 Start Facial Scan</button>
+        <button type="button" class="btn-scan-skip" id="skipBtn">Skip for now</button>
       </div>
     </div>
 
@@ -132,7 +158,7 @@
 </main>
 
 <footer class="assess-footer">
-  <span class="footer-note" id="footerNote">⏱ Scan in progress...</span>
+  <span class="footer-note" id="footerNote">Start the facial scan, or skip it to see your results</span>
   <button type="button" id="proceedBtn" class="btn-proceed" disabled>Proceed to Results →</button>
 </footer>
 
@@ -157,14 +183,49 @@
   let peakEmotion = null;
   let peakValue = 0;
 
+  const skipBtn = document.getElementById('skipBtn');
+  const cameraError = document.getElementById('cameraError');
+
   startBtn.addEventListener('click', async () => {
+    cameraError.hidden = true;
+    startBtn.disabled = true;
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('unsupported');
       stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
       video.srcObject = stream;
       startOverlay.style.display = 'none';
+      startBtn.hidden = true;
       startScanning();
     } catch (err) {
-      alert('Camera access denied: ' + err.message);
+      startBtn.disabled = false;
+      cameraError.textContent = (err.name === 'NotAllowedError'
+        ? 'Camera access was blocked.'
+        : 'We couldn\'t start your camera.') + ' You can allow camera access and try again, or skip the facial scan.';
+      cameraError.hidden = false;
+    }
+  });
+
+  // Skipping saves a questionnaire-only assessment; the composite then uses PHQ-9, GAD-7 and PSS-10
+  skipBtn.addEventListener('click', async () => {
+    clearInterval(scanInterval);
+    clearInterval(timerInterval);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    skipBtn.disabled = startBtn.disabled = proceedBtn.disabled = true;
+    skipBtn.textContent = 'Saving...';
+    try {
+      const res = await fetch('/api/submit-facial', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ skipped: true })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Submit failed');
+      window.location.href = data.redirect;
+    } catch (err) {
+      cameraError.textContent = 'Could not save your assessment: ' + err.message;
+      cameraError.hidden = false;
+      skipBtn.disabled = startBtn.disabled = false;
+      skipBtn.textContent = 'Skip for now';
     }
   });
 
@@ -250,7 +311,13 @@
       footerNote.className = 'footer-note done';
       proceedBtn.disabled = false;
     } else {
-      footerNote.textContent = `⚠ Only ${readingsCollected} readings. Please retry.`;
+      footerNote.textContent = `⚠ Only ${readingsCollected} readings. Try again or skip the scan.`;
+      // Reset so "Start Facial Scan" runs a fresh scan
+      elapsed = 0; readingsCollected = 0; aggregatedEmotions = {}; peakEmotion = null; peakValue = 0;
+      timer.textContent = '00:00';
+      startOverlay.style.display = '';
+      startBtn.hidden = false;
+      startBtn.disabled = false;
     }
   }
 

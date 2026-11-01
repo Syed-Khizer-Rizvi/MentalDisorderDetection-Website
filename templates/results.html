@@ -33,7 +33,11 @@
 <div class="stepper">
   <div class="step"><div class="step-num" style="background:#0F7A5F;color:#FFF;">✓</div><div class="step-label" style="color:#0F7A5F;">Questionnaire</div></div>
   <div class="step-line" style="background:#0F7A5F;"></div>
+  {% if facial_skipped %}
+  <div class="step"><div class="step-num" style="background:#E2E8F0;color:#64748B;">–</div><div class="step-label" style="color:#64748B;">Facial Scan (skipped)</div></div>
+  {% else %}
   <div class="step"><div class="step-num" style="background:#0F7A5F;color:#FFF;">✓</div><div class="step-label" style="color:#0F7A5F;">Facial Scan</div></div>
+  {% endif %}
   <div class="step-line" style="background:#0F7A5F;"></div>
   <div class="step active"><div class="step-num">3</div><div class="step-label">Results</div></div>
 </div>
@@ -54,13 +58,24 @@
       <div class="score-card"><span class="sc-label">PHQ-9</span><strong class="sc-value" style="color: {{ phq_color }};">{{ phq_score }}/27</strong><span class="sc-tag">{{ phq_severity }}</span></div>
       <div class="score-card"><span class="sc-label">GAD-7</span><strong class="sc-value" style="color: {{ gad_color }};">{{ gad_score }}/21</strong><span class="sc-tag">{{ gad_severity }}</span></div>
       <div class="score-card"><span class="sc-label">PSS-10</span><strong class="sc-value" style="color: {{ pss_color }};">{{ pss_score }}/40</strong><span class="sc-tag">{{ pss_severity }}</span></div>
+      {% if facial_skipped %}
+      <div class="score-card score-card-skipped">
+        <span class="sc-label">FACIAL</span>
+        <strong class="sc-value">Skipped</strong>
+        <span class="sc-tag">Facial scan skipped</span>
+      </div>
+      {% else %}
       <div class="score-card">
-  <span class="sc-label">FACIAL</span>
-  <strong class="sc-value" style="color: #7C3AED;">{{ facial_dominant | capitalize }}</strong>
-  <span class="sc-tag">Dominant ({{ facial_dominant_pct }}%)</span>
-  <span class="sc-tag" style="color:#DC2626;font-weight:600;margin-top:4px;">Peak: {{ facial_peak | capitalize }} {{ facial_peak_pct }}%</span>
-</div>
+        <span class="sc-label">FACIAL</span>
+        <strong class="sc-value" style="color: #7C3AED;">{{ facial_dominant | capitalize }}</strong>
+        <span class="sc-tag">Dominant ({{ facial_dominant_pct }}%)</span>
+        <span class="sc-tag" style="color:#DC2626;font-weight:600;margin-top:4px;">Peak: {{ facial_peak | capitalize }} {{ facial_peak_pct }}%</span>
+      </div>
+      {% endif %}
     </div>
+    {% if facial_skipped %}
+    <p class="composite-note">Composite score based on the PHQ-9, GAD-7 and PSS-10 questionnaires only (facial scan skipped).</p>
+    {% endif %}
 
     {% if doctor_view %}
     {# Recommendations, wristband prompts and helplines below are addressed to the patient #}

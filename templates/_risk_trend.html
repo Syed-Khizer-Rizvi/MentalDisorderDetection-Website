@@ -1,33 +1,56 @@
-{# Risk Trend chart. Expects `risk_trend` (see build_risk_trend in app.py); optional `trend_empty_text`. #}
+{# Risk Trend chart. Expects `risk_trend` (see build_risk_trend in app.py); optional `trend_empty_text`
+   and `trend_few_text` (shown under the chart until there are 3+ assessments). #}
 {% if risk_trend %}
   {# Positions are percentages of the plot box: x by index, y = 100 - score #}
   {% set n = risk_trend|length %}
+  {% set latest = risk_trend[-1] %}
   {% set ns = namespace(line='') %}
   {% for p in risk_trend %}
     {% set ns.line = ns.line ~ ' ' ~ ((50 if n == 1 else loop.index0 * 100 / (n - 1))|round(2)) ~ ',' ~ (100 - p.score) %}
   {% endfor %}
-  <div class="trend-chart" id="trendChart">
+
+  <div class="trend-summary">
+    <span class="trend-latest">Latest <strong style="color: {{ latest.risk_color }};">{{ latest.score }}</strong>/100
+      <span class="trend-badge trend-badge-{{ latest.risk_level }}">{{ latest.risk_label }}</span></span>
+    {% if n > 1 %}
+      {# Changes under 3 points are within normal day-to-day variation #}
+      {% set delta = latest.score - risk_trend[-2].score %}
+      {% if delta >= 3 %}
+      <span class="trend-delta trend-delta-up">↑ +{{ delta }} since last assessment</span>
+      {% elif delta <= -3 %}
+      <span class="trend-delta trend-delta-down">↓ −{{ -delta }} since last assessment</span>
+      {% else %}
+      <span class="trend-delta trend-delta-flat">→ No significant change{% if delta %} ({{ '%+d'|format(delta) }}){% endif %}</span>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="trend-chart{{ ' trend-sparse' if n < 3 }}" id="trendChart">
     <div class="trend-plot">
+      {# Risk zones, matching risk_band(): Low <=25, Moderate <=50, High <=70, Critical above #}
+      {% for level, label, low, high in [('low', 'Low', 0, 25), ('moderate', 'Moderate', 25, 50), ('high', 'High', 50, 70), ('critical', 'Critical', 70, 100)] %}
+        <div class="trend-zone trend-zone-{{ level }}" style="top: {{ 100 - high }}%; height: {{ high - low }}%;"><span>{{ label }}</span></div>
+      {% endfor %}
       {% for t in [100, 70, 50, 25, 0] %}
-        <div class="trend-grid{{ ' trend-grid-base' if t == 0 }}" style="top: {{ 100 - t }}%;"><span>{{ t }}</span></div>
+        <div class="trend-grid{{ ' trend-grid-base' if t == 0 }}{{ ' trend-grid-top' if t == 100 }}" style="top: {{ 100 - t }}%;"><span>{{ t }}</span></div>
       {% endfor %}
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0F7A5F" stop-opacity="0.18"/><stop offset="100%" stop-color="#0F7A5F" stop-opacity="0"/></linearGradient></defs>
         {% if n > 1 %}
-          <polygon points="0,100{{ ns.line }} 100,100" fill="url(#trendFill)"/>
-          <polyline points="{{ ns.line }}" fill="none" stroke="#0F7A5F" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+          <polyline class="trend-line" points="{{ ns.line }}" fill="none" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
         {% endif %}
       </svg>
       <div class="trend-crosshair" id="trendCrosshair" hidden></div>
       {% for p in risk_trend %}
         {% set x = 50 if n == 1 else loop.index0 * 100 / (n - 1) %}
-        <button type="button" class="trend-point" style="left: {{ x|round(2) }}%; top: {{ 100 - p.score }}%;"
-                data-score="{{ p.score }}" data-risk="{{ p.risk_label }}" data-date="{{ p.full_date }}"
-                aria-label="{{ p.full_date }}: {{ p.score }} out of 100, {{ p.risk_label }} risk">
+        <button type="button" class="trend-point{{ ' trend-point-latest' if loop.last }}"
+                style="left: {{ x|round(2) }}%; top: {{ 100 - p.score }}%; --c: {{ p.risk_color }};"
+                data-score="{{ p.score }}" data-risk="{{ p.risk_label }}" data-level="{{ p.risk_level }}"
+                data-date="{{ p.full_date }}" data-url="{{ p.url }}"
+                aria-label="{{ p.full_date }}: {{ p.score }} out of 100, {{ p.risk_label }} risk{{ ' (latest)' if loop.last }}">
           {% if loop.last %}<span class="trend-value{{ ' trend-value-end' if n > 1 }}">{{ p.score }}</span>{% endif %}
         </button>
       {% endfor %}
-      <div class="trend-tooltip" id="trendTooltip" hidden></div>
+      <div class="trend-tooltip" id="trendTooltip" role="tooltip" hidden></div>
     </div>
     <div class="trend-dates">
       {# On narrow screens only every `step`-th label (plus the last) is shown, so labels don't collide #}
@@ -38,11 +61,14 @@
       {% endfor %}
     </div>
   </div>
+  {% if n < 3 %}
+  <p class="trend-hint">{{ trend_few_text | default('Complete 3 or more assessments to see your trend pattern.') }}</p>
+  {% endif %}
   <details class="trend-table">
     <summary>View as table</summary>
     <table>
-      <thead><tr><th>Date</th><th>Score</th><th>Risk</th></tr></thead>
-      <tbody>{% for p in risk_trend %}<tr><td>{{ p.full_date }}</td><td>{{ p.score }}</td><td>{{ p.risk_label }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>Date</th><th>Score</th><th>Risk</th>{% if latest.url %}<th><span class="sr-only">Details</span></th>{% endif %}</tr></thead>
+      <tbody>{% for p in risk_trend|reverse %}<tr><td>{{ p.full_date }}</td><td>{{ p.score }}</td><td><span class="trend-badge trend-badge-{{ p.risk_level }}">{{ p.risk_label }}</span></td>{% if p.url %}<td><a href="{{ p.url }}">View details →</a></td>{% endif %}</tr>{% endfor %}</tbody>
     </table>
   </details>
 {% else %}

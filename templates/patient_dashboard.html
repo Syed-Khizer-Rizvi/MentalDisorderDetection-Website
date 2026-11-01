@@ -82,7 +82,7 @@
       </div>
       <div class="stat-card stat-purple">
         <div class="stat-icon">😊</div>
-        <div class="stat-content"><span class="stat-label">Facial Mood</span><span class="stat-value">{{ facial_dominant }}</span><span class="stat-sub">Last scan</span></div>
+        <div class="stat-content"><span class="stat-label">Facial Mood</span><span class="stat-value">{{ facial_dominant }}</span><span class="stat-sub">{{ 'Skipped on last assessment' if facial_skipped else 'Last scan' }}</span></div>
       </div>
       <div class="stat-card stat-orange">
         <div class="stat-icon">⌚</div>

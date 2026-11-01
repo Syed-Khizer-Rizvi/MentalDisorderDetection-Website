@@ -27,6 +27,9 @@
 .sc-label { font-size: 11px; color: #64748B; letter-spacing: 1px; font-weight: 700; }
 .sc-value { font-size: 26px; font-weight: 800; }
 .sc-tag { font-size: 12px; color: #64748B; }
+.score-card-skipped { background: #FFFFFF; border-style: dashed; }
+.score-card-skipped .sc-value { color: #94A3B8; }
+.composite-note { margin: -18px 0 28px; color: #64748B; font-size: 13px; text-align: center; }
 
 .alert-box {
   border-radius: 14px; padding: 28px; text-align: center;

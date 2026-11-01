@@ -86,7 +86,7 @@
           <div class="stat-content">
             <span class="stat-label">Facial Mood</span>
             <span class="stat-value pd-stat-text">{{ current.facial_dominant or '-' }}</span>
-            <span class="stat-sub">Dominant emotion</span>
+            <span class="stat-sub">{{ 'Patient skipped the scan' if current.facial_skipped else 'Dominant emotion' }}</span>
           </div>
         </div>
       {% else %}
@@ -111,6 +111,7 @@
     <section class="chart-panel">
       <div class="panel-head"><h3>Risk Trend</h3><span class="panel-sub">Composite score · last {{ risk_trend|length }} assessment{{ 's' if risk_trend|length != 1 }}</span></div>
       {% set trend_empty_text = 'No assessments yet.' %}
+      {% set trend_few_text = 'A trend pattern appears once the patient has 3 or more assessments.' %}
       {% include '_risk_trend.html' %}
     </section>
 
@@ -131,7 +132,7 @@
               {% for s in [h.phq, h.gad, h.pss] %}
               <td><strong>{{ s[0] }}</strong><small style="color: {{ s[2] }};">{{ s[1] }}</small></td>
               {% endfor %}
-              <td>{{ h.facial_dominant }}</td>
+              <td>{% if h.facial_skipped %}<span class="pd-muted">Skipped</span>{% else %}{{ h.facial_dominant }}{% endif %}</td>
               <td class="pd-table-action">{% if h.viewable %}<a href="{{ url_for('doctor_assessment_detail', patient_uid=patient_uid, assessment_id=h.id) }}" class="consult-view">View</a>{% endif %}</td>
             </tr>
             {% endfor %}

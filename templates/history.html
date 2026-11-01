@@ -69,7 +69,7 @@
             <div class="history-score"><span class="stat-label">PHQ-9</span><strong>{{ h.phq_score }}<small>/27</small></strong><span class="history-sev" style="color: {{ h.phq[1] }};">{{ h.phq[0] }}</span></div>
             <div class="history-score"><span class="stat-label">GAD-7</span><strong>{{ h.gad_score }}<small>/21</small></strong><span class="history-sev" style="color: {{ h.gad[1] }};">{{ h.gad[0] }}</span></div>
             <div class="history-score"><span class="stat-label">PSS-10</span><strong>{{ h.pss_score }}<small>/40</small></strong><span class="history-sev" style="color: {{ h.pss[1] }};">{{ h.pss[0] }}</span></div>
-            <div class="history-score"><span class="stat-label">Facial</span><strong>{{ h.facial_dominant }}</strong><span class="history-sev">Dominant emotion</span></div>
+            <div class="history-score"><span class="stat-label">Facial</span><strong>{{ h.facial_dominant }}</strong><span class="history-sev">{{ 'Scan skipped' if h.facial_skipped else 'Dominant emotion' }}</span></div>
           </div>
         </div>
 

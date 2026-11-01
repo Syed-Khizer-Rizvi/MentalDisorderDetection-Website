@@ -84,9 +84,21 @@ def compute_composite(assessment):
     phq = assessment.get('phq_score', 0)
     gad = assessment.get('gad_score', 0)
     pss = assessment.get('pss_score', 0)
+    questionnaires = (phq/27 + gad/21 + pss/40) * 100
+    # Skipped facial scan: average the three questionnaires only, so the score stays on 0-100
+    if assessment.get('facial_skipped'):
+        return round(questionnaires / 3)
     emotions = assessment.get('facial_emotions', {}) or {}
     neg = sum(emotions.get(k, 0) for k in ['sad', 'angry', 'fear', 'disgust'])
-    return round(((phq/27 + gad/21 + pss/40) * 100 + neg) / 4)
+    return round((questionnaires + neg) / 4)
+
+
+def facial_mood(assessment, skipped_text='Skipped', missing=None):
+    """Dominant facial emotion for display, `skipped_text` when the patient skipped the scan."""
+    if assessment.get('facial_skipped'):
+        return skipped_text
+    emotions = assessment.get('facial_emotions', {}) or {}
+    return max(emotions, key=emotions.get).capitalize() if emotions else missing
 
 
 def risk_band(composite):
@@ -154,20 +166,25 @@ def age_from_dob(dob):
     return age if age >= 0 else None
 
 
-def build_risk_trend(assessments, limit):
+def build_risk_trend(assessments, limit, detail_url=None):
     """Chart points for templates/_risk_trend.html: the latest `limit` timestamped
-    assessments, oldest first."""
+    assessments ({id: assessment}), oldest first. `detail_url(id)` links each point."""
     from datetime import datetime
-    dated = sorted((a for a in assessments if isinstance(a, dict) and isinstance(a.get('created_at'), (int, float))),
-                   key=lambda a: a['created_at'])[-limit:]
+    dated = sorted(((aid, a) for aid, a in (assessments or {}).items()
+                    if isinstance(a, dict) and isinstance(a.get('created_at'), (int, float))),
+                   key=lambda item: item[1]['created_at'])[-limit:]
 
     risk_trend = []
-    for a in dated:
+    for aid, a in dated:
         score = compute_composite(a)
+        level, label, color = risk_band(score)
         created = datetime.fromtimestamp(a['created_at'] / 1000)
         risk_trend.append({
             'score': score,
-            'risk_label': risk_band(score)[1],
+            'risk_level': level,
+            'risk_label': label,
+            'risk_color': color,
+            'url': detail_url(aid) if detail_url else '',
             'date': created.strftime('%d %b'),
             'time': created.strftime('%I:%M %p'),
             'full_date': created.strftime('%d %b %Y, %I:%M %p')
@@ -205,6 +222,7 @@ def build_results_context(assessment):
     risk_level, _, composite_color = risk_band(composite)
 
     return dict(
+        facial_skipped=bool(assessment.get('facial_skipped')),
         phq_score=phq, gad_score=gad, pss_score=pss,
         phq_severity=phq_s, gad_severity=gad_s, pss_severity=pss_s,
         phq_color=phq_c, gad_color=gad_c, pss_color=pss_c,
@@ -502,9 +520,6 @@ def patient_dashboard():
         phq = latest.get('phq_score', 0)
         gad = latest.get('gad_score', 0)
         pss = latest.get('pss_score', 0)
-        emotions = latest.get('facial_emotions', {})
-        dominant = max(emotions, key=emotions.get) if emotions else 'neutral'
-
         phq_sev = 'Minimal' if phq <= 4 else 'Mild' if phq <= 9 else 'Moderate' if phq <= 14 else 'Mod. Severe' if phq <= 19 else 'Severe'
         gad_sev = 'Minimal' if gad <= 4 else 'Mild' if gad <= 9 else 'Moderate' if gad <= 14 else 'Severe'
         pss_sev = 'Low' if pss <= 13 else 'Moderate' if pss <= 26 else 'High'
@@ -518,14 +533,15 @@ def patient_dashboard():
         data.update({
             'has_assessment': True, 'phq_score': phq, 'gad_score': gad, 'pss_score': pss,
             'phq_severity': phq_sev, 'gad_severity': gad_sev, 'pss_severity': pss_sev,
-            'facial_dominant': dominant.capitalize(), 'composite_score': composite,
+            'facial_dominant': facial_mood(latest, 'Not scanned', 'Neutral'),
+            'facial_skipped': bool(latest.get('facial_skipped')), 'composite_score': composite,
             'risk_level': risk_level, 'risk_label': risk_label, 'risk_color': risk_color,
             'assessment_date': date_str
         })
 
     # Assessment keys are millisecond timestamps, so key order is chronological
     recent = db.reference(f'users/{uid}/assessments').order_by_key().limit_to_last(7).get() or {}
-    risk_trend = build_risk_trend(recent.values(), 7)
+    risk_trend = build_risk_trend(recent, 7, lambda aid: url_for('patient_history_detail', assessment_id=aid))
 
     wristband_order = db.reference(f'wristband_orders/{uid}').get()
 
@@ -629,16 +645,21 @@ def submit_facial():
     try:
         import time
         from datetime import datetime
-        data = request.get_json()
-        emotions = data.get('emotions', {})
-        readings = data.get('readings', 0)
-        peak = data.get('peak', {})
+        data = request.get_json() or {}
+        emotions = data.get('emotions') or {}
+        # The scan is optional: an explicit skip, or no usable readings, saves a questionnaire-only assessment
+        skipped = data.get('skipped') is True or not isinstance(emotions, dict) or not emotions
+        readings = 0 if skipped else data.get('readings', 0)
+        peak = {} if skipped else data.get('peak', {})
+        if skipped:
+            emotions = {}
         uid = session['user']['uid']
 
         if 'assessment' in session:
             session['assessment']['facial_emotions'] = emotions
             session['assessment']['facial_readings'] = readings
             session['assessment']['facial_peak'] = peak
+            session['assessment']['facial_skipped'] = skipped
             session.modified = True
 
             assessment_id = str(int(time.time() * 1000))
@@ -649,11 +670,13 @@ def submit_facial():
                 'phq_answers': session['assessment'].get('phq_answers', []),
                 'gad_answers': session['assessment'].get('gad_answers', []),
                 'pss_answers': session['assessment'].get('pss_answers', []),
-                'facial_emotions': emotions,
-                'facial_peak': peak,
-                'facial_readings': readings,
                 'created_at': {'.sv': 'timestamp'}
             }
+            if skipped:
+                # Firebase drops None/empty values, so record the skip explicitly
+                full_assessment['facial_skipped'] = True
+            else:
+                full_assessment.update(facial_emotions=emotions, facial_peak=peak, facial_readings=readings)
             db.reference(f'users/{uid}/assessments/{assessment_id}').set(full_assessment)
             db.reference(f'users/{uid}/latest_assessment_id').set(assessment_id)
 
@@ -695,7 +718,6 @@ def patient_history():
         phq = a.get('phq_score', 0)
         gad = a.get('gad_score', 0)
         pss = a.get('pss_score', 0)
-        emotions = a.get('facial_emotions', {}) or {}
         composite = compute_composite(a)
         risk_level, risk_label, risk_color = risk_band(composite)
         history.append({
@@ -706,7 +728,8 @@ def patient_history():
             'risk_level': risk_level, 'risk_label': risk_label, 'risk_color': risk_color,
             'phq_score': phq, 'gad_score': gad, 'pss_score': pss,
             'phq': phq_severity(phq), 'gad': gad_severity(gad), 'pss': pss_severity(pss),
-            'facial_dominant': max(emotions, key=emotions.get).capitalize() if emotions else '-'
+            'facial_dominant': facial_mood(a, missing='-'),
+            'facial_skipped': bool(a.get('facial_skipped'))
         })
 
     return render_template('history.html', user_name=user_name, user_initials=user_initials, history=history)
@@ -956,10 +979,9 @@ def load_active_patients(doctor_uid):
         if latest:
             score = compute_composite(latest)
             risk_level, risk_label, risk_color = risk_band(score)
-            emotions = latest.get('facial_emotions', {}) or {}
             patient.update(composite_score=score, risk_level=risk_level, risk_label=risk_label, risk_color=risk_color,
                            last_assessment=format_timestamp(latest.get('created_at'), '%d %b %Y'),
-                           facial_dominant=max(emotions, key=emotions.get).capitalize() if emotions else None)
+                           facial_dominant=facial_mood(latest))
         patients.append(patient)
 
         for a in assessments.values():
@@ -1052,29 +1074,29 @@ def doctor_patient_detail(patient_uid):
         score = compute_composite(latest)
         risk_level, risk_label, risk_color = risk_band(score)
         header.update(composite_score=score, risk_level=risk_level, risk_label=risk_label, risk_color=risk_color)
-        emotions = latest.get('facial_emotions', {}) or {}
         current = {
             'date': format_timestamp(latest.get('created_at'), '%d %b %Y, %I:%M %p'),
             'phq': (latest.get('phq_score', 0),) + phq_severity(latest.get('phq_score', 0)),
             'gad': (latest.get('gad_score', 0),) + gad_severity(latest.get('gad_score', 0)),
             'pss': (latest.get('pss_score', 0),) + pss_severity(latest.get('pss_score', 0)),
-            'facial_dominant': max(emotions, key=emotions.get).capitalize() if emotions else None,
+            'facial_dominant': facial_mood(latest),
+            'facial_skipped': bool(latest.get('facial_skipped')),
         }
 
     history = []
     for assessment_id, a in by_newest:
         score = compute_composite(a)
         _, risk_label, risk_color = risk_band(score)
-        emotions = a.get('facial_emotions', {}) or {}
         history.append({
             'id': assessment_id,
             'date': format_timestamp(a.get('created_at'), '%d %b %Y'),
             'time': format_timestamp(a.get('created_at'), '%I:%M %p'),
             'composite_score': score, 'risk_label': risk_label, 'risk_color': risk_color,
+            'facial_skipped': bool(a.get('facial_skipped')),
             'phq': (a.get('phq_score', 0),) + phq_severity(a.get('phq_score', 0)),
             'gad': (a.get('gad_score', 0),) + gad_severity(a.get('gad_score', 0)),
             'pss': (a.get('pss_score', 0),) + pss_severity(a.get('pss_score', 0)),
-            'facial_dominant': max(emotions, key=emotions.get).capitalize() if emotions else '-',
+            'facial_dominant': facial_mood(a, missing='-'),
             'viewable': assessment_id.isdigit(),
         })
 
@@ -1097,7 +1119,9 @@ def doctor_patient_detail(patient_uid):
     return render_template('doctor_patient_detail.html',
                            user_name=user_name, user_initials=user_initials,
                            patient_uid=patient_uid, patient=header, current=current,
-                           risk_trend=build_risk_trend(assessments.values(), 10),
+                           risk_trend=build_risk_trend(
+                               assessments, 10,
+                               lambda aid: url_for('doctor_assessment_detail', patient_uid=patient_uid, assessment_id=aid)),
                            history=history, journal=journal, journal_total=len(shared),
                            wristband=wristband,
                            clinical_notes=visible_clinical_notes(patient_uid, session['user']['uid']),

@@ -276,31 +276,74 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .panel-link { font-size: 13px; font-weight: 600; color: #0F7A5F; }
 .panel-link:hover { text-decoration: underline; }
 
-/* ========== RISK TREND (PATIENT) ========== */
-.trend-chart { margin-top: 18px; padding: 0 12px 0 36px; }
-.trend-plot { position: relative; height: 200px; }
+/* ========== RISK TREND (shared: patient dashboard + doctor patient detail) ========== */
+.trend-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; margin-top: 10px; }
+.trend-latest { display: inline-flex; align-items: baseline; gap: 6px; font-size: 13px; color: #64748B; }
+.trend-latest strong { font-size: 22px; font-weight: 800; }
+.trend-latest .trend-badge { align-self: center; }
+.trend-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.2px;
+}
+.trend-badge-low { background: #D1FAE5; color: #065F46; }
+.trend-badge-moderate { background: #FEF3C7; color: #92400E; }
+.trend-badge-high { background: #FFEDD5; color: #9A3412; }
+.trend-badge-critical { background: #FEE2E2; color: #991B1B; }
+.trend-delta { padding: 4px 10px; border-radius: 8px; font-size: 13px; font-weight: 700; }
+.trend-delta-up { background: #FEF2F2; color: #B91C1C; }
+.trend-delta-down { background: #ECFDF5; color: #047857; }
+.trend-delta-flat { background: #F1F5F9; color: #475569; }
+
+.trend-chart { margin-top: 18px; padding: 0 62px 0 36px; }
+.trend-plot { position: relative; height: 220px; }
+.trend-zone { position: absolute; left: 0; right: 0; }
+.trend-zone span {
+  position: absolute; top: 50%; left: calc(100% + 8px); transform: translateY(-50%);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; white-space: nowrap;
+}
+.trend-zone-low { background: rgba(16, 185, 129, 0.14); }
+.trend-zone-low span { color: #047857; }
+.trend-zone-moderate { background: rgba(250, 204, 21, 0.18); }
+.trend-zone-moderate span { color: #A16207; }
+.trend-zone-high { background: rgba(249, 115, 22, 0.16); }
+.trend-zone-high span { color: #C2410C; }
+.trend-zone-critical { background: rgba(239, 68, 68, 0.15); }
+.trend-zone-critical span { color: #B91C1C; }
 .trend-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.trend-grid { position: absolute; left: 0; right: 0; border-top: 1px dashed #E2E8F0; }
+.trend-grid { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(100, 116, 139, 0.45); }
+.trend-grid-top { border-top-color: transparent; }
 .trend-grid-base { border-top: 1px solid #CBD5E1; }
 .trend-grid span {
   position: absolute; right: calc(100% + 8px); transform: translateY(-50%);
   font-size: 11px; color: #94A3B8;
 }
+.trend-line { stroke: #334155; stroke-width: 2.5; }
+.trend-sparse .trend-line { stroke: #94A3B8; stroke-width: 2; stroke-dasharray: 5 4; }
+
 .trend-point {
   position: absolute; width: 32px; height: 32px; margin: -16px 0 0 -16px;
-  border-radius: 50%; background: transparent; cursor: pointer;
+  border-radius: 50%; background: transparent; cursor: pointer; z-index: 1;
 }
 .trend-point::before {
-  content: ''; position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
-  margin: -5px 0 0 -5px; border-radius: 50%; background: #0F7A5F; box-shadow: 0 0 0 2px #FFFFFF;
+  content: ''; position: absolute; top: 50%; left: 50%; width: 8px; height: 8px;
+  margin: -4px 0 0 -4px; border-radius: 50%; background: var(--c, #0F7A5F);
+  box-shadow: 0 0 0 2px #FFFFFF, 0 1px 3px rgba(15, 23, 42, 0.3); transition: transform 0.15s;
 }
+.trend-point-latest::before { width: 10px; height: 10px; margin: -5px 0 0 -5px; }
+.trend-point-latest::after {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border-radius: 50%; background: var(--c, #0F7A5F); opacity: 0.35; animation: trend-glow 2s ease-out infinite;
+}
+@keyframes trend-glow { from { transform: scale(1); opacity: 0.45; } to { transform: scale(3); opacity: 0; } }
+.trend-point:hover::before, .trend-point.is-active::before { transform: scale(1.35); }
 .trend-point:focus-visible { outline: 2px solid #0F7A5F; outline-offset: -6px; }
 .trend-value {
-  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
-  font-size: 13px; font-weight: 700; color: #0F172A;
+  position: absolute; bottom: calc(100% - 4px); left: 50%; transform: translateX(-50%);
+  padding: 1px 6px; border-radius: 6px; background: var(--c, #0F172A); color: #FFFFFF;
+  font-size: 12px; font-weight: 800; box-shadow: 0 0 0 2px #FFFFFF;
 }
 .trend-value-end { left: auto; right: 50%; transform: none; }
-.trend-crosshair { position: absolute; top: 0; bottom: 0; border-left: 1px solid #94A3B8; pointer-events: none; }
+.trend-crosshair { position: absolute; top: 0; bottom: 0; border-left: 1px solid #64748B; pointer-events: none; }
 .trend-crosshair[hidden] { display: none; }
 .trend-dates { position: relative; height: 32px; margin-top: 10px; }
 .trend-dates span {
@@ -309,24 +352,42 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   font-size: 12px; color: #64748B; white-space: nowrap;
 }
 .trend-dates small { font-size: 10px; color: #94A3B8; }
+
 .trend-tooltip {
-  position: absolute; transform: translate(-50%, -100%); pointer-events: none; z-index: 2;
-  display: flex; flex-direction: column; gap: 2px;
-  background: #0F172A; color: #FFFFFF; padding: 6px 10px; border-radius: 8px;
-  font-size: 12px; white-space: nowrap; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+  position: absolute; transform: translate(-50%, -100%); z-index: 3;
+  display: flex; flex-direction: column; gap: 6px; min-width: 170px;
+  padding: 10px 12px; border: 1px solid #E2E8F0; border-radius: 10px; background: #FFFFFF;
+  color: #0F172A; font-size: 12px; white-space: nowrap; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
 }
+.trend-tooltip-below { transform: translate(-50%, 0); }
 .trend-tooltip[hidden] { display: none; }
-.trend-tooltip span { color: #CBD5E1; }
+.trend-tip-date { color: #64748B; font-weight: 600; }
+.trend-tip-score { display: flex; align-items: center; gap: 6px; color: #64748B; }
+.trend-tip-score strong { color: #0F172A; font-size: 18px; font-weight: 800; }
+.trend-tip-link { padding-top: 6px; border-top: 1px solid #F1F5F9; color: #0F7A5F; font-weight: 700; }
+.trend-tip-link:hover { text-decoration: underline; }
+
+.trend-hint {
+  margin-top: 4px; padding: 8px 12px; border-radius: 8px; background: #F8FAFC;
+  color: #64748B; font-size: 12px; text-align: center;
+}
 .trend-table { margin-top: 12px; font-size: 13px; color: #475569; }
 .trend-table summary { cursor: pointer; font-weight: 600; color: #0F7A5F; }
 .trend-table table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .trend-table th, .trend-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #E2E8F0; }
 .trend-table th { color: #94A3B8; font-weight: 600; font-size: 12px; }
+.trend-table a { color: #0F7A5F; font-weight: 600; white-space: nowrap; }
 .trend-empty { font-size: 14px; color: #64748B; padding: 24px 0; text-align: center; }
+@media (prefers-reduced-motion: reduce) {
+  .trend-point-latest::after { animation: none; transform: scale(2); opacity: 0.25; }
+}
 @media (max-width: 720px) {
-  .trend-plot { height: 160px; }
+  .trend-chart { padding: 0 54px 0 30px; }
+  .trend-plot { height: 180px; }
+  .trend-zone span { font-size: 9px; letter-spacing: 0; }
   .trend-dates span { font-size: 10px; }
   .trend-dates .trend-date-minor { display: none; }
+  .trend-tooltip { min-width: 150px; }
 }
 
 /* ========== ASSESSMENT HISTORY (PATIENT) ========== */
@@ -675,6 +736,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .pd-status-note { margin-top: -12px; font-size: 12px; color: #94A3B8; }
 
 .pd-table-wrap { overflow-x: auto; margin-top: 10px; }
+.pd-muted { color: #94A3B8; font-style: italic; }
 .pd-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px; }
 .pd-table th {
   text-align: left; padding: 8px 10px; border-bottom: 1px solid #E2E8F0;
