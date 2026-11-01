@@ -9,11 +9,15 @@ from deepface import DeepFace
 import base64
 import numpy as np
 import cv2
+from dotenv import load_dotenv
+
+load_dotenv()  # local settings such as ADMIN_UID live in .env (not committed)
 
 # ========== INITIALIZE FLASK ==========
 app = Flask(__name__)
 app.secret_key = 'mental-disorder-detection-secret-key-change-in-production'
-ADMIN_UID = os.environ.get('ADMIN_UID', 'Wj1fEr9bp4WcdkHVpTTJGYjlpB13').strip()
+# Placeholder never matches a real Firebase UID, so no one is admin until .env sets it
+ADMIN_UID = os.environ.get('ADMIN_UID', 'SET_IN_ENV_FILE').strip()
 
 # ========== INITIALIZE FIREBASE ADMIN ==========
 cred = credentials.Certificate('firebase_key.json')
