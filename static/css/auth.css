@@ -243,3 +243,76 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .auth-hero h1 { font-size: 32px; }
   .auth-right { padding: 32px 24px; }
 }
+/* ===== Forgot password + Google sign-in ===== */
+.auth-form-box [hidden] { display: none !important; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.auth-link { color: #0F7A5F; font-size: 13px; font-weight: 600; }
+.auth-link:hover { text-decoration: underline; }
+.auth-forgot { align-self: flex-end; margin-top: 2px; }
+.auth-link:focus-visible, .btn-google:focus-visible, .auth-modal-close:focus-visible, .btn-auth-secondary:focus-visible {
+  outline: 2px solid #0F7A5F; outline-offset: 2px;
+}
+
+.auth-divider {
+  display: flex; align-items: center; gap: 12px; margin: 22px 0 16px;
+  color: #94A3B8; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: #E2E8F0; }
+
+.btn-google {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 13px; border: 1px solid #E2E8F0; border-radius: 10px; background: #FFFFFF;
+  color: #0F172A; font-size: 15px; font-weight: 600; transition: background 0.2s, border-color 0.2s;
+}
+.btn-google:hover { background: #F8FAFC; border-color: #CBD5E1; }
+.btn-google:disabled { opacity: 0.6; cursor: not-allowed; }
+.google-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+
+.google-banner {
+  display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px; border: 1px solid #A7F3D0; border-radius: 10px; background: #ECFDF5;
+}
+.google-banner .google-icon { margin-top: 2px; }
+.google-banner p { flex: 1 1 200px; color: #065F46; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.google-banner .auth-link { margin-left: 28px; }
+.input-wrap input[readonly] { background: #F1F5F9; color: #475569; }
+
+/* Modal: matches the dialog style used on the patient pages */
+.auth-modal {
+  margin: auto; border: none; border-radius: 14px; padding: 28px 24px 24px;
+  width: min(400px, calc(100vw - 32px)); text-align: center; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3);
+}
+.auth-modal::backdrop { background: rgba(15, 23, 42, 0.45); }
+.auth-modal-close {
+  position: absolute; top: 10px; right: 12px; width: 32px; height: 32px; border-radius: 8px;
+  color: #64748B; font-size: 22px; line-height: 1;
+}
+.auth-modal-close:hover { background: #F1F5F9; color: #0F172A; }
+.auth-modal-icon { display: block; margin-bottom: 8px; font-size: 34px; }
+.auth-modal h3 { margin-bottom: 6px; color: #0F172A; font-size: 20px; font-weight: 800; }
+.auth-modal p { margin-bottom: 18px; color: #475569; font-size: 14px; }
+.auth-modal form { text-align: left; }
+.auth-modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+.auth-modal-actions .btn-auth { flex: 1; margin-top: 0; }
+.btn-auth-secondary {
+  flex: 1; padding: 14px; border: 1px solid #E2E8F0; border-radius: 10px;
+  background: #FFFFFF; color: #475569; font-size: 15px; font-weight: 700;
+}
+.btn-auth-secondary:hover { background: #F8FAFC; }
+.auth-field-error { color: #B91C1C; font-size: 12px; font-weight: 600; }
+.input-wrap input[aria-invalid="true"] { border-color: #F87171; }
+
+.auth-toast {
+  position: fixed; right: 24px; bottom: 24px; z-index: 100; max-width: 420px;
+  padding: 12px 18px; border-radius: 10px; background: #065F46; color: #FFFFFF;
+  font-size: 14px; font-weight: 600; line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15); animation: auth-toast-in 0.25s ease;
+}
+.auth-toast[hidden] { display: none; }
+@keyframes auth-toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (max-width: 720px) {
+  .auth-toast { left: 16px; right: 16px; bottom: 16px; max-width: none; }
+}

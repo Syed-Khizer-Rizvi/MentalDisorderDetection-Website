@@ -52,18 +52,45 @@
             <span class="input-icon">🔒</span>
             <input type="password" id="password" placeholder="••••••••" required>
           </div>
+          <button type="button" class="auth-link auth-forgot" id="forgotLink">Forgot password?</button>
         </div>
         <button type="submit" class="btn-auth" id="submitBtn">Sign in</button>
       </form>
+
+{% include '_google_button.html' %}
 
       <p class="auth-footer-text">Don't have an account? <a href="{{ url_for('register') }}">Create account</a></p>
     </div>
   </main>
 </div>
 
+<dialog class="auth-modal" id="resetModal" aria-labelledby="resetTitle">
+  <button type="button" class="auth-modal-close" id="resetClose" aria-label="Close">×</button>
+  <span class="auth-modal-icon">🔑</span>
+  <h3 id="resetTitle">Reset your password</h3>
+  <p>Enter your email and we'll send you a reset link</p>
+  <form id="resetForm" novalidate>
+    <div class="form-group">
+      <label for="resetEmail" class="sr-only">Email</label>
+      <div class="input-wrap">
+        <span class="input-icon">✉</span>
+        <input type="email" id="resetEmail" placeholder="you@example.com" autocomplete="email" required aria-describedby="resetError">
+      </div>
+      <small class="auth-field-error" id="resetError" hidden></small>
+    </div>
+    <div class="auth-modal-actions">
+      <button type="button" class="btn-auth-secondary" id="resetCancel">Cancel</button>
+      <button type="submit" class="btn-auth" id="resetSubmit">Send reset link</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="auth-toast" id="toast" role="status" aria-live="polite" hidden></div>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-  import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+  import { getAuth, signInWithEmailAndPassword, sendPasswordResetEmail, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+  import { authErrorMessage, googleProvider, verifyToken } from "{{ url_for('static', filename='js/auth_common.js') }}";
 
   const firebaseConfig = {
     apiKey: "{{ firebase_config.apiKey }}",
@@ -82,42 +109,122 @@
   const alertBox = document.getElementById('jsAlert');
   const submitBtn = document.getElementById('submitBtn');
 
+  const googleBtn = document.getElementById('googleBtn');
+  const emailInput = document.getElementById('email');
+
   function showAlert(msg) {
+    if (!msg) return;
     alertBox.textContent = msg;
     alertBox.style.display = 'block';
+  }
+
+  function setBusy(busy) {
+    submitBtn.disabled = googleBtn.disabled = busy;
+    submitBtn.textContent = busy ? 'Signing in...' : 'Sign in';
+  }
+
+  // Creates the Flask session for a Firebase user. A first-time Google user has no profile
+  // yet, so they stay signed in to Firebase and finish on the register page.
+  async function finishLogin(user, viaGoogle) {
+    const data = await verifyToken(user);
+    if (data.success) {
+      window.location.href = data.redirect;
+      return;
+    }
+    if (viaGoogle && data.needs_registration) {
+      window.location.href = "{{ url_for('register') }}?google=1";
+      return;
+    }
+    await signOut(auth);
+    showAlert(data.error || 'Login failed');
+    setBusy(false);
   }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     alertBox.style.display = 'none';
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Signing in...';
-
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
-
+    setBusy(true);
     try {
-      const userCred = await signInWithEmailAndPassword(auth, email, password);
-      const idToken = await userCred.user.getIdToken();
-
-      const res = await fetch('/api/verify-token', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ idToken })
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        window.location.href = data.redirect;
-      } else {
-        showAlert(data.error || 'Login failed');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Sign in';
-      }
+      const userCred = await signInWithEmailAndPassword(auth, emailInput.value.trim(), document.getElementById('password').value);
+      await finishLogin(userCred.user, false);
     } catch (err) {
-      showAlert(err.message || 'Invalid credentials');
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Sign in';
+      showAlert(authErrorMessage(err));
+      setBusy(false);
+    }
+  });
+
+  googleBtn.addEventListener('click', async () => {
+    alertBox.style.display = 'none';
+    setBusy(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider(GoogleAuthProvider));
+      await finishLogin(result.user, true);
+    } catch (err) {
+      showAlert(authErrorMessage(err));
+      setBusy(false);
+    }
+  });
+
+  // ----- Forgot password -----
+  const resetModal = document.getElementById('resetModal');
+  const resetForm = document.getElementById('resetForm');
+  const resetEmail = document.getElementById('resetEmail');
+  const resetError = document.getElementById('resetError');
+  const resetSubmit = document.getElementById('resetSubmit');
+  const toast = document.getElementById('toast');
+  let toastTimer;
+
+  function showToast(msg) {
+    toast.textContent = '✓ ' + msg;
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
+  }
+
+  function setResetError(msg) {
+    resetError.textContent = msg;
+    resetError.hidden = !msg;
+    resetEmail.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  }
+
+  document.getElementById('forgotLink').addEventListener('click', () => {
+    resetEmail.value = emailInput.value.trim();
+    setResetError('');
+    resetModal.showModal();
+    resetEmail.focus();
+  });
+  document.getElementById('resetCancel').addEventListener('click', () => resetModal.close());
+  document.getElementById('resetClose').addEventListener('click', () => resetModal.close());
+  resetModal.addEventListener('click', (e) => { if (e.target === resetModal) resetModal.close(); });
+  resetEmail.addEventListener('input', () => setResetError(''));
+
+  resetForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = resetEmail.value.trim();
+    if (!email || !resetEmail.checkValidity()) {
+      setResetError('Enter a valid email address.');
+      resetEmail.focus();
+      return;
+    }
+    resetSubmit.disabled = true;
+    resetSubmit.textContent = 'Sending...';
+    try {
+      await sendPasswordResetEmail(auth, email);
+      done();
+    } catch (err) {
+      if (err.code === 'auth/user-not-found') {
+        done();  // Same response as a real account, so the form can't reveal who is registered
+      } else {
+        setResetError(err.code === 'auth/invalid-email' ? 'Enter a valid email address.' : authErrorMessage(err));
+      }
+    } finally {
+      resetSubmit.disabled = false;
+      resetSubmit.textContent = 'Send reset link';
+    }
+
+    function done() {
+      resetModal.close();
+      showToast('If an account exists for ' + email + ', a reset link is on its way. Check your inbox.');
     }
   });
 </script>

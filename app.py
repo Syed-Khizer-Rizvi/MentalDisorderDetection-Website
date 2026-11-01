@@ -345,7 +345,9 @@ def verify_token():
             profile = {**profile, **admin_profile}
 
         if not isinstance(profile, dict):
-            return jsonify({'success': False, 'error': 'User profile not found. Please contact support.'}), 404
+            # Signed in to Firebase (e.g. first Google sign-in) but never registered here
+            return jsonify({'success': False, 'needs_registration': True,
+                            'error': 'User profile not found. Please create your account first.'}), 404
 
         if profile.get('role') == 'doctor' and profile.get('status') != 'approved':
             message = ('Your doctor account is pending approval by admin.'
@@ -380,12 +382,26 @@ def register_profile():
         uid = decoded['uid']
         email = decoded.get('email', '')
 
-        if role == 'admin':
-            try:
-                auth.delete_user(uid)
-            except:
-                pass
-            return jsonify({'success': False, 'error': 'Admin accounts cannot be created through public registration.'}), 403
+        # Signed-in users (e.g. Google) can call this again; never overwrite an existing profile
+        if db.reference(f'users/{uid}').get() is not None:
+            return jsonify({'success': False, 'error': 'This account is already registered. Please sign in.'}), 409
+
+        # Only remove an Auth account created by this sign-up form. A Google account would just be
+        # re-created by the next popup, while the client still holds its old token.
+        password_signup = decoded.get('firebase', {}).get('sign_in_provider') == 'password'
+
+        def discard_auth_account():
+            if password_signup:
+                try:
+                    auth.delete_user(uid)
+                except Exception:
+                    pass
+
+        if role not in ('patient', 'doctor'):
+            discard_auth_account()
+            if role == 'admin':
+                return jsonify({'success': False, 'error': 'Admin accounts cannot be created through public registration.'}), 403
+            return jsonify({'success': False, 'error': 'Choose Patient or Doctor.'}), 400
 
         status = 'pending' if role == 'doctor' else 'active'
 
@@ -410,10 +426,7 @@ def register_profile():
             if error:
                 # The Firebase Auth account was created before this call; remove it so the
                 # patient can retry with the same email instead of being locked out
-                try:
-                    auth.delete_user(uid)
-                except Exception:
-                    pass
+                discard_auth_account()
                 return jsonify({'success': False, 'error': error}), 400
             if doctor_uid:
                 record.update(assigned_doctor_uid=doctor_uid, assigned_at={'.sv': 'timestamp'}, assigned_by='self')
