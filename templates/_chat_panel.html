@@ -1,0 +1,39 @@
+{# One conversation: header, messages, composer. Expects `chat` (chat_page_context in app.py),
+   `chat_header_sub` and optional `chat_back_url` (mobile back link on the doctor page). #}
+<section class="chat-panel" id="chatPanel" aria-label="Conversation with {{ chat.other_name }}">
+  <header class="chat-head">
+    {% if chat_back_url %}<a href="{{ chat_back_url }}" class="chat-back" aria-label="Back to all conversations">←</a>{% endif %}
+    <div class="chat-avatar">{{ chat_initials }}</div>
+    <div class="chat-head-text">
+      <strong>{{ 'Dr. ' if chat.other_role == 'doctor' }}{{ chat.other_name }}</strong>
+      <span>{{ chat_header_sub }}</span>
+    </div>
+    <span class="chat-presence" title="Online status isn't available yet"><span class="chat-presence-dot"></span><span class="chat-presence-text">Status unavailable</span></span>
+    <button type="button" class="chat-mute" id="chatMute" aria-pressed="false" title="Mute notification sound">🔔</button>
+  </header>
+
+  <div class="chat-notice" id="chatNotice" role="status" hidden></div>
+
+  <div class="chat-messages" id="chatMessages" aria-live="polite" aria-relevant="additions">
+    <div class="chat-loading" id="chatLoading">Loading messages…</div>
+    <div class="chat-empty" id="chatEmpty" hidden>
+      <span class="chat-empty-icon">💬</span>
+      <p>{{ chat_empty_text }}</p>
+    </div>
+  </div>
+  <button type="button" class="chat-new-pill" id="chatNewPill" hidden>New messages ↓</button>
+
+  <form class="chat-compose" id="chatForm" autocomplete="off">
+    <label for="chatInput" class="sr-only">Message</label>
+    <textarea id="chatInput" rows="1" maxlength="2000" placeholder="Type a message…" aria-describedby="chatCount"></textarea>
+    <span class="chat-count" id="chatCount" hidden></span>
+    <button type="submit" class="chat-send" id="chatSend" disabled aria-label="Send message">➤</button>
+  </form>
+  <p class="chat-hint">Enter to send · Shift+Enter for a new line{% if chat.my_role == 'patient' %} · Not for emergencies: call Umang 0317-4288665{% endif %}</p>
+</section>
+{% include '_chat_bubble.html' %}
+<script>
+  window.CHAT = {{ dict(chat, sendUrl=url_for('chat_send'), readUrl=url_for('chat_mark_read'),
+                        pollUrl=url_for('chat_messages'))|tojson }};
+</script>
+<script type="module" src="{{ url_for('static', filename='js/chat.js') }}"></script>

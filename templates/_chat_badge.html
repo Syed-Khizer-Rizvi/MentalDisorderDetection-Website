@@ -1,0 +1,5 @@
+{# Live unread badge for the sidebar Chat/Messages link (static/js/chat_badge.js). #}
+{% if chat_boot %}
+<script>window.CHAT_BOOT = {{ chat_boot|tojson }};</script>
+<script type="module" src="{{ url_for('static', filename='js/chat_badge.js') }}"></script>
+{% endif %}

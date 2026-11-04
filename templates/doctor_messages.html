@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Messages | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+</head>
+<body class="chat-page">
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="{{ url_for('doctor_messages') }}" class="nav-item active" aria-current="page"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
+      <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area chat-main">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<p class="chat-flash chat-flash-{{ category }}" role="alert">{{ message }}</p>{% endfor %}
+    {% endwith %}
+
+    <div class="chat-split{{ ' has-selection' if selected }}">
+      <aside class="chat-list-pane" aria-label="Conversations">
+        <div class="chat-list-head">
+          <h2>Messages</h2>
+          <label for="chatSearch" class="sr-only">Search patients</label>
+          <input type="search" id="chatSearch" placeholder="Search patients…" autocomplete="off">
+        </div>
+        {% if conversations %}
+        <ul class="chat-list" id="chatList">
+          {% for c in conversations %}
+          <li class="chat-list-item{{ ' is-active' if selected and selected.uid == c.uid }}" data-chat-id="{{ c.chat_id }}" data-name="{{ c.name|lower }}" data-ts="{{ c.last_ts }}">
+            <a href="{{ url_for('doctor_messages', patient_uid=c.uid) }}"{% if selected and selected.uid == c.uid %} aria-current="true"{% endif %}>
+              <span class="chat-avatar chat-avatar-sm">{{ c.initials }}</span>
+              <span class="chat-list-text">
+                <span class="chat-list-top"><strong>{{ c.name }}</strong><time class="chat-list-time" data-ts="{{ c.last_ts }}">{{ c.last_when }}</time></span>
+                <span class="chat-list-bottom">
+                  <span class="chat-list-preview">{% if c.last_text %}{{ 'You: ' if c.last_mine }}{{ c.last_text }}{% else %}<em>No messages yet</em>{% endif %}</span>
+                  <span class="chat-unread" data-unread{% if not c.unread %} hidden{% endif %}>{{ c.unread }}</span>
+                </span>
+              </span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        <p class="chat-list-empty" id="chatNoMatch" hidden>No patients match your search.</p>
+        {% else %}
+        <div class="chat-list-empty-state">
+          <span class="chat-empty-icon">💬</span>
+          <p>No messages yet. Patients will appear here once they're assigned to you.</p>
+        </div>
+        {% endif %}
+      </aside>
+
+      <div class="chat-conversation-pane">
+        {% if selected %}
+          {% set chat_initials = selected.initials %}
+          {% set chat_header_sub = 'Patient' %}
+          {% set chat_empty_text = 'No messages yet. Say hello to start the conversation.' %}
+          {% set chat_back_url = url_for('doctor_messages') %}
+          {% include '_chat_panel.html' %}
+        {% else %}
+        <div class="chat-placeholder">
+          <span class="chat-empty-icon">💬</span>
+          <p>Select a patient to view messages.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/chat_list.js') }}"></script>
+{% include '_chat_badge.html' %}
+</body>
+</html>

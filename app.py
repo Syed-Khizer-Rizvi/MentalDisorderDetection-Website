@@ -305,11 +305,18 @@ def auto_assign_doctor(patient_uid):
 
 
 def assign_doctor(patient_uid, doctor_uid, assigned_by):
-    db.reference(f'users/{patient_uid}').update({
-        'assigned_doctor_uid': doctor_uid,
-        'assigned_at': {'.sv': 'timestamp'},   # always server time, never client input
-        'assigned_by': assigned_by,
-    })
+    previous = db.reference(f'users/{patient_uid}/assigned_doctor_uid').get()
+    updates = {
+        f'users/{patient_uid}/assigned_doctor_uid': doctor_uid,
+        f'users/{patient_uid}/assigned_at': {'.sv': 'timestamp'},   # always server time, never client input
+        f'users/{patient_uid}/assigned_by': assigned_by,
+    }
+    if previous and previous != doctor_uid and is_safe_key(previous):
+        # The old conversation becomes inaccessible; drop its unread counters so no badge lingers
+        old_chat = chat_id_for(previous, patient_uid)
+        updates[f'chat_unread/{previous}/{old_chat}'] = None
+        updates[f'chat_unread/{patient_uid}/{old_chat}'] = None
+    db.reference().update(updates)
 
 
 def patient_assigned_to(patient, doctor_uid):
@@ -1478,6 +1485,308 @@ def doctor_dashboard():
                            recent_assessments=recent)
 
 
+# ========== CHAT (patient <-> assigned doctor) ==========
+# chats/{chat_id}: participants {uid: true}, doctor_uid, patient_uid, created_at, last_message,
+#   messages/{push_id}: text, sender_uid, sender_name, sender_role, timestamp, read_by/{uid}: timestamp
+# chat_unread/{uid}/{chat_id}: unread count for that user (drives the sidebar badges)
+# All writes go through Flask. Browsers only *read* chats/{id} and chat_unread/{uid} with the Firebase
+# client SDK (signed in via /api/chat/token); database.rules.json limits those reads to the participants
+# who are still assigned to each other.
+CHAT_MESSAGE_MAX = 2000
+CHAT_PREVIEW_MAX = 120
+
+
+def chat_id_for(doctor_uid, patient_uid):
+    """Same id whichever order the two UIDs are given in."""
+    return '_'.join(sorted([doctor_uid, patient_uid]))
+
+
+def chat_partner(user_uid, chat_id):
+    """(doctor_uid, patient_uid) if user_uid may use chat_id right now, else None.
+    The chat must belong to the user and the patient must still be assigned to that doctor."""
+    if not is_safe_key(user_uid) or not is_safe_key(chat_id):
+        return None
+    user = db.reference(f'users/{user_uid}').get()
+    if not isinstance(user, dict):
+        return None
+    if user.get('role') == 'patient':
+        doctor_uid = user.get('assigned_doctor_uid')
+        if user.get('status') == 'active' and doctor_uid and chat_id_for(doctor_uid, user_uid) == chat_id:
+            return doctor_uid, user_uid
+        return None
+    if user.get('role') == 'doctor' and user.get('status') == 'approved':
+        patient_uid = db.reference(f'chats/{chat_id}/patient_uid').get()
+        if not patient_uid or not is_safe_key(patient_uid) or chat_id_for(user_uid, patient_uid) != chat_id:
+            return None
+        patient = get_active_patient(patient_uid)
+        if patient and patient_assigned_to(patient, user_uid):
+            return user_uid, patient_uid
+    return None
+
+
+def can_access_chat(user_uid, chat_id):
+    return chat_partner(user_uid, chat_id) is not None
+
+
+def ensure_chat(doctor_uid, patient_uid):
+    """Creates the chat node (participants etc.) the first time either side opens it."""
+    chat_id = chat_id_for(doctor_uid, patient_uid)
+    ref = db.reference(f'chats/{chat_id}')
+    if ref.child('patient_uid').get() is None:
+        ref.update({'participants': {doctor_uid: True, patient_uid: True},
+                    'doctor_uid': doctor_uid, 'patient_uid': patient_uid,
+                    'created_at': {'.sv': 'timestamp'}})
+    return chat_id
+
+
+def unread_count(user_uid, chat_id, messages=None):
+    """Messages from the other participant that user_uid hasn't read yet."""
+    if messages is None:
+        messages = db.reference(f'chats/{chat_id}/messages').get() or {}
+    return sum(1 for msg in messages.values()
+               if isinstance(msg, dict) and msg.get('sender_uid') != user_uid
+               and not (msg.get('read_by') or {}).get(user_uid))
+
+
+def mark_chat_read(user_uid, chat_id, message_ids=None):
+    """Marks the given (or all) incoming messages as read and refreshes the user's unread counter."""
+    messages = db.reference(f'chats/{chat_id}/messages').get() or {}
+    wanted = None if message_ids is None else set(message_ids)
+    updates = {}
+    for msg_id, msg in messages.items():
+        if not isinstance(msg, dict) or msg.get('sender_uid') == user_uid or (msg.get('read_by') or {}).get(user_uid):
+            continue
+        if wanted is None or msg_id in wanted:
+            updates[f'chats/{chat_id}/messages/{msg_id}/read_by/{user_uid}'] = {'.sv': 'timestamp'}
+            msg.setdefault('read_by', {})[user_uid] = True  # so the count below sees it
+    remaining = unread_count(user_uid, chat_id, messages)
+    updates[f'chat_unread/{user_uid}/{chat_id}'] = remaining or None
+    db.reference().update(updates)
+    return len(updates) - 1, remaining
+
+
+def chat_unread_total(user_uid):
+    counts = db.reference(f'chat_unread/{user_uid}').get() or {}
+    return sum(v for v in counts.values() if isinstance(v, int)) if isinstance(counts, dict) else 0
+
+
+def format_chat_timestamp(ts):
+    """'Just now', '5 min ago', '2:30 PM' (today), 'Yesterday', 'Oct 30' (or 'Oct 30, 2025')."""
+    from datetime import datetime, timedelta
+    if not isinstance(ts, (int, float)) or not ts:
+        return ''
+    when = datetime.fromtimestamp(ts / 1000)
+    now = datetime.now()
+    seconds = (now - when).total_seconds()
+    if 0 <= seconds < 60:
+        return 'Just now'
+    if 0 <= seconds < 3600:
+        return f'{int(seconds // 60)} min ago'
+    if when.date() == now.date():
+        return when.strftime('%I:%M %p').lstrip('0')
+    if when.date() == (now - timedelta(days=1)).date():
+        return 'Yesterday'
+    return when.strftime('%b %d').replace(' 0', ' ') + ('' if when.year == now.year else when.strftime(', %Y'))
+
+
+def chat_message_json(msg_id, msg):
+    return {'id': msg_id, 'text': msg.get('text', ''), 'sender_uid': msg.get('sender_uid'),
+            'sender_name': msg.get('sender_name', ''), 'sender_role': msg.get('sender_role'),
+            'timestamp': msg.get('timestamp'), 'read_by': msg.get('read_by') or {}}
+
+
+def chat_json_error(message, status):
+    return jsonify({'success': False, 'error': message}), status
+
+
+@app.context_processor
+def inject_chat_unread():
+    """Initial sidebar badge; chat_badge.js keeps it live."""
+    user = session.get('user') or {}
+    if user.get('role') not in ('patient', 'doctor'):
+        return {}
+    boot = {'config': FIREBASE_WEB_CONFIG, 'me': user['uid'],
+            'tokenUrl': url_for('chat_token'), 'unreadUrl': url_for('chat_unread')}
+    try:
+        return {'chat_unread_total': chat_unread_total(user['uid']), 'chat_boot': boot}
+    except Exception:
+        return {'chat_unread_total': 0, 'chat_boot': boot}
+
+
+@app.route('/api/chat/token')
+@login_required
+@role_required('patient', 'doctor')
+def chat_token():
+    """Firebase custom token for the signed-in user, so the browser's Firebase identity always
+    matches the Flask session (database rules key off it)."""
+    token = auth.create_custom_token(session['user']['uid'])
+    return jsonify({'success': True, 'token': token.decode() if isinstance(token, bytes) else token})
+
+
+def chat_page_context(chat_id, other, other_role):
+    me = session['user']
+    return {
+        'chat': {
+            'id': chat_id,
+            'me': me['uid'],
+            'my_role': me['role'],
+            'other_uid': other['uid'],
+            'other_name': other['name'],
+            'other_role': other_role,
+        },
+        'chat_firebase_config': FIREBASE_WEB_CONFIG,
+    }
+
+
+@app.route('/patient/chat')
+@login_required
+@role_required('patient')
+def patient_chat():
+    uid = session['user']['uid']
+    user_name = session['user'].get('name', 'Patient')
+    user_initials = ''.join([word[0].upper() for word in user_name.split()[:2]]) or 'P'
+    doctor = load_doctor_summary(db.reference(f'users/{uid}/assigned_doctor_uid').get())
+    context = {}
+    if doctor:
+        chat_id = ensure_chat(doctor['uid'], uid)
+        mark_chat_read(uid, chat_id)
+        context = chat_page_context(chat_id, doctor, 'doctor')
+    return render_template('patient_chat.html', user_name=user_name, user_initials=user_initials,
+                           doctor=doctor, chat_unread_total=chat_unread_total(uid), **context)
+
+
+def doctor_chat_list(doctor_uid):
+    """Every active patient assigned to the doctor, most recent conversation first."""
+    patients, _ = load_active_patients(doctor_uid)
+    rows = []
+    for p in patients:
+        # Create missing chat nodes so the page's live listeners are allowed to attach before the first message
+        chat_id = ensure_chat(doctor_uid, p['uid'])
+        chat = db.reference(f'chats/{chat_id}').get() or {}
+        last = chat.get('last_message') if isinstance(chat.get('last_message'), dict) else None
+        rows.append({
+            'uid': p['uid'], 'name': p['name'], 'chat_id': chat_id,
+            'initials': ''.join(w[0].upper() for w in p['name'].split()[:2]) or 'P',
+            'risk_level': p.get('risk_level'), 'risk_label': p.get('risk_label'),
+            'last_text': last.get('text', '') if last else '',
+            'last_mine': bool(last) and last.get('sender_uid') == doctor_uid,
+            'last_ts': last.get('timestamp') if last and isinstance(last.get('timestamp'), (int, float)) else 0,
+            'last_when': format_chat_timestamp(last.get('timestamp')) if last else '',
+            'unread': unread_count(doctor_uid, chat_id, chat.get('messages') or {}),
+        })
+    rows.sort(key=lambda r: (-r['last_ts'], r['name'].lower()))
+    return rows
+
+
+@app.route('/doctor/messages')
+@app.route('/doctor/messages/<patient_uid>')
+@login_required
+@role_required('doctor')
+def doctor_messages(patient_uid=None):
+    doctor_uid = session['user']['uid']
+    user_name, user_initials = doctor_identity()
+    context, selected = {}, None
+    if patient_uid is not None:
+        patient = get_active_patient(patient_uid)
+        if not patient or not patient_assigned_to(patient, doctor_uid):
+            flash("That patient isn't assigned to you.", 'error')
+            return redirect(url_for('doctor_messages'))
+        chat_id = ensure_chat(doctor_uid, patient_uid)
+        mark_chat_read(doctor_uid, chat_id)
+        selected = {'uid': patient_uid, 'name': patient.get('name') or 'Unnamed patient'}
+        context = chat_page_context(chat_id, selected, 'patient')
+    conversations = doctor_chat_list(doctor_uid)
+    if selected:
+        selected['initials'] = ''.join(w[0].upper() for w in selected['name'].split()[:2]) or 'P'
+    return render_template('doctor_messages.html', user_name=user_name, user_initials=user_initials,
+                           conversations=conversations, selected=selected,
+                           chat_unread_total=chat_unread_total(doctor_uid), **context)
+
+
+@app.route('/api/chat/send', methods=['POST'])
+@login_required
+@role_required('patient', 'doctor')
+def chat_send():
+    data = request.get_json(silent=True) or {}
+    chat_id = str(data.get('chat_id') or '')
+    text = data.get('text')
+    if not isinstance(text, str) or not text.strip():
+        return chat_json_error('Message cannot be empty.', 400)
+    text = text.strip()
+    if len(text) > CHAT_MESSAGE_MAX:
+        return chat_json_error(f'Message is too long (max {CHAT_MESSAGE_MAX} characters).', 400)
+
+    me = session['user']
+    pair = chat_partner(me['uid'], chat_id)
+    if not pair:
+        return chat_json_error("You don't have access to this conversation.", 403)
+    doctor_uid, patient_uid = pair
+    ensure_chat(doctor_uid, patient_uid)
+    recipient = patient_uid if me['uid'] == doctor_uid else doctor_uid
+
+    sender_name = strip_dr(me.get('name')) if me['role'] == 'doctor' else (me.get('name') or 'Patient')
+    msg_ref = db.reference(f'chats/{chat_id}/messages').push({
+        'text': text,
+        'sender_uid': me['uid'],
+        'sender_name': sender_name,
+        'sender_role': me['role'],
+        'timestamp': {'.sv': 'timestamp'},
+        'read_by': {me['uid']: {'.sv': 'timestamp'}},
+    })
+    saved = msg_ref.get() or {}
+    db.reference(f'chats/{chat_id}/last_message').set({
+        'text': text[:CHAT_PREVIEW_MAX], 'sender_uid': me['uid'], 'timestamp': saved.get('timestamp') or {'.sv': 'timestamp'}})
+    db.reference(f'chat_unread/{recipient}/{chat_id}').transaction(lambda current: (current or 0) + 1)
+    return jsonify({'success': True, 'message': chat_message_json(msg_ref.key, saved)})
+
+
+@app.route('/api/chat/mark-read', methods=['POST'])
+@login_required
+@role_required('patient', 'doctor')
+def chat_mark_read():
+    data = request.get_json(silent=True) or {}
+    chat_id = str(data.get('chat_id') or '')
+    if not can_access_chat(session['user']['uid'], chat_id):
+        return chat_json_error("You don't have access to this conversation.", 403)
+    ids = data.get('message_ids')
+    if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, str) and is_safe_key(i) for i in ids)):
+        return chat_json_error('message_ids must be a list of message ids.', 400)
+    marked, remaining = mark_chat_read(session['user']['uid'], chat_id, ids)
+    return jsonify({'success': True, 'marked': marked, 'unread': remaining,
+                    'unread_total': chat_unread_total(session['user']['uid'])})
+
+
+@app.route('/api/chat/messages')
+@login_required
+@role_required('patient', 'doctor')
+def chat_messages():
+    """Fallback when the browser can't read Firebase directly (database rules not deployed yet):
+    messages after `after` (a message id), oldest first."""
+    chat_id = request.args.get('chat_id', '')
+    if not can_access_chat(session['user']['uid'], chat_id):
+        return chat_json_error("You don't have access to this conversation.", 403)
+    after = request.args.get('after', '')
+    messages = db.reference(f'chats/{chat_id}/messages').get() or {}
+    items = [chat_message_json(k, v) for k, v in sorted(messages.items()) if isinstance(v, dict) and (not after or k > after)]
+    return jsonify({'success': True, 'messages': items,
+                    'unread_total': chat_unread_total(session['user']['uid'])})
+
+
+@app.route('/api/chat/unread')
+@login_required
+@role_required('patient', 'doctor')
+def chat_unread():
+    """Sidebar badge fallback when the browser can't listen to Firebase directly."""
+    return jsonify({'success': True, 'unread_total': chat_unread_total(session['user']['uid'])})
+
+
+@app.route('/admin/chats')
+@admin_required
+def admin_chats():
+    # Placeholder: chat oversight for administrators is not built yet
+    return jsonify({'success': False, 'error': 'Chat oversight for administrators is not available yet.'}), 501
+
+
 # ========== ADMIN ==========
 # Admins see every account and patient; doctor-patient assignment filtering doesn't apply here
 ADMIN_PAGE_SIZE = 20
@@ -1830,8 +2139,17 @@ def admin_delete_user(user_uid):
             f'users/{user_uid}': None,
             f'wristband_orders/{user_uid}': None
         }
+        deletions[f'chat_unread/{user_uid}'] = None
         if profile.get('role') == 'patient':
             deletions[f'clinical_notes/{user_uid}'] = None
+            # Their conversations go with them (chat ids are "<uid>_<uid>", sorted)
+            for chat_id in (db.reference('chats').get(shallow=True) or {}):
+                if (chat_id.startswith(user_uid + '_') or chat_id.endswith('_' + user_uid)) \
+                        and db.reference(f'chats/{chat_id}/patient_uid').get() == user_uid:
+                    deletions[f'chats/{chat_id}'] = None
+                    doctor_uid = db.reference(f'chats/{chat_id}/doctor_uid').get()
+                    if doctor_uid and is_safe_key(doctor_uid):
+                        deletions[f'chat_unread/{doctor_uid}/{chat_id}'] = None
         else:
             # Unassign the deleted doctor's patients so they're auto-assigned a new
             # doctor on their next dashboard visit instead of pointing at a missing account

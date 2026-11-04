@@ -20,6 +20,7 @@
       <a href="{{ url_for('patient_assessment') }}" class="nav-item"><span class="nav-icon">📋</span><span class="nav-label">New Assessment</span></a>
       <a href="{{ url_for('patient_history') }}" class="nav-item active"><span class="nav-icon">📊</span><span class="nav-label">History</span></a>
       <a href="{{ url_for('patient_activities') }}" class="nav-item"><span class="nav-icon">🧩</span><span class="nav-label">Activities</span></a>
+      <a href="{{ url_for('patient_chat') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Chat</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
       <a href="{{ url_for('patient_wristband') }}" class="nav-item"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
       <a href="{{ url_for('patient_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
       <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
@@ -89,5 +90,6 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% include '_chat_badge.html' %}
 </body>
 </html>

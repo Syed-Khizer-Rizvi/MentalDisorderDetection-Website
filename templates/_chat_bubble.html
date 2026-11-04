@@ -1,0 +1,13 @@
+{# Message bubble + day separator templates, cloned by static/js/chat.js (text is set with
+   textContent, never innerHTML). #}
+<template id="chatBubbleTpl">
+  <div class="chat-row">
+    <div class="chat-bubble">
+      <p class="chat-text"></p>
+      <span class="chat-meta"><time class="chat-time"></time><span class="chat-ticks" aria-hidden="true"></span><span class="sr-only chat-status"></span></span>
+    </div>
+  </div>
+</template>
+<template id="chatDayTpl">
+  <div class="chat-day" role="separator"><span></span></div>
+</template>

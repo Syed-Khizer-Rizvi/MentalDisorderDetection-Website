@@ -18,6 +18,7 @@
     <nav class="sidebar-nav">
       <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
       <a href="{{ url_for('doctor_patients') }}" class="nav-item active"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="{{ url_for('doctor_messages') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
@@ -131,5 +132,6 @@
   document.querySelectorAll('.toast').forEach(t => setTimeout(() => { t.hidden = true; }, 4000));
 </script>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% include '_chat_badge.html' %}
 </body>
 </html>

@@ -125,6 +125,41 @@ Negative facial emotion % is the sum of *sad*, *angry*, *fear* and *disgust*.
 | 51–70     | High       |
 | 71–100    | Critical   |
 
+## Patient–doctor chat and database security rules
+
+Patients can message their assigned doctor (**Chat** in the patient sidebar) and doctors can
+message their assigned patients (**Messages**). Data lives in the Realtime Database:
+
+```
+chats/{chat_id}                  chat_id = the two UIDs sorted and joined with "_"
+  participants/{uid}: true
+  doctor_uid, patient_uid, created_at, last_message
+  messages/{push_id}: text, sender_uid, sender_name, sender_role, timestamp, read_by/{uid}
+chat_unread/{uid}/{chat_id}      unread count, drives the sidebar badges
+```
+
+- **Writes always go through Flask** (`/api/chat/send`, `/api/chat/mark-read`), which checks that the
+  patient is still assigned to that doctor. Reassigning a patient cuts the old doctor off (403), and
+  the new doctor starts a new conversation with a different `chat_id`.
+- **Browsers read live updates directly** from Firebase. Each page signs in to Firebase with a custom
+  token from `/api/chat/token`, so the browser's Firebase user always matches the Flask session.
+
+### Deploy the database rules (required for production)
+
+`database.rules.json` makes the whole database server-only except:
+
+- `chats/{chat_id}`: readable only by its two participants, and only while the patient is still assigned to that doctor.
+- `chat_unread/{uid}`: readable only by that user.
+
+The Admin SDK used by Flask ignores the rules, so the rest of the app is unaffected. Publish the rules in
+**Firebase console → Realtime Database → Rules** (paste the file's contents) or with
+`firebase deploy --only database`.
+
+> Publishing replaces **all** existing rules. Until the rules are deployed, chat still works: if the browser
+> isn't allowed to read Firebase, the pages fall back to polling Flask every few seconds, and Flask
+> enforces the same access checks. With open test-mode rules, though, anyone with the public web config
+> could read every chat, so deploy these rules before real patients use the app.
+
 ## Technical note: TensorFlow → ONNX Runtime
 
 The FYP-1 proposal specified **TensorFlow** for CNN model inference. The final implementation

@@ -1,0 +1,18 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "chats": {
+      "$chat_id": {
+        ".read": "auth != null && data.child('participants').child(auth.uid).val() === true && ((data.child('patient_uid').val() === auth.uid && root.child('users').child(auth.uid).child('assigned_doctor_uid').val() === data.child('doctor_uid').val()) || (data.child('doctor_uid').val() === auth.uid && root.child('users').child(data.child('patient_uid').val()).child('assigned_doctor_uid').val() === auth.uid))"
+      }
+    },
+
+    "chat_unread": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid"
+      }
+    }
+  }
+}
