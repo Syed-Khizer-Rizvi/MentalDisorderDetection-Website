@@ -1,0 +1,36 @@
+{# One risk alert (see patient_alerts() in app.py). Set `alert_show_patient = false` to hide the
+   patient's name/avatar, e.g. on that patient's own detail page. #}
+{% set show_patient = alert_show_patient is not defined or alert_show_patient %}
+<article class="alert-card alert-card-{{ a.severity }}{{ ' is-ack' if a.acknowledged }}" data-alert-id="{{ a.id }}">
+  {% if show_patient %}
+  <a href="{{ url_for('doctor_patient_detail', patient_uid=a.patient_uid) }}" class="alert-avatar" aria-hidden="true" tabindex="-1">{{ a.initials }}</a>
+  {% endif %}
+  <div class="alert-body">
+    <div class="alert-top">
+      {% if show_patient %}<a href="{{ url_for('doctor_patient_detail', patient_uid=a.patient_uid) }}" class="alert-patient">{{ a.patient_name }}</a>{% endif %}
+      <span class="alert-type">Composite Alert</span>
+      <span class="alert-sev alert-sev-{{ a.severity }}">{{ a.severity_label }}</span>
+    </div>
+    <p class="alert-score"><strong>{{ a.score }}</strong>/100 · above the {{ a.severity_label }} threshold ({{ a.threshold }}+){% if a.facial_skipped %} · questionnaires only{% endif %}</p>
+    <p class="alert-meta">
+      <time datetime="{{ a.created_at }}" title="{{ a.full_date }}">{{ a.when }}</time>
+      {% if a.acknowledged %}
+      <span class="alert-status alert-status-ack">✓ Acknowledged by Dr. {{ a.ack_by_name }} · {{ a.ack_when }}</span>
+      {% else %}
+      <span class="alert-status alert-status-unread">● Unread</span>
+      {% endif %}
+    </p>
+    {% if a.note %}<p class="alert-note">“{{ a.note }}”</p>{% endif %}
+  </div>
+  <div class="alert-actions">
+    {% if a.acknowledged %}
+    <button type="button" class="alert-undo" data-alert-action="unacknowledge">Undo</button>
+    {% else %}
+    <button type="button" class="alert-ack" data-alert-action="acknowledge">Acknowledge</button>
+    {% endif %}
+    {% if show_patient %}
+    <a href="{{ url_for('doctor_patient_detail', patient_uid=a.patient_uid) }}" class="alert-link">View Patient →</a>
+    {% endif %}
+    <a href="{{ url_for('doctor_assessment_detail', patient_uid=a.patient_uid, assessment_id=a.assessment_id) }}" class="alert-link alert-link-muted">Assessment</a>
+  </div>
+</article>

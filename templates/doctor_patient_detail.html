@@ -19,7 +19,7 @@
       <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
       <a href="{{ url_for('doctor_patients') }}" class="nav-item active"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
       <a href="{{ url_for('doctor_messages') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
-      <a href="#" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span></a>
+      <a href="{{ url_for('doctor_risk_alerts') }}" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span><span class="nav-badge nav-badge-alert" data-alert-badge{% if not alert_unread_total %} hidden{% endif %}>{{ alert_unread_total if alert_unread_total < 100 else "99+" }}</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
       <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
@@ -114,6 +114,20 @@
       {% set trend_empty_text = 'No assessments yet.' %}
       {% set trend_few_text = 'A trend pattern appears once the patient has 3 or more assessments.' %}
       {% include '_risk_trend.html' %}
+    </section>
+
+    {# Risk alerts: this patient's High/Critical assessments and their acknowledgement #}
+    <section class="chart-panel" id="alerts">
+      {% set open_alerts = patient_alert_list|rejectattr('acknowledged')|list|length %}
+      <div class="panel-head"><h3>Alert History</h3><span class="panel-sub">{{ patient_alert_list|length }} alert{{ 's' if patient_alert_list|length != 1 }}{% if open_alerts %} · {{ open_alerts }} unread{% endif %}</span></div>
+      {% if patient_alert_list %}
+      <div class="ra-list">
+        {% set alert_show_patient = false %}
+        {% for a in patient_alert_list %}{% include '_alert_card.html' %}{% endfor %}
+      </div>
+      {% else %}
+      <p class="trend-empty">No High or Critical assessments for this patient.</p>
+      {% endif %}
     </section>
 
     {# 4. Assessment history #}
@@ -384,6 +398,8 @@
     if (target) target.scrollIntoView({ block: 'center' });
   }
 </script>
+{% include '_alert_dialog.html' %}
+<script src="{{ url_for('static', filename='js/risk_alerts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/risk_trend.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 {% include '_chat_badge.html' %}

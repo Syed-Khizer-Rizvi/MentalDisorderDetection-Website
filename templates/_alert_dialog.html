@@ -1,0 +1,14 @@
+{# Acknowledge dialog with an optional note (static/js/risk_alerts.js) #}
+<dialog class="act-modal ra-dialog" id="ackDialog" aria-labelledby="ackTitle">
+  <form method="dialog" id="ackForm">
+    <h3 id="ackTitle">Acknowledge alert</h3>
+    <p id="ackSummary"></p>
+    <label for="ackNote" class="ra-note-label">Note <span>(optional)</span></label>
+    <textarea id="ackNote" maxlength="500" rows="3" placeholder="e.g. Called the patient, follow-up booked for Friday"></textarea>
+    <p class="ra-dialog-error" id="ackError" role="alert" hidden></p>
+    <div class="ra-dialog-actions">
+      <button type="button" class="dp-cancel" id="ackCancel">Cancel</button>
+      <button type="submit" class="profile-save" id="ackConfirm">Acknowledge</button>
+    </div>
+  </form>
+</dialog>

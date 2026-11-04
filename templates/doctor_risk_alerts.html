@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Risk Alerts | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="{{ url_for('doctor_messages') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('doctor_risk_alerts') }}" class="nav-item active" aria-current="page"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span><span class="nav-badge nav-badge-alert" data-alert-badge{% if not alert_unread_total %} hidden{% endif %}>{{ alert_unread_total if alert_unread_total < 100 else "99+" }}</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
+      <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="ra-head">
+      <h1>Risk Alerts</h1>
+      <p>Assessments from your patients that scored High (51–70) or Critical (71+). Acknowledge an alert once you've reviewed it.</p>
+    </section>
+
+    <section class="stats-grid ra-stats" aria-label="Alert summary">
+      <div class="stat-card stat-blue"><div class="stat-icon">🕒</div><div class="stat-content"><span class="stat-label">Total Today</span><span class="stat-value">{{ stats.today }}</span><span class="stat-sub">New alerts since midnight</span></div></div>
+      <div class="stat-card {{ 'stat-critical' if stats.critical_open else 'stat-low' }}"><div class="stat-icon">🚨</div><div class="stat-content"><span class="stat-label">Critical Unacknowledged</span><span class="stat-value">{{ stats.critical_open }}</span><span class="stat-sub">{{ 'Needs review' if stats.critical_open else 'All reviewed' }}</span></div></div>
+      <div class="stat-card stat-low"><div class="stat-icon">✅</div><div class="stat-content"><span class="stat-label">Acknowledged</span><span class="stat-value">{{ stats.acknowledged }}</span><span class="stat-sub">of {{ total_alerts }} alert{{ 's' if total_alerts != 1 }}</span></div></div>
+      <div class="stat-card stat-purple"><div class="stat-icon">⏱</div><div class="stat-content"><span class="stat-label">Avg Response Time</span><span class="stat-value ra-stat-text">{{ stats.avg_response or '—' }}</span><span class="stat-sub">{{ 'Assessment to acknowledgement' if stats.avg_response else 'No acknowledgements yet' }}</span></div></div>
+    </section>
+
+    <section class="chart-panel ra-panel">
+      <nav class="ra-tabs" aria-label="Filter alerts">
+        {% for key, label in [('all', 'All'), ('unread', 'Unread'), ('critical', 'Critical'), ('high', 'High'), ('acknowledged', 'Acknowledged')] %}
+        <a href="{{ url_for('doctor_risk_alerts', filter=key if key != 'all' else None, **filter_args) }}" class="ra-tab ra-tab-{{ key }}{{ ' is-current' if tab == key }}"{% if tab == key %} aria-current="page"{% endif %}>{{ label }} <span>{{ counts[key] }}</span></a>
+        {% endfor %}
+      </nav>
+
+      <form method="get" action="{{ url_for('doctor_risk_alerts') }}" class="ra-filters" id="raFilters">
+        {% if tab != 'all' %}<input type="hidden" name="filter" value="{{ tab }}">{% endif %}
+        <label class="ra-search"><span class="sr-only">Search by patient name</span>
+          <input type="search" name="q" value="{{ query }}" placeholder="Search by patient name…" autocomplete="off">
+        </label>
+        <label><span class="sr-only">Date range</span>
+          <select name="range" id="raRange">
+            {% for key, label in [('all', 'Any time'), ('today', 'Today'), ('week', 'This week'), ('month', 'This month'), ('custom', 'Custom range…')] %}
+            <option value="{{ key }}" {{ 'selected' if range_key == key }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <span class="ra-custom" id="raCustom"{% if range_key != 'custom' %} hidden{% endif %}>
+          <label>From <input type="date" name="from" value="{{ date_from }}"></label>
+          <label>To <input type="date" name="to" value="{{ date_to }}"></label>
+        </span>
+        <button type="submit" class="ra-apply">Apply</button>
+        {% if query or range_key != 'all' %}<a href="{{ url_for('doctor_risk_alerts', filter=tab if tab != 'all' else None) }}" class="ra-clear">Clear</a>{% endif %}
+      </form>
+
+      {% if alerts %}
+      <div class="ra-list">
+        {% for a in alerts %}{% include '_alert_card.html' %}{% endfor %}
+      </div>
+      {% elif total_alerts == 0 %}
+      <div class="ra-empty">
+        <span class="ra-empty-icon">🌿</span>
+        <p><strong>No alerts right now.</strong> Your assigned patients are stable.</p>
+      </div>
+      {% else %}
+      <div class="ra-empty">
+        <span class="ra-empty-icon">🔍</span>
+        <p>No alerts match these filters.</p>
+      </div>
+      {% endif %}
+    </section>
+  </main>
+</div>
+
+{% include '_alert_dialog.html' %}
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/risk_alerts.js') }}"></script>
+<script>
+  // Custom range shows the date inputs; other ranges apply straight away
+  const raRange = document.getElementById('raRange');
+  raRange.addEventListener('change', () => {
+    const custom = raRange.value === 'custom';
+    document.getElementById('raCustom').hidden = !custom;
+    if (!custom) document.getElementById('raFilters').submit();
+  });
+</script>
+{% include '_chat_badge.html' %}
+</body>
+</html>

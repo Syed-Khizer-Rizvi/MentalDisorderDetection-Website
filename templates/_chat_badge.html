@@ -1,5 +1,9 @@
-{# Live unread badge for the sidebar Chat/Messages link (static/js/chat_badge.js). #}
+{# Live sidebar badges: chat unread (static/js/chat_badge.js) and, for doctors, risk alerts
+   (static/js/alert_badge.js). Included on every patient and doctor page. #}
 {% if chat_boot %}
 <script>window.CHAT_BOOT = {{ chat_boot|tojson }};</script>
 <script type="module" src="{{ url_for('static', filename='js/chat_badge.js') }}"></script>
+{% endif %}
+{% if session.user and session.user.role == 'doctor' %}
+<script src="{{ url_for('static', filename='js/alert_badge.js') }}" data-url="{{ url_for('alerts_unread') }}"></script>
 {% endif %}

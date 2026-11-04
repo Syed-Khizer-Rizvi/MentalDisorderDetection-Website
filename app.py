@@ -1130,7 +1130,7 @@ def doctor_patient_detail(patient_uid):
                                assessments, 10,
                                lambda aid: url_for('doctor_assessment_detail', patient_uid=patient_uid, assessment_id=aid)),
                            history=history, journal=journal, journal_total=len(shared),
-                           wristband=wristband,
+                           wristband=wristband, patient_alert_list=patient_alerts(patient_uid, patient),
                            clinical_notes=visible_clinical_notes(patient_uid, session['user']['uid']),
                            note_categories=NOTE_CATEGORIES, note_title_max=NOTE_TITLE_MAX, note_body_max=NOTE_BODY_MAX)
 
@@ -1485,6 +1485,256 @@ def doctor_dashboard():
                            recent_assessments=recent)
 
 
+# ========== RISK ALERTS (doctor) ==========
+# Alerts are derived from assessments: High (composite 51-70) or Critical (71+), matching risk_band().
+# Only the acknowledgement is stored, at alerts/{patient_uid}/{assessment_id}:
+#   patient_uid, doctor_uid, assessment_id, severity, composite_score, created_at,
+#   acknowledged_at (server time), acknowledged_by, acknowledged_by_name, note
+# The URL id of an alert is "{patient_uid}_{assessment_id}" (assessment ids are digits).
+ALERT_THRESHOLDS = {'critical': 71, 'high': 51}
+ALERT_TABS = ('all', 'unread', 'critical', 'high', 'acknowledged')
+ALERT_RANGES = ('all', 'today', 'week', 'month', 'custom')
+ALERT_NOTE_MAX = 500
+
+
+def alert_severity(score):
+    if score >= ALERT_THRESHOLDS['critical']:
+        return 'critical'
+    if score >= ALERT_THRESHOLDS['high']:
+        return 'high'
+    return None
+
+
+def parse_alert_id(alert_id):
+    patient_uid, _, assessment_id = (alert_id or '').rpartition('_')
+    if not patient_uid or not is_safe_key(patient_uid) or not assessment_id.isdigit():
+        return None
+    return patient_uid, assessment_id
+
+
+def format_alert_time(ts):
+    """'Just now', '12 min ago', 'Today 10:24 AM', 'Yesterday 3:05 PM', 'Oct 30, 2:15 PM'."""
+    from datetime import datetime, timedelta
+    if not isinstance(ts, (int, float)) or not ts:
+        return ''
+    when = datetime.fromtimestamp(ts / 1000)
+    now = datetime.now()
+    seconds = (now - when).total_seconds()
+    clock = when.strftime('%I:%M %p').lstrip('0')
+    if 0 <= seconds < 60:
+        return 'Just now'
+    if 0 <= seconds < 3600:
+        return f'{int(seconds // 60)} min ago'
+    if when.date() == now.date():
+        return f'Today {clock}'
+    if when.date() == (now - timedelta(days=1)).date():
+        return f'Yesterday {clock}'
+    day = when.strftime('%b %d').replace(' 0', ' ') + ('' if when.year == now.year else when.strftime(', %Y'))
+    return f'{day}, {clock}'
+
+
+def format_duration(ms):
+    minutes = int(ms // 60000)
+    if minutes < 1:
+        return '< 1 min'
+    if minutes < 60:
+        return f'{minutes} min'
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f'{hours}h {minutes}m' if minutes else f'{hours}h'
+    days, hours = divmod(hours, 24)
+    return f'{days}d {hours}h' if hours else f'{days}d'
+
+
+def patient_alerts(patient_uid, patient, acks=None):
+    """Alerts for one patient, newest first, with acknowledgement state."""
+    if acks is None:
+        acks = db.reference(f'alerts/{patient_uid}').get() or {}
+    name = patient.get('name') or 'Unnamed patient'
+    alerts = []
+    for assessment_id, a in (patient.get('assessments') or {}).items():
+        if not isinstance(a, dict) or not isinstance(a.get('created_at'), (int, float)) or not str(assessment_id).isdigit():
+            continue
+        score = compute_composite(a)
+        severity = alert_severity(score)
+        if not severity:
+            continue
+        ack = acks.get(assessment_id) if isinstance(acks, dict) else None
+        ack = ack if isinstance(ack, dict) and ack.get('acknowledged_at') else None
+        alerts.append({
+            'id': f'{patient_uid}_{assessment_id}',
+            'patient_uid': patient_uid, 'patient_name': name,
+            'initials': ''.join(w[0].upper() for w in name.split()[:2]) or 'P',
+            'assessment_id': assessment_id,
+            'severity': severity, 'severity_label': severity.capitalize(),
+            'score': score, 'threshold': ALERT_THRESHOLDS[severity],
+            'created_at': a['created_at'], 'when': format_alert_time(a['created_at']),
+            'full_date': format_timestamp(a['created_at'], '%d %b %Y, %I:%M %p'),
+            'facial_skipped': bool(a.get('facial_skipped')),
+            'acknowledged': bool(ack),
+            'ack_at': ack.get('acknowledged_at') if ack else None,
+            'ack_when': format_alert_time(ack.get('acknowledged_at')) if ack else '',
+            'ack_by_name': (ack.get('acknowledged_by_name') or 'a doctor') if ack else '',
+            'note': ack.get('note', '') if ack else '',
+        })
+    alerts.sort(key=lambda x: x['created_at'], reverse=True)
+    return alerts
+
+
+def load_doctor_alerts(doctor_uid):
+    """Alerts for the doctor's currently assigned, active patients (reassignment removes them)."""
+    users = db.reference('users').get() or {}
+    alerts = []
+    for uid, u in users.items():
+        if isinstance(u, dict) and u.get('role') == 'patient' and u.get('status') == 'active' \
+                and patient_assigned_to(u, doctor_uid) and u.get('assessments'):
+            alerts.extend(patient_alerts(uid, u))
+    alerts.sort(key=lambda x: x['created_at'], reverse=True)
+    return alerts
+
+
+def alert_unread_total(doctor_uid):
+    return sum(1 for a in load_doctor_alerts(doctor_uid) if not a['acknowledged'])
+
+
+def alerts_in_range(alerts, range_key, date_from, date_to):
+    from datetime import datetime, timedelta
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start = end = None
+    if range_key == 'today':
+        start = today
+    elif range_key == 'week':
+        start = today - timedelta(days=today.weekday())        # since Monday
+    elif range_key == 'month':
+        start = today.replace(day=1)
+    elif range_key == 'custom':
+        try:
+            start = datetime.strptime(date_from, '%Y-%m-%d') if date_from else None
+            end = datetime.strptime(date_to, '%Y-%m-%d') + timedelta(days=1) if date_to else None
+        except ValueError:
+            start = end = None
+    lo = start.timestamp() * 1000 if start else None
+    hi = end.timestamp() * 1000 if end else None
+    return [a for a in alerts if (lo is None or a['created_at'] >= lo) and (hi is None or a['created_at'] < hi)]
+
+
+@app.route('/doctor/risk-alerts')
+@login_required
+@role_required('doctor')
+def doctor_risk_alerts():
+    from datetime import datetime
+    doctor_uid = session['user']['uid']
+    user_name, user_initials = doctor_identity()
+    alerts = load_doctor_alerts(doctor_uid)
+
+    # Stats cover every visible alert, whatever filter is applied
+    midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000
+    acknowledged = [a for a in alerts if a['acknowledged']]
+    responses = [a['ack_at'] - a['created_at'] for a in acknowledged
+                 if isinstance(a['ack_at'], (int, float)) and a['ack_at'] >= a['created_at']]
+    stats = {
+        'today': sum(1 for a in alerts if a['created_at'] >= midnight),
+        'critical_open': sum(1 for a in alerts if a['severity'] == 'critical' and not a['acknowledged']),
+        'acknowledged': len(acknowledged),
+        'avg_response': format_duration(sum(responses) / len(responses)) if responses else None,
+    }
+
+    tab = request.args.get('filter', 'all').lower()
+    tab = tab if tab in ALERT_TABS else 'all'
+    query = request.args.get('q', '').strip()[:100]
+    range_key = request.args.get('range', 'all').lower()
+    range_key = range_key if range_key in ALERT_RANGES else 'all'
+    date_from, date_to = request.args.get('from', ''), request.args.get('to', '')
+
+    scoped = alerts_in_range(alerts, range_key, date_from, date_to)
+    if query:
+        scoped = [a for a in scoped if query.lower() in a['patient_name'].lower()]
+    in_tab = {
+        'all': lambda a: True,
+        'unread': lambda a: not a['acknowledged'],
+        'critical': lambda a: a['severity'] == 'critical',
+        'high': lambda a: a['severity'] == 'high',
+        'acknowledged': lambda a: a['acknowledged'],
+    }
+    counts = {t: sum(1 for a in scoped if in_tab[t](a)) for t in ALERT_TABS}
+    shown = [a for a in scoped if in_tab[tab](a)]
+    # Tab links keep the search and date filters
+    filter_args = {k: v for k, v in (('q', query), ('range', range_key if range_key != 'all' else ''),
+                                     ('from', date_from if range_key == 'custom' else ''),
+                                     ('to', date_to if range_key == 'custom' else '')) if v}
+
+    return render_template('doctor_risk_alerts.html', user_name=user_name, user_initials=user_initials,
+                           alerts=shown, total_alerts=len(alerts), counts=counts, stats=stats,
+                           tab=tab, query=query, range_key=range_key, date_from=date_from, date_to=date_to,
+                           filter_args=filter_args, alert_unread_total=sum(1 for a in alerts if not a['acknowledged']))
+
+
+def alert_for_doctor(alert_id):
+    """(patient_uid, assessment_id, alert) when alert_id is a real alert on one of the signed-in
+    doctor's patients, else a JSON error response."""
+    parsed = parse_alert_id(alert_id)
+    if not parsed:
+        return None, chat_json_error('Alert not found.', 404)
+    patient_uid, assessment_id = parsed
+    patient = get_active_patient(patient_uid)
+    if not patient or not patient_assigned_to(patient, session['user']['uid']):
+        return None, chat_json_error("That patient isn't assigned to you.", 403)
+    alert = next((a for a in patient_alerts(patient_uid, patient) if a['assessment_id'] == assessment_id), None)
+    if not alert:
+        return None, chat_json_error('Alert not found.', 404)
+    return (patient_uid, assessment_id, alert), None
+
+
+@app.route('/api/alerts/<alert_id>/acknowledge', methods=['POST'])
+@login_required
+@role_required('doctor')
+def acknowledge_alert(alert_id):
+    if not request.is_json:   # JSON only, so a cross-site form can't trigger it
+        return chat_json_error('Expected a JSON request.', 415)
+    data = request.get_json(silent=True) or {}
+    note = data.get('note', '')
+    if not isinstance(note, str) or len(note.strip()) > ALERT_NOTE_MAX:
+        return chat_json_error(f'Note must be text of at most {ALERT_NOTE_MAX} characters.', 400)
+    found, error = alert_for_doctor(alert_id)
+    if error:
+        return error
+    patient_uid, assessment_id, alert = found
+    if not alert['acknowledged']:
+        me = session['user']
+        db.reference(f'alerts/{patient_uid}/{assessment_id}').set({
+            'patient_uid': patient_uid, 'doctor_uid': me['uid'], 'assessment_id': assessment_id,
+            'severity': alert['severity'], 'composite_score': alert['score'], 'created_at': alert['created_at'],
+            'acknowledged_at': {'.sv': 'timestamp'}, 'acknowledged_by': me['uid'],
+            'acknowledged_by_name': strip_dr(me.get('name')) or 'Doctor', 'note': note.strip(),
+        })
+    return jsonify({'success': True, 'already': alert['acknowledged'],
+                    'unread_total': alert_unread_total(session['user']['uid'])})
+
+
+@app.route('/api/alerts/<alert_id>/unacknowledge', methods=['POST'])
+@login_required
+@role_required('doctor')
+def unacknowledge_alert(alert_id):
+    if not request.is_json:
+        return chat_json_error('Expected a JSON request.', 415)
+    found, error = alert_for_doctor(alert_id)
+    if error:
+        return error
+    patient_uid, assessment_id, alert = found
+    if not alert['acknowledged']:
+        return chat_json_error('This alert is not acknowledged.', 409)
+    db.reference(f'alerts/{patient_uid}/{assessment_id}').delete()
+    return jsonify({'success': True, 'unread_total': alert_unread_total(session['user']['uid'])})
+
+
+@app.route('/api/alerts/unread')
+@login_required
+@role_required('doctor')
+def alerts_unread():
+    """Sidebar badge refresh (static/js/alert_badge.js polls this)."""
+    return jsonify({'success': True, 'unread_total': alert_unread_total(session['user']['uid'])})
+
+
 # ========== CHAT (patient <-> assigned doctor) ==========
 # chats/{chat_id}: participants {uid: true}, doctor_uid, patient_uid, created_at, last_message,
 #   messages/{push_id}: text, sender_uid, sender_name, sender_role, timestamp, read_by/{uid}: timestamp
@@ -1611,6 +1861,18 @@ def inject_chat_unread():
         return {'chat_unread_total': chat_unread_total(user['uid']), 'chat_boot': boot}
     except Exception:
         return {'chat_unread_total': 0, 'chat_boot': boot}
+
+
+@app.context_processor
+def inject_alert_unread():
+    """Unacknowledged risk alerts for the doctor's sidebar badge (alert_badge.js refreshes it)."""
+    user = session.get('user') or {}
+    if user.get('role') != 'doctor':
+        return {}
+    try:
+        return {'alert_unread_total': alert_unread_total(user['uid'])}
+    except Exception:
+        return {'alert_unread_total': 0}
 
 
 @app.route('/api/chat/token')
@@ -2142,6 +2404,7 @@ def admin_delete_user(user_uid):
         deletions[f'chat_unread/{user_uid}'] = None
         if profile.get('role') == 'patient':
             deletions[f'clinical_notes/{user_uid}'] = None
+            deletions[f'alerts/{user_uid}'] = None
             # Their conversations go with them (chat ids are "<uid>_<uid>", sorted)
             for chat_id in (db.reference('chats').get(shallow=True) or {}):
                 if (chat_id.startswith(user_uid + '_') or chat_id.endswith('_' + user_uid)) \
