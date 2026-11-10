@@ -118,7 +118,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
-  import { authErrorMessage, googleProvider, verifyToken } from "{{ url_for('static', filename='js/auth_common.js') }}";
+  import { authErrorMessage, googleProvider, verifyToken, showAuthSuccess } from "{{ url_for('static', filename='js/auth_common.js') }}";
 
   const firebaseConfig = {
     apiKey: "{{ firebase_config.apiKey }}",
@@ -197,7 +197,7 @@
   async function useGoogleUser(user) {
     const data = await verifyToken(user);
     if (data.success) {
-      window.location.href = data.redirect;
+      showAuthSuccess('Login successful! Redirecting to your dashboard...', data.redirect);
     } else if (data.needs_registration) {
       setGoogleMode(user);
     } else {
@@ -296,7 +296,9 @@
         } else {
           // Patients are signed straight in; there's no password to type on the login page
           const login = await verifyToken(googleUser);
-          window.location.href = login.success ? login.redirect : '/login';
+          showAuthSuccess(login.success ? 'Account created successfully! Redirecting to your dashboard...'
+                                        : 'Account created successfully! Redirecting to login...',
+                          login.success ? login.redirect : '/login');
         }
         return;
       }
@@ -311,7 +313,7 @@
           showAlert(data.message, true);
           submitBtn.textContent = 'Pending approval';
         } else {
-          window.location.href = '/login';
+          showAuthSuccess('Account created successfully! Redirecting to login...', '/login');
         }
       } else {
         showAlert(data.error || 'Registration failed');

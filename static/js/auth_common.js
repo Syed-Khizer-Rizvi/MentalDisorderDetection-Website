@@ -50,3 +50,19 @@ export async function verifyToken(user) {
   });
   return res.json();
 }
+
+// Shows a compact success pill above the Sign in / Create account tabs, fades the form
+// (still visible, but no longer clickable) and redirects after a short pause.
+export function showAuthSuccess(message, href, delay = 1500) {
+  const pill = document.createElement('div');
+  pill.className = 'auth-success';
+  pill.setAttribute('role', 'status');
+  pill.innerHTML = '<span class="auth-success-icon" aria-hidden="true">✓</span><span></span>';
+  pill.lastChild.textContent = message;
+  const tabs = document.querySelector('.auth-tabs');
+  tabs.parentNode.insertBefore(pill, tabs);
+  pill.scrollIntoView({ block: 'nearest', behavior: 'smooth' });   // register page: submit button is far below
+
+  document.querySelector('.auth-form-box').classList.add('is-redirecting');
+  setTimeout(() => { window.location.href = href; }, delay);
+}

@@ -89,7 +89,10 @@
         <div class="stat-icon">⌚</div>
         <div class="stat-content">
           <span class="stat-label">Wristband</span>
-          {% if wristband_order %}
+          {% if wb %}
+            <span class="stat-value" style="font-size:18px;">{{ wb.status_label }}</span>
+            <span class="stat-sub">{{ 'Last synced ' ~ wb.last_sync_ago if wb.last_sync_ago else 'Paired · no data yet' }}</span>
+          {% elif wristband_order %}
             <span class="stat-value" style="font-size:18px;">{{ wristband_order.status | capitalize }}</span>
             <span class="stat-sub">Order placed</span>
           {% else %}
@@ -106,7 +109,7 @@
       <p style="color:#7F1D1D; font-size:14px; margin-bottom:14px;">Your scores indicate HIGH risk. Please contact your doctor and consider ordering a monitoring wristband.</p>
       <div class="quick-actions">
         <a href="#" class="action-btn" style="background:#DC2626;color:#FFF;border-color:#DC2626;"><span>🩺</span><span>Contact Doctor Now</span></a>
-        {% if not wristband_order %}
+        {% if not wristband_order and not wb %}
         <a href="{{ url_for('patient_order_wristband') }}" class="action-btn" style="background:#10B981;color:#FFF;border-color:#10B981;"><span>⌚</span><span>Order Wristband</span></a>
         {% endif %}
       </div>
@@ -139,6 +142,10 @@
       {% include '_risk_trend.html' %}
     </section>
 
+    {% set wb_window = 'last 24 hours' %}
+    {% set wb_pair_url = url_for('patient_wristband') ~ '#pair' %}
+    {% include '_wristband_panel.html' %}
+
     <section class="dashboard-row">
       <div class="chart-panel">
         <div class="panel-head"><h3>Quick Actions</h3></div>
@@ -165,5 +172,6 @@
 <script src="{{ url_for('static', filename='js/risk_trend.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 {% include '_chat_badge.html' %}
+{% include '_login_toast.html' %}
 </body>
 </html>

@@ -90,7 +90,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import { getAuth, signInWithEmailAndPassword, sendPasswordResetEmail, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
-  import { authErrorMessage, googleProvider, verifyToken } from "{{ url_for('static', filename='js/auth_common.js') }}";
+  import { authErrorMessage, googleProvider, verifyToken, showAuthSuccess } from "{{ url_for('static', filename='js/auth_common.js') }}";
 
   const firebaseConfig = {
     apiKey: "{{ firebase_config.apiKey }}",
@@ -128,7 +128,7 @@
   async function finishLogin(user, viaGoogle) {
     const data = await verifyToken(user);
     if (data.success) {
-      window.location.href = data.redirect;
+      showAuthSuccess('Login successful! Redirecting to your dashboard...', data.redirect);
       return;
     }
     if (viaGoogle && data.needs_registration) {

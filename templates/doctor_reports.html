@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assessment Reports | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="{{ url_for('doctor_messages') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('doctor_risk_alerts') }}" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span><span class="nav-badge nav-badge-alert" data-alert-badge{% if not alert_unread_total %} hidden{% endif %}>{{ alert_unread_total if alert_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('doctor_reports') }}" class="nav-item active"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
+      <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="welcome-banner">
+      <div class="welcome-text">
+        <h1>Assessment Reports</h1>
+        <p>{% if patients %}Every assessment from the {{ patients|length }} patient{{ 's' if patients|length != 1 }} assigned to you{% else %}Assessments from your assigned patients will appear here{% endif %}</p>
+      </div>
+    </section>
+
+    <section class="stats-grid pt-stats" aria-label="Assessment summary">
+      <div class="stat-card stat-blue"><div class="stat-icon">📋</div><div class="stat-content"><span class="stat-label">Total Assessments</span><span class="stat-value">{{ stats.total }}</span><span class="stat-sub">All time</span></div></div>
+      <div class="stat-card stat-purple"><div class="stat-icon">📅</div><div class="stat-content"><span class="stat-label">This Week</span><span class="stat-value">{{ stats.this_week }}</span><span class="stat-sub">Last 7 days</span></div></div>
+      <div class="stat-card stat-low"><div class="stat-icon">📈</div><div class="stat-content"><span class="stat-label">Avg Composite Score</span><span class="stat-value">{% if stats.avg_score is not none %}{{ stats.avg_score }}<span class="stat-unit">/100</span>{% else %}—{% endif %}</span><span class="stat-sub">{{ stats.avg_label or 'No assessments yet' }}</span></div></div>
+      <div class="stat-card {{ 'stat-critical' if stats.critical_high else 'stat-low' }}"><div class="stat-icon">🚨</div><div class="stat-content"><span class="stat-label">Critical + High</span><span class="stat-value">{{ stats.critical_high }}</span><span class="stat-sub">Composite 51 or above</span></div></div>
+    </section>
+
+    <section class="chart-panel">
+      {% if assessments %}
+      <form class="rp-filters" id="reportFilters" aria-label="Filter assessments">
+        <div class="form-field rp-field-patient">
+          <label for="filterPatient">Patient</label>
+          <select id="filterPatient">
+            <option value="">All patients</option>
+            {% for p in patients %}<option value="{{ p.uid }}">{{ p.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-field rp-field-risk">
+          <label for="filterRisk">Risk level</label>
+          <select id="filterRisk">
+            <option value="">All levels</option>
+            {% for level in risk_levels %}<option value="{{ level }}">{{ level | capitalize }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-field rp-field-date">
+          <label for="filterFrom">From date</label>
+          <input type="date" id="filterFrom">
+        </div>
+        <div class="form-field rp-field-sort">
+          <label for="sortSelect">Sort by</label>
+          <select id="sortSelect">
+            <option value="created:desc">Newest first</option>
+            <option value="created:asc">Oldest first</option>
+            <option value="composite:desc">Highest composite</option>
+            <option value="composite:asc">Lowest composite</option>
+            <option value="name:asc">Patient A–Z</option>
+            <option value="name:desc">Patient Z–A</option>
+          </select>
+        </div>
+        <div class="rp-actions">
+          <button type="button" class="rp-btn rp-btn-reset" id="filterReset">Reset</button>
+          <button type="button" class="profile-save rp-btn" id="exportCsv">Export CSV</button>
+        </div>
+      </form>
+
+      <div class="panel-head rp-results-head">
+        <h3>Assessments</h3>
+        <span class="panel-sub" id="reportCount" role="status">Showing {{ assessments|length }} of {{ assessments|length }}</span>
+      </div>
+
+      <div class="rp-table-wrap" id="reportTableWrap">
+        <table class="rp-table" id="reportTable">
+          <thead>
+            <tr>
+              <th scope="col"><button type="button" class="rp-sort" data-sort="name">Patient</button></th>
+              <th scope="col" aria-sort="descending"><button type="button" class="rp-sort" data-sort="created">Date</button></th>
+              <th scope="col" class="rp-num"><button type="button" class="rp-sort" data-sort="phq">PHQ-9</button></th>
+              <th scope="col" class="rp-num"><button type="button" class="rp-sort" data-sort="gad">GAD-7</button></th>
+              <th scope="col" class="rp-num"><button type="button" class="rp-sort" data-sort="pss">PSS</button></th>
+              <th scope="col" class="rp-num"><button type="button" class="rp-sort" data-sort="composite">Composite</button></th>
+              <th scope="col"><button type="button" class="rp-sort" data-sort="risk">Risk</button></th>
+              <th scope="col"><button type="button" class="rp-sort" data-sort="mood">Facial Mood</button></th>
+              <th scope="col"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in assessments %}
+            {% set phq = a.phq_score if a.phq_score is not none else '' %}
+            {% set gad = a.gad_score if a.gad_score is not none else '' %}
+            {% set pss = a.pss_score if a.pss_score is not none else '' %}
+            <tr data-patient="{{ a.patient_uid }}" data-name="{{ a.name }}" data-created="{{ a.created_at }}" data-date="{{ a.date_iso }}"
+                data-phq="{{ phq }}" data-gad="{{ gad }}" data-pss="{{ pss }}" data-composite="{{ a.composite_score }}"
+                data-risk="{{ a.risk_level }}" data-risk-label="{{ a.risk_label }}" data-mood="{{ a.facial_mood or '' }}">
+              <td class="rp-cell-patient"><div class="rp-patient"><div class="user-avatar">{{ (a.name.split()[:2] | map('first') | join | upper) or 'P' }}</div><span>{{ a.name }}</span></div></td>
+              <td data-label="Date">{{ a.date }}</td>
+              <td class="rp-num" data-label="PHQ-9">{{ phq if phq != '' else '-' }}</td>
+              <td class="rp-num" data-label="GAD-7">{{ gad if gad != '' else '-' }}</td>
+              <td class="rp-num" data-label="PSS">{{ pss if pss != '' else '-' }}</td>
+              <td class="rp-num" data-label="Composite"><strong class="rp-composite" style="color: {{ a.risk_color }};">{{ a.composite_score }}</strong></td>
+              <td data-label="Risk"><span class="risk-badge" style="background: {{ a.risk_color }}1A; color: {{ a.risk_color }};">{{ a.risk_label }}</span></td>
+              <td data-label="Facial Mood">{{ a.facial_mood or '-' }}</td>
+              <td class="rp-action"><a href="{{ url_for('doctor_patient_detail', patient_uid=a.patient_uid) }}" class="consult-view">View</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="trend-empty" id="reportNoMatch" hidden>No assessments match these filters.</p>
+      {% else %}
+      <div class="trend-empty rp-empty">
+        <span class="rp-empty-icon" aria-hidden="true">📊</span>
+        <strong>No assessments yet</strong>
+        {% if patients %}Reports will appear here once your patients complete an assessment.{% else %}No patients are assigned to you yet.{% endif %}
+      </div>
+      {% endif %}
+    </section>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/doctor_reports.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% include '_chat_badge.html' %}
+</body>
+</html>

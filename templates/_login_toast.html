@@ -1,0 +1,20 @@
+{% if login_just_happened %}
+<div class="toast toast-success login-toast" id="loginToast" role="status" aria-live="polite">
+  <span>✓ Successfully logged in. Welcome back, {{ login_name | default(user_name) }}!</span>
+  <button type="button" class="login-toast-close" aria-label="Dismiss">&times;</button>
+</div>
+<script>
+  (function () {
+    const toast = document.getElementById('loginToast');
+    let removed = false;
+    function dismiss() {
+      if (removed) return;
+      removed = true;
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 500);
+    }
+    toast.addEventListener('click', dismiss);
+    setTimeout(dismiss, 4000);
+  })();
+</script>
+{% endif %}

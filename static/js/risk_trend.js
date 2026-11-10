@@ -1,11 +1,11 @@
-// Tooltip and crosshair for the Risk Trend chart (templates/_risk_trend.html).
+// Tooltip and crosshair for trend charts: Risk Trend (templates/_risk_trend.html) and the
+// wristband stress chart (templates/_wristband_panel.html). A page may have several.
 // Mouse: hover previews a point; the tooltip stays while the pointer moves onto it, so its
 // "View details" link can be clicked. Touch/click: tapping a point pins the tooltip until
 // tapping elsewhere or pressing Escape. Keyboard: focusing a point shows it too.
-const trendChart = document.getElementById('trendChart');
-if (trendChart) {
-  const tooltip = document.getElementById('trendTooltip');
-  const crosshair = document.getElementById('trendCrosshair');
+document.querySelectorAll('.trend-chart').forEach((trendChart) => {
+  const tooltip = trendChart.querySelector('.trend-tooltip');
+  const crosshair = trendChart.querySelector('.trend-crosshair');
   const plot = trendChart.querySelector('.trend-plot');
   let pinned = null;
   let hideTimer;
@@ -21,6 +21,7 @@ if (trendChart) {
       `<span class="trend-tip-date">${escapeHtml(d.date)}</span>` +
       `<span class="trend-tip-score"><strong>${escapeHtml(d.score)}</strong>/100 ` +
       `<span class="trend-badge trend-badge-${escapeHtml(d.level)}">${escapeHtml(d.risk)}</span></span>` +
+      (d.detail ? `<span class="trend-tip-detail">${escapeHtml(d.detail)}</span>` : '') +
       (d.url ? `<a class="trend-tip-link" href="${escapeHtml(d.url)}">View details →</a>` : '');
     tooltip.hidden = false;
     // Keep the card inside the plot horizontally; flip below the point when there's no room above
@@ -60,4 +61,4 @@ if (trendChart) {
   tooltip.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', () => { if (!tooltip.hidden) hide(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !tooltip.hidden) hide(); });
-}
+});

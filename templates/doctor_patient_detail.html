@@ -20,7 +20,7 @@
       <a href="{{ url_for('doctor_patients') }}" class="nav-item active"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
       <a href="{{ url_for('doctor_messages') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
       <a href="{{ url_for('doctor_risk_alerts') }}" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span><span class="nav-badge nav-badge-alert" data-alert-badge{% if not alert_unread_total %} hidden{% endif %}>{{ alert_unread_total if alert_unread_total < 100 else "99+" }}</span></a>
-      <a href="#" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="{{ url_for('doctor_reports') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
       <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
       <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
       <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
@@ -96,7 +96,10 @@
       <div class="stat-card pd-stat">
         <div class="stat-content">
           <span class="stat-label">Wristband</span>
-          {% if wristband %}
+          {% if wb %}
+          <span class="stat-value pd-stat-text"><span class="wbd-pill wbd-pill-{{ wb.status }}">{{ wb.status_label }}</span></span>
+          <span class="stat-sub">{{ 'Last synced ' ~ wb.last_sync_ago if wb.last_sync_ago else 'Paired · no data yet' }}</span>
+          {% elif wristband %}
           <span class="stat-value pd-stat-text"><span class="wb-status wb-status-{{ wristband.status }}">{{ wristband.status | capitalize }}</span></span>
           <span class="stat-sub">Ordered {{ wristband.date }}</span>
           {% else %}
@@ -115,6 +118,10 @@
       {% set trend_few_text = 'A trend pattern appears once the patient has 3 or more assessments.' %}
       {% include '_risk_trend.html' %}
     </section>
+
+    {# Wristband readings: read-only for doctors #}
+    {% set wb_window = 'last 7 days' %}
+    {% include '_wristband_panel.html' %}
 
     {# Risk alerts: this patient's High/Critical assessments and their acknowledgement #}
     <section class="chart-panel" id="alerts">

@@ -316,3 +316,19 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 @media (max-width: 720px) {
   .auth-toast { left: 16px; right: 16px; bottom: 16px; max-width: none; }
 }
+
+/* ===== Compact success pill above the tabs, shown before redirecting ===== */
+.auth-success {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; max-width: 460px; margin-bottom: 14px; padding: 9px 14px;
+  border-radius: 10px; background: #D1FAE5; color: #065F46; border: 1px solid #A7F3D0;
+  font-size: 14px; font-weight: 600; line-height: 1.4;
+  animation: auth-success-in 0.3s ease;
+}
+.auth-success-icon {
+  flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  background: #065F46; color: #FFFFFF; font-size: 12px; font-weight: 800;
+}
+.auth-form-box.is-redirecting { opacity: 0.5; pointer-events: none; transition: opacity 0.3s ease; }
+@keyframes auth-success-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .auth-success { animation: none; } }

@@ -1,0 +1,29 @@
+{
+  "model_name": "FER_CustomCNN_v2",
+  "version": "v2",
+  "classes": [
+    "angry",
+    "disgust",
+    "fear",
+    "happy",
+    "neutral",
+    "sad",
+    "surprise"
+  ],
+  "input_size": 48,
+  "color_mode": "grayscale",
+  "channels": 1,
+  "preprocessing": "rescale 1/255",
+  "test_accuracy": 0.6745611429214478,
+  "val_accuracy": 0.6705020666122437,
+  "dataset": "FER-2013",
+  "total_params": 7187911,
+  "trained_epochs": 60,
+  "improvements": [
+    "sqrt class weights",
+    "label smoothing 0.1",
+    "cosine LR",
+    "stronger augmentation",
+    "batch 128"
+  ]
+}

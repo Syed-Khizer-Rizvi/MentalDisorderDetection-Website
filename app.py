@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 import firebase_admin
 from firebase_admin import credentials, auth, db
 import os
+import hashlib
 import hmac
 import secrets
 from functools import wraps
@@ -77,6 +78,81 @@ def admin_csrf_valid():
     submitted = request.form.get('csrf_token', '')
     expected = session.get('_admin_csrf_token', '')
     return bool(submitted and expected and hmac.compare_digest(submitted, expected))
+
+
+# ========== FACIAL EMOTION MODEL ==========
+# Custom CNN trained for this FYP on the FER-2013 dataset (48x48 grayscale faces, 7 emotions).
+# Version 2: 7.19M parameters, 60 epochs: 67.5% test accuracy, 67.1% validation accuracy.
+# Details in Models/model_metadata.json. Loaded once here, not per request.
+# If the model file is missing or fails to load, the scan falls back to DeepFace, which is why
+# deepface stays in requirements.txt.
+FER_CLASSES = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']   # model output order
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# The folder is "Models" on disk; check "models" too for case-sensitive (Linux) hosts
+FER_MODEL_PATH = next((p for p in (os.path.join(APP_DIR, d, 'fer_emotion_model.keras') for d in ('Models', 'models'))
+                       if os.path.isfile(p)), None)
+
+
+def load_fer_model(path):
+    try:
+        from tensorflow.keras.models import load_model
+    except ImportError:
+        # TensorFlow has no build for Python 3.14, so run the same .keras file on Keras 3 + JAX.
+        # The backend must be chosen before keras is first imported.
+        os.environ.setdefault('KERAS_BACKEND', 'jax')
+        from keras.models import load_model
+    model = load_model(path, compile=False)
+    model.predict(np.zeros((1, 48, 48, 1), dtype='float32'), verbose=0)   # warm up, so the first scan isn't slow
+    return model
+
+
+def load_face_cascade():
+    # OpenCV 4 wheels bundle the cascade; OpenCV 5 wheels don't, so a copy lives in Models/
+    name = 'haarcascade_frontalface_default.xml'
+    candidates = [os.path.join(cv2.data.haarcascades, name)] if hasattr(cv2, 'data') else []
+    candidates += [os.path.join(APP_DIR, d, name) for d in ('Models', 'models')]
+    for path in candidates:
+        if os.path.isfile(path):
+            cascade = cv2.CascadeClassifier(path)
+            if not cascade.empty():
+                return cascade
+    return None
+
+
+FER_MODEL = FACE_CASCADE = None
+if FER_MODEL_PATH is None:
+    app.logger.warning('Custom emotion model not found at Models/fer_emotion_model.keras; using DeepFace')
+else:
+    try:
+        FACE_CASCADE = load_face_cascade()
+        if FACE_CASCADE is None:
+            raise FileNotFoundError('haarcascade_frontalface_default.xml not found')
+        FER_MODEL = load_fer_model(FER_MODEL_PATH)
+    except Exception as e:
+        FER_MODEL = None
+        app.logger.warning('Could not load the custom emotion model (%s); using DeepFace', e)
+
+
+def analyze_facial_emotion(image):
+    """Emotions for the largest face in `image` (encoded image bytes or a BGR/gray array), using the custom CNN.
+
+    Returns DeepFace's shape, {'emotion': {name: percentage 0-100}, 'dominant_emotion': name},
+    or None when no face is found.
+    """
+    if isinstance(image, (bytes, bytearray)):
+        image = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+    if image is None or image.size == 0:
+        return None
+    gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    faces = FACE_CASCADE.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(48, 48))
+    if len(faces) == 0:
+        return None
+    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+    face = cv2.resize(gray[y:y + h, x:x + w], (48, 48), interpolation=cv2.INTER_AREA)
+    batch = (face.astype('float32') / 255.0).reshape(1, 48, 48, 1)
+    probs = FER_MODEL.predict(batch, verbose=0)[0]
+    emotion = {name: float(p) * 100 for name, p in zip(FER_CLASSES, probs)}
+    return {'emotion': emotion, 'dominant_emotion': max(emotion, key=emotion.get)}
 
 
 # ========== SCORING HELPERS ==========
@@ -397,6 +473,7 @@ def verify_token():
             'role': profile.get('role', 'patient'),
             'status': profile.get('status', 'active')
         }
+        session['_login_toast'] = True   # one-time: popped by the next dashboard load
 
         return jsonify({'success': True, 'role': profile.get('role'), 'redirect': url_for('dashboard')})
 
@@ -554,8 +631,9 @@ def patient_dashboard():
 
     return render_template('patient_dashboard.html',
                            user_name=user_name, user_initials=user_initials,
-                           wristband_order=wristband_order, risk_trend=risk_trend,
-                           assigned_doctor=assigned_doctor, **data)
+                           wristband_order=wristband_order, risk_trend=risk_trend, wb=load_wristband_view(uid, 1),
+                           assigned_doctor=assigned_doctor,
+                           login_just_happened=session.pop('_login_toast', False), **data)
 
 
 @app.route('/patient/assessment')
@@ -624,15 +702,20 @@ def analyze_emotion():
         if img is None:
             return jsonify({'success': False, 'error': 'Invalid image data'}), 400
 
-        result = DeepFace.analyze(
-            img_path=img,
-            actions=['emotion'],
-            enforce_detection=False,
-            silent=True
-        )
+        if FER_MODEL is not None:
+            result = analyze_facial_emotion(img)
+            if result is None:
+                return jsonify({'success': False, 'error': 'No face detected'}), 400
+        else:
+            result = DeepFace.analyze(
+                img_path=img,
+                actions=['emotion'],
+                enforce_detection=False,
+                silent=True
+            )
 
-        if isinstance(result, list):
-            result = result[0]
+            if isinstance(result, list):
+                result = result[0]
 
         emotions = result.get('emotion', {})
         dominant = result.get('dominant_emotion', 'neutral')
@@ -787,7 +870,217 @@ def patient_wristband():
                      order_date=format_timestamp(order.get('created_at'), '%d %b %Y, %I:%M %p'))
 
     return render_template('wristband.html', user_name=user_name, user_initials=user_initials,
-                           order=order, statuses=WRISTBAND_STATUSES)
+                           order=order, statuses=WRISTBAND_STATUSES, wb=load_wristband_view(uid, 1))
+
+
+# ========== WRISTBAND DEVICE (ESP32) ==========
+# users/{uid}/wristband: device_id, status, paired_at, last_sync, latest. The patient and their
+#   assigned doctor may read it, so it never holds the API key.
+# wristband_devices/{device_id}: {uid, api_key_hash}. Server-only lookup, so each device POST is
+#   one small read instead of a scan of every user.
+# users/{uid}/wristband_readings/{key}: every reading. users/{uid}/wristband_hourly/h{epoch hour}:
+#   running totals per hour, which the charts read instead of thousands of raw readings.
+
+WRISTBAND_RANGES = {'gsr': (0, 100000), 'heart_rate': (20, 250), 'temperature': (20, 45)}
+WRISTBAND_ACTIVE_MS = 10 * 60 * 1000   # synced within 10 minutes: Active; within an hour: Idle
+WRISTBAND_IDLE_MS = 60 * 60 * 1000
+# Stress indicator (0-100) from heart rate and GSR. NOT clinically calibrated: tune these two
+# ranges once the real sensors are on a wrist. Each maps (calm, stressed) readings to 0 and 100;
+# if the GSR sensor reads LOWER under stress, swap its pair.
+STRESS_HR = (60, 120)
+STRESS_GSR = (200, 800)
+
+
+def stress_indicator(gsr, heart_rate):
+    def scale(value, calm, stressed):
+        return min(max((value - calm) / (stressed - calm), 0), 1)
+    return round(100 * (scale(heart_rate, *STRESS_HR) + scale(gsr, *STRESS_GSR)) / 2)
+
+
+def stress_band(score):
+    if score < 35:
+        return 'calm', 'Calm', '#059669'
+    if score < 65:
+        return 'elevated', 'Elevated', '#D97706'
+    return 'high', 'High', '#EA580C'
+
+
+def wristband_key_hash(api_key):
+    return hashlib.sha256(api_key.encode()).hexdigest()
+
+
+@app.route('/api/wristband/pair', methods=['POST'])
+@login_required
+@role_required('patient')
+def wristband_pair():
+    """Creates (or rotates) the device credentials. The API key is returned once and only its
+    hash is stored, so a lost key means regenerating."""
+    if not request.is_json:   # JSON only, so a cross-site form post can't rotate the key
+        return chat_json_error('Send a JSON request.', 400)
+    uid = session['user']['uid']
+    old_device = db.reference(f'users/{uid}/wristband/device_id').get()
+
+    device_id = secrets.token_hex(6).upper()
+    api_key = secrets.token_urlsafe(24)
+    updates = {
+        f'wristband_devices/{device_id}': {'uid': uid, 'api_key_hash': wristband_key_hash(api_key)},
+        # Replaces the whole node: the old device's latest reading no longer counts as this one's
+        f'users/{uid}/wristband': {'device_id': device_id, 'status': 'paired', 'paired_at': {'.sv': 'timestamp'}},
+    }
+    if isinstance(old_device, str) and is_safe_key(old_device) and old_device != device_id:
+        updates[f'wristband_devices/{old_device}'] = None   # the old key stops working immediately
+    db.reference().update(updates)
+    return jsonify({'success': True, 'device_id': device_id, 'api_key': api_key,
+                    'endpoint': url_for('wristband_data', _external=True)})
+
+
+@app.route('/api/wristband/data', methods=['POST'])
+def wristband_data():
+    """Sensor readings from a paired ESP32. Sending the device's `timestamp` makes retries safe:
+    a reading with the same timestamp is stored once."""
+    import math
+    import time
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return chat_json_error('Send a JSON object with Content-Type: application/json.', 400)
+
+    device_id, api_key = data.get('device_id'), data.get('api_key')
+    if not (isinstance(device_id, str) and is_safe_key(device_id) and isinstance(api_key, str) and api_key):
+        return chat_json_error('Invalid device credentials.', 401)
+    device = db.reference(f'wristband_devices/{device_id}').get()
+    if not isinstance(device, dict) or not hmac.compare_digest(str(device.get('api_key_hash', '')),
+                                                               wristband_key_hash(api_key)):
+        return chat_json_error('Invalid device credentials.', 401)
+    uid = device.get('uid')
+    if not (isinstance(uid, str) and is_safe_key(uid)) or db.reference(f'users/{uid}/status').get() != 'active':
+        return chat_json_error('Invalid device credentials.', 401)
+
+    values = {}
+    for field, (low, high) in WRISTBAND_RANGES.items():
+        value = data.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                or not math.isfinite(value) or not low <= value <= high:
+            return chat_json_error(f'{field} must be a number from {low} to {high}.', 400)
+        values[field] = round(value, 2)
+
+    now = int(time.time() * 1000)
+    reading = dict(values, stress=stress_indicator(values['gsr'], values['heart_rate']), received_at=now)
+    # Device clock in seconds (milliseconds accepted); ignored unless plausible, e.g. before NTP sync
+    stamp = data.get('timestamp')
+    if isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and math.isfinite(stamp):
+        seconds = int(stamp / 1000 if stamp > 1e11 else stamp)
+        if 1_600_000_000 <= seconds <= now // 1000 + 86400:
+            reading['device_ts'] = seconds
+
+    if 'device_ts' in reading:
+        key = f"t{reading['device_ts']}"
+        if db.reference(f'users/{uid}/wristband_readings/{key}').get(shallow=True) is not None:
+            return jsonify({'success': True, 'duplicate': True})
+    else:
+        key = f'r{now}{secrets.token_hex(3)}'
+
+    hour = f'users/{uid}/wristband_hourly/h{now // 3_600_000}'
+    increment = lambda n: {'.sv': {'increment': n}}
+    db.reference().update({   # one atomic multi-path write
+        f'users/{uid}/wristband_readings/{key}': reading,
+        f'users/{uid}/wristband/latest': reading,
+        f'users/{uid}/wristband/last_sync': now,
+        f'{hour}/count': increment(1),
+        f'{hour}/stress_sum': increment(reading['stress']),
+        f'{hour}/gsr_sum': increment(values['gsr']),
+        f'{hour}/heart_rate_sum': increment(values['heart_rate']),
+        f'{hour}/temperature_sum': increment(values['temperature']),
+    })
+    return jsonify({'success': True})
+
+
+def build_wristband_trend(hourly, now_ms, days):
+    """Stress chart points from hourly totals: 24 hourly slots when days == 1, otherwise one slot
+    per day. Positions are percentages of the plot box; empty slots break the line."""
+    from datetime import datetime, timedelta
+    now = datetime.fromtimestamp(now_ms / 1000)
+    if days == 1:
+        first_hour = now_ms // 3_600_000 - 23
+        slots = [datetime.fromtimestamp((first_hour + i) * 3600) for i in range(24)]
+        slot_of = lambda hour: hour - first_hour
+        label = lambda t: t.strftime('%H:00')
+        full = lambda t: t.strftime('%d %b, %H:00') + '–' + (t + timedelta(hours=1)).strftime('%H:00')
+    else:
+        first_day = now.date() - timedelta(days=days - 1)
+        slots = [datetime.combine(first_day + timedelta(days=i), datetime.min.time()) for i in range(days)]
+        slot_of = lambda hour: (datetime.fromtimestamp(hour * 3600).date() - first_day).days
+        label = lambda t: t.strftime('%a %d')
+        full = lambda t: t.strftime('%a %d %b %Y')
+
+    totals = [None] * len(slots)
+    for key, bucket in (hourly or {}).items():
+        if not (isinstance(bucket, dict) and key[1:].isdigit() and (bucket.get('count') or 0) > 0):
+            continue
+        i = slot_of(int(key[1:]))
+        if 0 <= i < len(slots):
+            t = totals[i] or {'count': 0, 'stress_sum': 0, 'gsr_sum': 0, 'heart_rate_sum': 0, 'temperature_sum': 0}
+            for field in t:
+                t[field] += bucket.get(field) or 0
+            totals[i] = t
+
+    n = len(slots)
+    points, segments, run = [], [], []
+    for i, t in enumerate(totals):
+        x = round(i * 100 / (n - 1), 2)
+        if not t:
+            if run:
+                segments.append(' '.join(run))
+            run = []
+            continue
+        score = round(t['stress_sum'] / t['count'])
+        level, band_label, color = stress_band(score)
+        run.append(f'{x},{100 - score}')
+        count = t['count']
+        points.append({'x': x, 'score': score, 'level': level, 'label': band_label, 'color': color,
+                       'date': full(slots[i]),
+                       'detail': f"HR {t['heart_rate_sum'] / count:.0f} bpm · GSR {t['gsr_sum'] / count:.0f}"
+                                 f" · {t['temperature_sum'] / count:.1f} °C · {count} reading{'s' if count != 1 else ''}"})
+    if run:
+        segments.append(' '.join(run))
+    step = 6 if days == 1 else 1
+    labels = [{'x': round(i * 100 / (n - 1), 2), 'text': label(slots[i])}
+              for i in range(n) if i % step == 0 or i == n - 1]
+    # A lone point (no neighbour on either side) has nothing to connect to
+    return {'points': points, 'segments': [s for s in segments if ' ' in s], 'labels': labels}
+
+
+def load_wristband_view(uid, days):
+    """Template data for _wristband_panel.html, or None when no wristband is paired."""
+    import time
+    wristband = db.reference(f'users/{uid}/wristband').get()
+    if not isinstance(wristband, dict) or not wristband.get('device_id'):
+        return None
+    now = int(time.time() * 1000)
+    last_sync = wristband.get('last_sync')
+    age = now - last_sync if isinstance(last_sync, (int, float)) else None
+    if age is not None and age <= WRISTBAND_ACTIVE_MS:
+        status = ('active', 'Active')
+    elif age is not None and age <= WRISTBAND_IDLE_MS:
+        status = ('idle', 'Idle')
+    else:
+        status = ('offline', 'Offline')
+
+    latest = wristband.get('latest')
+    if isinstance(latest, dict) and isinstance(latest.get('stress'), (int, float)):
+        latest = dict(latest, stress_level=stress_band(latest['stress']))
+    else:
+        latest = None
+    first_hour = now // 3_600_000 - 24 * days + 1
+    hourly = db.reference(f'users/{uid}/wristband_hourly').order_by_key().start_at(f'h{first_hour}').get()
+    return {
+        'device_id': wristband['device_id'],
+        'paired_at': format_timestamp(wristband.get('paired_at'), '%d %b %Y, %I:%M %p'),
+        'status': status[0], 'status_label': status[1],
+        'last_sync_ago': time_ago(last_sync) if age is not None else None,
+        'last_sync_full': format_timestamp(last_sync, '%d %b %Y, %I:%M:%S %p') if age is not None else None,
+        'latest': latest,
+        'trend': build_wristband_trend(hourly, now, days),
+    }
 
 
 GENDER_OPTIONS = ['Male', 'Female', 'Other', 'Prefer not to say']
@@ -994,9 +1287,11 @@ def load_active_patients(doctor_uid):
         for a in assessments.values():
             if isinstance(a, dict) and isinstance(a.get('created_at'), (int, float)):
                 score = compute_composite(a)
-                _, risk_label, risk_color = risk_band(score)
-                recent.append({'name': name, 'composite_score': score, 'risk_label': risk_label,
-                               'risk_color': risk_color, 'created_at': a['created_at']})
+                risk_level, risk_label, risk_color = risk_band(score)
+                recent.append({'patient_uid': uid, 'name': name, 'composite_score': score, 'risk_level': risk_level,
+                               'risk_label': risk_label, 'risk_color': risk_color, 'created_at': a['created_at'],
+                               'phq_score': a.get('phq_score'), 'gad_score': a.get('gad_score'),
+                               'pss_score': a.get('pss_score'), 'facial_mood': facial_mood(a)})
 
     return patients, recent
 
@@ -1130,7 +1425,8 @@ def doctor_patient_detail(patient_uid):
                                assessments, 10,
                                lambda aid: url_for('doctor_assessment_detail', patient_uid=patient_uid, assessment_id=aid)),
                            history=history, journal=journal, journal_total=len(shared),
-                           wristband=wristband, patient_alert_list=patient_alerts(patient_uid, patient),
+                           wristband=wristband, wb=load_wristband_view(patient_uid, 7),
+                           patient_alert_list=patient_alerts(patient_uid, patient),
                            clinical_notes=visible_clinical_notes(patient_uid, session['user']['uid']),
                            note_categories=NOTE_CATEGORIES, note_title_max=NOTE_TITLE_MAX, note_body_max=NOTE_BODY_MAX)
 
@@ -1482,7 +1778,38 @@ def doctor_dashboard():
                            distribution=distribution,
                            distribution_total=len(assessed),
                            top_patients=sorted(assessed, key=lambda p: p['composite_score'], reverse=True)[:3],
-                           recent_assessments=recent)
+                           recent_assessments=recent,
+                           login_just_happened=session.pop('_login_toast', False))
+
+
+# ========== ASSESSMENT REPORTS (doctor) ==========
+@app.route('/doctor/reports')
+@login_required
+@role_required('doctor')
+def doctor_reports():
+    import time
+    user_name, user_initials = doctor_identity()
+    patients, assessments = load_active_patients(session['user']['uid'])
+
+    assessments.sort(key=lambda a: a['created_at'], reverse=True)
+    for a in assessments:
+        a['date'] = format_timestamp(a['created_at'], '%d %b %Y')
+        a['date_iso'] = format_timestamp(a['created_at'], '%Y-%m-%d')   # what the From Date filter compares against
+
+    week_ago = (time.time() - 7 * 86400) * 1000
+    avg_score = (round(sum(a['composite_score'] for a in assessments) / len(assessments))
+                 if assessments else None)
+    stats = {
+        'total': len(assessments),
+        'this_week': sum(1 for a in assessments if a['created_at'] >= week_ago),
+        'avg_score': avg_score,
+        'avg_label': risk_band(avg_score)[1] if avg_score is not None else None,
+        'critical_high': sum(1 for a in assessments if a['risk_level'] in ('critical', 'high')),
+    }
+
+    return render_template('doctor_reports.html', user_name=user_name, user_initials=user_initials,
+                           assessments=assessments, stats=stats, risk_levels=RISK_LEVELS,
+                           patients=sorted(patients, key=lambda p: p['name'].lower()))
 
 
 # ========== RISK ALERTS (doctor) ==========
@@ -2172,7 +2499,8 @@ def admin_dashboard():
         pending_orders=sum(1 for o in orders if o['status'] == 'pending'),
         recent_users=accounts[:5],
         recent_assessments=recent_assessments[:5],
-        recent_orders=orders[:3]
+        recent_orders=orders[:3],
+        login_just_happened=session.pop('_login_toast', False)
     )
 
 
@@ -2403,6 +2731,9 @@ def admin_delete_user(user_uid):
         }
         deletions[f'chat_unread/{user_uid}'] = None
         if profile.get('role') == 'patient':
+            device_id = (profile.get('wristband') or {}).get('device_id')
+            if isinstance(device_id, str) and is_safe_key(device_id):
+                deletions[f'wristband_devices/{device_id}'] = None
             deletions[f'clinical_notes/{user_uid}'] = None
             deletions[f'alerts/{user_uid}'] = None
             # Their conversations go with them (chat ids are "<uid>_<uid>", sorted)

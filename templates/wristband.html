@@ -41,13 +41,20 @@
     <section class="welcome-banner">
       <div class="welcome-text">
         <h1>PsyMonitor Band ⌚</h1>
-        {% if order %}
+        {% if wb %}
+          <p>Your wristband is paired. Readings appear here as it syncs.</p>
+        {% elif order %}
           <p>Track your wristband order and delivery status.</p>
         {% else %}
           <p>Continuous physiological monitoring that keeps your doctor informed in real time.</p>
         {% endif %}
       </div>
-      {% if order %}
+      {% if wb %}
+      <div class="welcome-badge">
+        <span class="badge-label">Device {{ wb.device_id }}</span>
+        <span class="badge-value">{{ wb.status_label }}</span>
+      </div>
+      {% elif order %}
       <div class="welcome-badge">
         <span class="badge-label">Order Status</span>
         <span class="badge-value">{{ order.status | capitalize }}</span>
@@ -60,6 +67,43 @@
       {% endif %}
     </section>
 
+    {% if wb %}
+    {% set wb_window = 'last 24 hours' %}
+    {% include '_wristband_panel.html' %}
+    {% endif %}
+
+    {# Pairing: credentials the ESP32 uses for POST /api/wristband/data. The API key is shown once. #}
+    <section class="chart-panel wbp-panel" id="pair">
+      <div class="panel-head">
+        <h3>Pair Wristband</h3>
+        {% if wb %}<span class="panel-sub">Device {{ wb.device_id }} · paired {{ wb.paired_at }}</span>{% endif %}
+      </div>
+      <p class="wbp-intro">
+        {% if wb %}Lost the API key, or think someone else has it? Revoke it and generate new credentials. The old ones stop working straight away, so you'll need to enter the new ones on the wristband.
+        {% else %}Generate a device ID and API key, then enter them in your wristband's ESP32 configuration. The API key is shown only once.{% endif %}
+      </p>
+      <button type="button" class="profile-save wbp-btn" id="pairBtn" data-url="{{ url_for('wristband_pair') }}"{% if wb %} data-rotate{% endif %}>{{ 'Revoke & Regenerate' if wb else 'Generate Pairing Code' }}</button>
+      <p class="wbp-error" id="pairError" role="alert" hidden></p>
+
+      <div class="wbp-result" id="pairResult" hidden>
+        <p class="wbp-warning">⚠ Copy these now. The API key won't be shown again.</p>
+        {% for id, label in [('pairDevice', 'Device ID'), ('pairKey', 'API key'), ('pairEndpoint', 'Endpoint (POST)')] %}
+        <div class="form-field wbp-field">
+          <label for="{{ id }}">{{ label }}</label>
+          <div class="wbp-copy-row">
+            <input type="text" id="{{ id }}" readonly spellcheck="false">
+            <button type="button" class="rp-btn-reset wbp-copy" data-copy="{{ id }}">Copy</button>
+          </div>
+        </div>
+        {% endfor %}
+        {% if request.host.startswith(('127.', 'localhost')) %}
+        <p class="wbp-note">The ESP32 can't reach <code>{{ request.host }}</code>. Use this computer's address on your Wi-Fi network instead, e.g. <code>http://192.168.x.x:5000/api/wristband/data</code>.</p>
+        {% endif %}
+        <button type="button" class="profile-save wbp-btn" id="pairDone">I've saved them</button>
+      </div>
+    </section>
+
+    {% if not wb %}
     {% if order %}
     <section class="chart-panel">
       <div class="panel-head"><h3>Order Status</h3><span class="panel-sub">Placed {{ order.order_date }}</span></div>
@@ -118,9 +162,12 @@
       </div>
     </section>
     {% endif %}
+    {% endif %}
   </main>
 </div>
 
+<script src="{{ url_for('static', filename='js/wristband_pair.js') }}"></script>
+<script src="{{ url_for('static', filename='js/risk_trend.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 {% include '_chat_badge.html' %}
 </body>

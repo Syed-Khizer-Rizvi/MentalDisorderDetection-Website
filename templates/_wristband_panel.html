@@ -1,0 +1,61 @@
+{# Wristband readings panel. Expects `wb` (load_wristband_view in app.py, None when unpaired),
+   `wb_window` ('last 24 hours' / 'last 7 days') and, on patient pages, `wb_pair_url`.
+   The chart reuses the Risk Trend styles and static/js/risk_trend.js. #}
+<section class="chart-panel wbd-panel" id="wristband-data">
+  <div class="panel-head">
+    <h3>Wristband Data</h3>
+    {% if wb %}<span class="wbd-pill wbd-pill-{{ wb.status }}"{% if wb.last_sync_full %} title="Last synced {{ wb.last_sync_full }}"{% endif %}>{{ wb.status_label }}</span>{% endif %}
+  </div>
+
+  {% if not wb %}
+  <div class="trend-empty wbd-empty">
+    <span class="wbd-empty-icon" aria-hidden="true">⌚</span>
+    <strong>Wristband not paired yet</strong>
+    {% if wb_pair_url %}<a href="{{ wb_pair_url }}" class="panel-link">Pair your wristband →</a>{% else %}This patient hasn't paired a wristband.{% endif %}
+  </div>
+  {% elif not wb.latest %}
+  <div class="trend-empty wbd-empty">
+    <span class="wbd-empty-icon" aria-hidden="true">📡</span>
+    <strong>Waiting for the first reading</strong>
+    Device {{ wb.device_id }} was paired {{ wb.paired_at }} and hasn't sent data yet.
+  </div>
+  {% else %}
+  {% set latest = wb.latest %}
+  {% set s_level, s_label, s_color = latest.stress_level %}
+  <section class="stats-grid wbd-stats" aria-label="Latest wristband reading">
+    <div class="stat-card stat-blue"><div class="stat-icon">⚡</div><div class="stat-content"><span class="stat-label">GSR</span><span class="stat-value">{{ latest.gsr | round(0) | int }}<span class="stat-unit">raw</span></span><span class="stat-sub">Last synced: {{ wb.last_sync_ago }}</span></div></div>
+    <div class="stat-card stat-critical"><div class="stat-icon">❤</div><div class="stat-content"><span class="stat-label">Heart Rate</span><span class="stat-value">{{ latest.heart_rate | round(0) | int }}<span class="stat-unit">bpm</span></span><span class="stat-sub">Last synced: {{ wb.last_sync_ago }}</span></div></div>
+    <div class="stat-card stat-orange"><div class="stat-icon">🌡</div><div class="stat-content"><span class="stat-label">Temperature</span><span class="stat-value">{{ '%.1f' | format(latest.temperature) }}<span class="stat-unit">°C</span></span><span class="stat-sub">Last synced: {{ wb.last_sync_ago }}</span></div></div>
+    <div class="stat-card stat-purple"><div class="stat-icon">〰</div><div class="stat-content"><span class="stat-label">Stress Indicator</span><span class="stat-value" style="color: {{ s_color }};">{{ latest.stress }}<span class="stat-unit">/100</span></span><span class="stat-sub">{{ s_label }} · from HR + GSR</span></div></div>
+  </section>
+
+  {% set trend = wb.trend %}
+  <div class="wbd-chart-head"><h4>Stress indicator · {{ wb_window }}</h4><span>Average per {{ 'hour' if wb_window == 'last 24 hours' else 'day' }} · experimental, not a diagnosis</span></div>
+  {% if trend.points %}
+  <div class="trend-chart wbd-chart">
+    <div class="trend-plot">
+      {% for t in [100, 75, 50, 25, 0] %}
+        <div class="trend-grid{{ ' trend-grid-base' if t == 0 }}{{ ' trend-grid-top' if t == 100 }}" style="top: {{ 100 - t }}%;"><span>{{ t }}</span></div>
+      {% endfor %}
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {% for seg in trend.segments %}<polyline class="trend-line" points="{{ seg }}" fill="none" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>{% endfor %}
+      </svg>
+      <div class="trend-crosshair" hidden></div>
+      {% for p in trend.points %}
+        <button type="button" class="trend-point{{ ' trend-point-latest' if loop.last }}"
+                style="left: {{ p.x }}%; top: {{ 100 - p.score }}%; --c: {{ p.color }};"
+                data-score="{{ p.score }}" data-risk="{{ p.label }}" data-level="{{ p.level }}"
+                data-date="{{ p.date }}" data-detail="{{ p.detail }}"
+                aria-label="{{ p.date }}: stress {{ p.score }} out of 100, {{ p.label }}. {{ p.detail }}"></button>
+      {% endfor %}
+      <div class="trend-tooltip" role="tooltip" hidden></div>
+    </div>
+    <div class="trend-dates">
+      {% for l in trend.labels %}<span style="left: {{ l.x }}%;">{{ l.text }}</span>{% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="trend-empty">No readings in the {{ wb_window }}.</p>
+  {% endif %}
+  {% endif %}
+</section>
