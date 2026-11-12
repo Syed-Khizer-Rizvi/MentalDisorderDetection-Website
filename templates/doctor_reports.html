@@ -50,7 +50,7 @@
       <div class="stat-card stat-blue"><div class="stat-icon">📋</div><div class="stat-content"><span class="stat-label">Total Assessments</span><span class="stat-value">{{ stats.total }}</span><span class="stat-sub">All time</span></div></div>
       <div class="stat-card stat-purple"><div class="stat-icon">📅</div><div class="stat-content"><span class="stat-label">This Week</span><span class="stat-value">{{ stats.this_week }}</span><span class="stat-sub">Last 7 days</span></div></div>
       <div class="stat-card stat-low"><div class="stat-icon">📈</div><div class="stat-content"><span class="stat-label">Avg Composite Score</span><span class="stat-value">{% if stats.avg_score is not none %}{{ stats.avg_score }}<span class="stat-unit">/100</span>{% else %}—{% endif %}</span><span class="stat-sub">{{ stats.avg_label or 'No assessments yet' }}</span></div></div>
-      <div class="stat-card {{ 'stat-critical' if stats.critical_high else 'stat-low' }}"><div class="stat-icon">🚨</div><div class="stat-content"><span class="stat-label">Critical + High</span><span class="stat-value">{{ stats.critical_high }}</span><span class="stat-sub">Composite 51 or above</span></div></div>
+      <div class="stat-card {{ 'stat-critical' if stats.critical_high else 'stat-low' }}"><div class="stat-icon">🚨</div><div class="stat-content"><span class="stat-label">Critical + High</span><span class="stat-value">{{ stats.critical_high }}</span><span class="stat-sub">Composite {{ risk_ranges()[2]['min'] }} or above</span></div></div>
     </section>
 
     <section class="chart-panel">

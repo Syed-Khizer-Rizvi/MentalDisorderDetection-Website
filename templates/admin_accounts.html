@@ -32,7 +32,7 @@
           <label>Email<input type="email" name="email" maxlength="254" autocomplete="off" required></label>
           <label>Phone<input name="phone" maxlength="30"></label>
           <label>Temporary password<input type="password" name="password" minlength="6" autocomplete="new-password" required></label>
-          <label>Role<select name="role" required><option value="patient">Patient</option><option value="doctor">Doctor</option></select></label>
+          <label>Role<select name="role" required><option value="patient">Patient</option><option value="doctor"{{ ' selected' if create_role == 'doctor' }}>Doctor</option></select></label>
           <button type="submit" class="admin-approve">Create account</button>
         </form>
       </details>

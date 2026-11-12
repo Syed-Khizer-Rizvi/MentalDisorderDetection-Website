@@ -7,8 +7,11 @@
       {% for key, endpoint, icon, label in [('dashboard', 'admin_dashboard', '⌂', 'Dashboard'),
                                              ('approvals', 'admin_approvals', '✓', 'Doctor approvals'),
                                              ('accounts', 'admin_accounts', '♙', 'Accounts'),
+                                             ('analytics', 'admin_analytics', '▥', 'Analytics'),
+                                             ('ml_models', 'admin_ml_models', '◈', 'ML Models'),
+                                             ('alerts', 'admin_alerts', 'bell', 'Alerts Log'),
                                              ('orders', 'admin_orders', '▣', 'Wristband orders')] %}
-      <a href="{{ url_for(endpoint) }}" class="nav-item{{ ' active' if active_page == key }}"{% if active_page == key %} aria-current="page"{% endif %}><span class="nav-icon">{{ icon }}</span><span class="nav-label">{{ label }}{% if key == 'approvals' and pending_count %} ({{ pending_count }}){% endif %}</span></a>
+      <a href="{{ url_for(endpoint) }}" class="nav-item{{ ' active' if active_page == key }}"{% if active_page == key %} aria-current="page"{% endif %}><span class="nav-icon">{% if icon == 'bell' %}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><circle cx="18" cy="5" r="3.2" fill="#F87171" stroke="none"/></svg>{% else %}{{ icon }}{% endif %}</span><span class="nav-label">{{ label }}{% if key == 'approvals' and pending_count %} ({{ pending_count }}){% endif %}</span></a>
       {% endfor %}
       <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">↪</span><span class="nav-label">Logout</span></a>
     </nav>

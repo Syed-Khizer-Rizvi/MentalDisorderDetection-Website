@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analytics &amp; Reports | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+{% macro icon(name, size=18) -%}
+<svg class="ad-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'download' %}<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+{%- elif name == 'file' %}<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+{%- elif name == 'clipboard' %}<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+{%- elif name == 'gauge' %}<path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 12l5-5"/><circle cx="12" cy="12" r="1.5"/>
+{%- elif name == 'eye' %}<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+{%- elif name == 'clock' %}<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+{%- elif name == 'watch' %}<circle cx="12" cy="12" r="7"/><polyline points="12 9 12 12 13.5 13.5"/><path d="M16.51 17.35l-.35 3.83a2 2 0 0 1-2 1.82H9.83a2 2 0 0 1-2-1.82l-.35-3.83m.01-10.7l.35-3.83A2 2 0 0 1 9.83 1h4.35a2 2 0 0 1 2 1.82l.35 3.83"/>
+{%- elif name == 'activity' %}<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+{%- elif name == 'calendar' %}<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+{%- endif %}</svg>
+{%- endmacro %}
+{% macro signed(n, unit='') -%}{% if n > 0 %}+{{ n }}{{ unit }}{% elif n < 0 %}−{{ -n }}{{ unit }}{% else %}0{{ unit }}{% endif %}{%- endmacro %}
+{% set r = period %}
+{% set s = stats %}
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+
+  <main class="main-area">
+{% include '_admin_header.html' %}
+
+    <section class="ad-head an-head">
+      <div>
+        <h1>Analytics &amp; Reports</h1>
+        <p>Comprehensive data insights and trends · <strong>{{ r.label }}</strong></p>
+      </div>
+      <div class="an-controls">
+        <nav class="an-range" aria-label="Time range">
+          {% for key, label in range_options %}
+          <a href="{{ url_for('admin_analytics', range=key) }}" class="{{ 'is-current' if r.key == key }}"{% if r.key == key %} aria-current="true"{% endif %}>{{ label }}</a>
+          {% endfor %}
+          <a href="{{ url_for('admin_analytics', range='custom') }}" id="customToggle" class="{{ 'is-current' if r.key == 'custom' }}" aria-expanded="{{ 'true' if r.custom_open else 'false' }}" aria-controls="customRange"{% if r.key == 'custom' %} aria-current="true"{% endif %}>{{ icon('calendar', 14) }}Custom</a>
+        </nav>
+        <div class="ad-head-actions">
+          <a href="{{ url_for('admin_analytics_pdf', **r.args) }}" class="ad-btn" download>{{ icon('file', 16) }}Export PDF Report</a>
+          <a href="{{ url_for('admin_analytics_csv', **r.args) }}" class="ad-btn ad-btn-primary" download>{{ icon('download', 16) }}Export CSV</a>
+        </div>
+      </div>
+    </section>
+
+    <form method="get" action="{{ url_for('admin_analytics') }}" class="an-custom" id="customRange"{% if not r.custom_open %} hidden{% endif %}>
+      <input type="hidden" name="range" value="custom">
+      <label>From<input type="date" name="from" value="{{ r.from_iso if r.key == 'custom' }}" max="{{ r.today.strftime('%Y-%m-%d') }}" required></label>
+      <label>To<input type="date" name="to" value="{{ r.to_iso if r.key == 'custom' }}" max="{{ r.today.strftime('%Y-%m-%d') }}" required></label>
+      <button type="submit" class="ad-btn ad-btn-primary">Apply range</button>
+      {% if r.error %}<p class="an-error" role="alert">{{ r.error }}</p>{% endif %}
+    </form>
+
+    {% if not s.total %}
+    <p class="an-empty-note" role="status">No data available for this period. No assessments were completed {{ 'in the ' ~ r.label|lower if r.key != 'custom' else 'between ' ~ r.label }}.</p>
+    {% endif %}
+
+    <section class="ad-stats" aria-label="Key figures for {{ r.label }}">
+      <div class="ad-stat ad-stat-green">
+        <span class="ad-stat-label">Total Assessments</span>
+        <span class="ad-stat-value">{{ s.total }}</span>
+        <span class="ad-stat-sub{{ ' is-up' if s.total_change > 0 }}">{{ signed(s.total_change) }} vs {{ r.compare }}</span>
+        <span class="ad-stat-icon">{{ icon('clipboard') }}</span>
+      </div>
+      {% set band = s.avg_band %}
+      <div class="ad-stat"{% if band %} style="--accent: {{ band[2] }}; --accent-bg: {{ band[2] }}1F;"{% endif %}>
+        <span class="ad-stat-label">Avg Risk Score</span>
+        <span class="ad-stat-value"{% if band %} style="color: {{ band[2] }};"{% endif %}>{{ s.avg_score if s.avg_score is not none else '—' }}{% if band %}<small class="an-unit">/100</small>{% endif %}</span>
+        <span class="ad-stat-sub">{% if band %}{{ band[1] }} range{% if s.avg_change is not none %} • {{ signed(s.avg_change) }} vs {{ r.compare }}{% endif %}{% else %}No assessments in this period{% endif %}</span>
+        <span class="ad-stat-icon">{{ icon('gauge') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-purple">
+        <span class="ad-stat-label">Detection Rate</span>
+        <span class="ad-stat-value">{{ s.accuracy }}</span>
+        <span class="ad-stat-sub">Model accuracy {{ s.model_version }} (FER-2013)</span>
+        <span class="ad-stat-icon">{{ icon('eye') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-blue">
+        <span class="ad-stat-label">Avg Response Time</span>
+        <span class="ad-stat-value">{{ s.response }}</span>
+        <span class="ad-stat-sub{% if s.response_min is not none %}{{ ' is-up' if s.response_ok else ' is-bad' }}{% endif %}">{% if s.response_min is none %}No acknowledged alerts in this period{% else %}Target: &lt;10 min {{ '✓' if s.response_ok else '✗' }}{% endif %}</span>
+        <span class="ad-stat-icon">{{ icon('clock') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-teal">
+        <span class="ad-stat-label">Wristband Usage</span>
+        <span class="ad-stat-value">{{ s.usage }}%</span>
+        <span class="ad-stat-sub{{ ' is-up' if s.usage_change > 0 }}">{{ signed(s.usage_change, '%') }} this month · {{ s.paired }} of {{ s.patients }} paired</span>
+        <span class="ad-stat-icon">{{ icon('watch') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-orange">
+        <span class="ad-stat-label">Activities Completed</span>
+        <span class="ad-stat-value">{{ s.activities }}</span>
+        <span class="ad-stat-sub{{ ' is-up' if s.activities_change and s.activities_change > 0 }}">{% if s.activities_change is none %}Logins, assessments &amp; chats{% else %}{{ signed(s.activities_change, '%') }} vs {{ r.compare }}{% endif %}</span>
+        <span class="ad-stat-icon">{{ icon('activity') }}</span>
+      </div>
+    </section>
+
+    {% set c = charts %}
+    <section class="an-charts">
+      <div class="chart-panel an-chart">
+        <div class="panel-head"><h3>Patient Registration Trend</h3><span class="panel-sub">Cumulative · last 12 months</span></div>
+        {% if c.registrations.has_data %}<div class="an-canvas"><canvas id="chartRegistrations" role="img" aria-label="Cumulative patients by month: {% for l in c.registrations.labels %}{{ l }} {{ c.registrations['values'][loop.index0] }}{{ ', ' if not loop.last }}{% endfor %}"></canvas></div>
+        {% else %}<p class="an-chart-empty">No data available for this period</p>{% endif %}
+      </div>
+      <div class="chart-panel an-chart">
+        <div class="panel-head"><h3>Risk Distribution Trend</h3><span class="panel-sub">Assessments by risk level per month</span></div>
+        {% if c.risk.has_data %}<div class="an-canvas"><canvas id="chartRisk" role="img" aria-label="Assessments per month by risk level"></canvas></div>
+        {% else %}<p class="an-chart-empty">No data available for this period</p>{% endif %}
+      </div>
+      <div class="chart-panel an-chart">
+        <div class="panel-head"><h3>Daily Assessment Completions</h3><span class="panel-sub">Last 14 days</span></div>
+        {% if c.daily.has_data %}<div class="an-canvas"><canvas id="chartDaily" role="img" aria-label="Assessments completed per day, last 14 days"></canvas></div>
+        {% else %}<p class="an-chart-empty">No assessments in the last 14 days</p>{% endif %}
+      </div>
+      <div class="chart-panel an-chart">
+        <div class="panel-head"><h3>Alert Response Times</h3><span class="panel-sub">Avg minutes to acknowledge · last 14 days</span></div>
+        {% if c.response.has_data %}<div class="an-canvas"><canvas id="chartResponse" role="img" aria-label="Average alert response time per day, with a 10 minute target"></canvas></div>
+        {% else %}<p class="an-chart-empty">No acknowledged alerts in the last 14 days</p>{% endif %}
+      </div>
+    </section>
+    <script type="application/json" id="analyticsData">{{ charts|tojson }}</script>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% if c.registrations.has_data or c.risk.has_data or c.daily.has_data or c.response.has_data %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endif %}
+<script src="{{ url_for('static', filename='js/admin_analytics.js') }}"></script>
+</body>
+</html>

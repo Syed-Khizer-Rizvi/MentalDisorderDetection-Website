@@ -13,6 +13,9 @@ python-dotenv==1.2.4
 keras==3.15.1
 jax[cpu]==0.12.0.1
 
+# PDF export on the admin Analytics page (charts are drawn with ReportLab's own graphics)
+reportlab==5.1.0
+
 # Fallback when the custom model file is missing. DeepFace 0.0.103 runs on ONNX Runtime
 # and installs opencv-contrib-python-headless, which provides cv2 for app.py.
 deepface==0.0.103

@@ -27,11 +27,14 @@
 
   <div class="trend-chart{{ ' trend-sparse' if n < 3 }}" id="trendChart">
     <div class="trend-plot">
-      {# Risk zones, matching risk_band(): Low <=25, Moderate <=50, High <=70, Critical above #}
-      {% for level, label, low, high in [('low', 'Low', 0, 25), ('moderate', 'Moderate', 25, 50), ('high', 'High', 50, 70), ('critical', 'Critical', 70, 100)] %}
-        <div class="trend-zone trend-zone-{{ level }}" style="top: {{ 100 - high }}%; height: {{ high - low }}%;"><span>{{ label }}</span></div>
+      {# Risk zones, matching risk_band() (admin-set thresholds; default Low <=25, Moderate <=50, High <=70) #}
+      {% set zones = risk_ranges() %}
+      {% for z in zones %}
+        {% set low = 0 if loop.first else zones[loop.index0 - 1]['max'] %}
+        {% set high = z['max'] %}
+        <div class="trend-zone trend-zone-{{ z.level }}" style="top: {{ 100 - high }}%; height: {{ high - low }}%;"><span>{{ z.label }}</span></div>
       {% endfor %}
-      {% for t in [100, 70, 50, 25, 0] %}
+      {% for t in [100, zones[2]['max'], zones[1]['max'], zones[0]['max'], 0] %}
         <div class="trend-grid{{ ' trend-grid-base' if t == 0 }}{{ ' trend-grid-top' if t == 100 }}" style="top: {{ 100 - t }}%;"><span>{{ t }}</span></div>
       {% endfor %}
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">

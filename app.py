@@ -5,6 +5,7 @@ import os
 import hashlib
 import hmac
 import secrets
+import time
 from functools import wraps
 from deepface import DeepFace
 import base64
@@ -156,17 +157,101 @@ def analyze_facial_emotion(image):
 
 
 # ========== SCORING HELPERS ==========
+# ========== TUNABLE SCORING SETTINGS (admin ML Models page) ==========
+# Stored at system/fusion_weights and system/risk_thresholds; these defaults apply when unset or invalid.
+FUSION_KEYS = ('phq', 'gad', 'pss', 'facial')
+DEFAULT_FUSION_WEIGHTS = {'phq': 0.25, 'gad': 0.25, 'pss': 0.25, 'facial': 0.25}
+DEFAULT_RISK_THRESHOLDS = {'low': 25, 'moderate': 50, 'high': 70}
+RISK_COLORS = {'low': '#059669', 'moderate': '#D97706', 'high': '#EA580C', 'critical': '#DC2626'}
+SETTINGS_TTL = 30   # seconds; risk_band() runs many times per page, so settings are cached briefly
+_scoring_cache = {'at': 0.0, 'weights': DEFAULT_FUSION_WEIGHTS, 'thresholds': DEFAULT_RISK_THRESHOLDS}
+
+
+def clean_fusion_weights(raw):
+    """Weights rounded to 0.05 steps, each 0-1 and summing to 1; None if `raw` isn't a valid set."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        weights = {k: round(float(raw[k]) * 20) / 20 for k in FUSION_KEYS}
+    except (KeyError, TypeError, ValueError):
+        return None
+    if any(not 0 <= w <= 1 for w in weights.values()) or abs(sum(weights.values()) - 1) > 1e-6:
+        return None
+    return weights
+
+
+def clean_risk_thresholds(raw):
+    """Upper bounds for Low/Moderate/High (Critical is above High); None if out of the allowed ranges."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        values = {k: raw[k] for k in DEFAULT_RISK_THRESHOLDS}
+        if any(isinstance(v, bool) or float(v) != int(float(v)) for v in values.values()):
+            return None
+        low, moderate, high = (int(float(values[k])) for k in ('low', 'moderate', 'high'))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not (10 <= low <= 40 and low + 5 <= moderate <= 70 and moderate + 5 <= high <= 90):
+        return None
+    return {'low': low, 'moderate': moderate, 'high': high}
+
+
+def scoring_settings(refresh=False):
+    """Current weights and thresholds from Firebase, cached for SETTINGS_TTL seconds."""
+    if refresh or time.time() - _scoring_cache['at'] > SETTINGS_TTL:
+        try:
+            system = db.reference('system').get() or {}
+            system = system if isinstance(system, dict) else {}
+            _scoring_cache['weights'] = clean_fusion_weights(system.get('fusion_weights')) or DEFAULT_FUSION_WEIGHTS
+            _scoring_cache['thresholds'] = clean_risk_thresholds(system.get('risk_thresholds')) or DEFAULT_RISK_THRESHOLDS
+        except Exception:
+            pass   # keep the last known settings (defaults at startup) if Firebase is unreachable
+        _scoring_cache['at'] = time.time()
+    return _scoring_cache
+
+
+def fusion_weights():
+    return dict(scoring_settings()['weights'])
+
+
+def risk_thresholds():
+    return dict(scoring_settings()['thresholds'])
+
+
+def risk_ranges():
+    """The four bands with their score ranges, for labels, legends and charts."""
+    t = risk_thresholds()
+    bounds = [('low', 'Low', 0, t['low']), ('moderate', 'Moderate', t['low'] + 1, t['moderate']),
+              ('high', 'High', t['moderate'] + 1, t['high']), ('critical', 'Critical', t['high'] + 1, 100)]
+    return [{'level': level, 'label': label, 'min': lo, 'max': hi, 'range': f'{lo}-{hi}', 'color': RISK_COLORS[level]}
+            for level, label, lo, hi in bounds]
+
+
 def compute_composite(assessment):
     phq = assessment.get('phq_score', 0)
     gad = assessment.get('gad_score', 0)
     pss = assessment.get('pss_score', 0)
-    questionnaires = (phq/27 + gad/21 + pss/40) * 100
-    # Skipped facial scan: average the three questionnaires only, so the score stays on 0-100
-    if assessment.get('facial_skipped'):
-        return round(questionnaires / 3)
     emotions = assessment.get('facial_emotions', {}) or {}
     neg = sum(emotions.get(k, 0) for k in ['sad', 'angry', 'fear', 'disgust'])
-    return round((questionnaires + neg) / 4)
+    weights = clean_fusion_weights(assessment.get('fusion_weights'))
+    if weights is None:
+        # Assessments saved before fusion weights were configurable: the original equal-weight
+        # formula, so their scores never change
+        questionnaires = (phq/27 + gad/21 + pss/40) * 100
+        # Skipped facial scan: average the three questionnaires only, so the score stays on 0-100
+        if assessment.get('facial_skipped'):
+            return round(questionnaires / 3)
+        return round((questionnaires + neg) / 4)
+    # Newer assessments carry the weights they were scored with (see submit_facial)
+    parts = {'phq': phq / 27 * 100, 'gad': gad / 21 * 100, 'pss': pss / 40 * 100}
+    if assessment.get('facial_skipped'):
+        # No facial part: share its weight across the questionnaires in proportion
+        total = sum(weights[k] for k in parts)
+        if total <= 0:
+            return round(sum(parts.values()) / 3)
+        return round(sum(weights[k] * parts[k] for k in parts) / total)
+    parts['facial'] = neg
+    return round(sum(weights[k] * parts[k] for k in FUSION_KEYS))
 
 
 def facial_mood(assessment, skipped_text='Skipped', missing=None):
@@ -178,13 +263,15 @@ def facial_mood(assessment, skipped_text='Skipped', missing=None):
 
 
 def risk_band(composite):
-    if composite <= 25:
-        return 'low', 'Low', '#059669'
-    elif composite <= 50:
-        return 'moderate', 'Moderate', '#D97706'
-    elif composite <= 70:
-        return 'high', 'High', '#EA580C'
-    return 'critical', 'Critical', '#DC2626'
+    """(level, label, colour) using the admin-set thresholds (default Low <=25, Moderate <=50, High <=70)."""
+    t = risk_thresholds()
+    if composite <= t['low']:
+        return 'low', 'Low', RISK_COLORS['low']
+    elif composite <= t['moderate']:
+        return 'moderate', 'Moderate', RISK_COLORS['moderate']
+    elif composite <= t['high']:
+        return 'high', 'High', RISK_COLORS['high']
+    return 'critical', 'Critical', RISK_COLORS['critical']
 
 
 def phq_severity(s):
@@ -474,6 +561,11 @@ def verify_token():
             'status': profile.get('status', 'active')
         }
         session['_login_toast'] = True   # one-time: popped by the next dashboard load
+        try:
+            # Daily login total for the admin analytics "Activities Completed" figure (server-local day)
+            db.reference(f"login_counts/{time.strftime('%Y-%m-%d')}").set({'.sv': {'increment': 1}})
+        except Exception:
+            pass   # analytics only; never block a login on it
 
         return jsonify({'success': True, 'role': profile.get('role'), 'redirect': url_for('dashboard')})
 
@@ -762,6 +854,9 @@ def submit_facial():
                 'pss_answers': session['assessment'].get('pss_answers', []),
                 'created_at': {'.sv': 'timestamp'}
             }
+            # Score with the fusion weights in force now, kept on the assessment so later
+            # weight changes don't alter it (compute_composite reads them back)
+            full_assessment['fusion_weights'] = fusion_weights()
             if skipped:
                 # Firebase drops None/empty values, so record the skip explicitly
                 full_assessment['facial_skipped'] = True
@@ -1468,6 +1563,28 @@ def is_safe_key(value):
     return bool(re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value or ''))
 
 
+# ========== PRESENCE (admin "Active Sessions Now") ==========
+# presence/{uid} = last request time (server ms), written at most once a minute per session.
+# Kept out of users/{uid} so a stale session for a deleted account can't recreate that node.
+PRESENCE_WRITE_EVERY = 60          # seconds between writes for one session
+ACTIVE_SESSION_MS = 5 * 60 * 1000  # "active now" window
+
+
+@app.before_request
+def track_presence():
+    user = session.get('user')
+    if not user or request.endpoint in (None, 'static'):
+        return
+    now = time.time()
+    if now - session.get('_presence_at', 0) < PRESENCE_WRITE_EVERY or not is_safe_key(user.get('uid')):
+        return
+    try:
+        db.reference(f"presence/{user['uid']}").set({'.sv': 'timestamp'})
+        session['_presence_at'] = now
+    except Exception:
+        pass   # presence is best-effort; never block a page on it
+
+
 def validate_note(data):
     """(clean_fields, errors) for a clinical note request body."""
     title = str(data.get('title') or '').strip()
@@ -1813,23 +1930,26 @@ def doctor_reports():
 
 
 # ========== RISK ALERTS (doctor) ==========
-# Alerts are derived from assessments: High (composite 51-70) or Critical (71+), matching risk_band().
+# Alerts are derived from assessments in the High or Critical band of risk_band() (default 51-70 and 71+;
+# admins can move the thresholds on the ML Models page).
 # Only the acknowledgement is stored, at alerts/{patient_uid}/{assessment_id}:
 #   patient_uid, doctor_uid, assessment_id, severity, composite_score, created_at,
 #   acknowledged_at (server time), acknowledged_by, acknowledged_by_name, note
 # The URL id of an alert is "{patient_uid}_{assessment_id}" (assessment ids are digits).
-ALERT_THRESHOLDS = {'critical': 71, 'high': 51}
 ALERT_TABS = ('all', 'unread', 'critical', 'high', 'acknowledged')
 ALERT_RANGES = ('all', 'today', 'week', 'month', 'custom')
 ALERT_NOTE_MAX = 500
 
 
+def alert_thresholds():
+    """Lowest composite score that raises each alert severity."""
+    t = risk_thresholds()
+    return {'critical': t['high'] + 1, 'high': t['moderate'] + 1}
+
+
 def alert_severity(score):
-    if score >= ALERT_THRESHOLDS['critical']:
-        return 'critical'
-    if score >= ALERT_THRESHOLDS['high']:
-        return 'high'
-    return None
+    level = risk_band(score)[0]
+    return level if level in ('critical', 'high') else None
 
 
 def parse_alert_id(alert_id):
@@ -1894,7 +2014,7 @@ def patient_alerts(patient_uid, patient, acks=None):
             'initials': ''.join(w[0].upper() for w in name.split()[:2]) or 'P',
             'assessment_id': assessment_id,
             'severity': severity, 'severity_label': severity.capitalize(),
-            'score': score, 'threshold': ALERT_THRESHOLDS[severity],
+            'score': score, 'threshold': alert_thresholds()[severity],
             'created_at': a['created_at'], 'when': format_alert_time(a['created_at']),
             'full_date': format_timestamp(a['created_at'], '%d %b %Y, %I:%M %p'),
             'facial_skipped': bool(a.get('facial_skipped')),
@@ -2177,6 +2297,12 @@ def chat_json_error(message, status):
 
 
 @app.context_processor
+def inject_risk_ranges():
+    """risk_ranges() in every template, so zone labels follow the admin-set thresholds (called lazily)."""
+    return {'risk_ranges': risk_ranges}
+
+
+@app.context_processor
 def inject_chat_unread():
     """Initial sidebar badge; chat_badge.js keeps it live."""
     user = session.get('user') or {}
@@ -2448,13 +2574,98 @@ def admin_page(template, active, users, **context):
     )
 
 
-def admin_back(endpoint):
-    """Redirects to an admin page after a POST, keeping its filters/page when the form sent them back."""
-    target = url_for(endpoint)
+def admin_back(endpoint, *also):
+    """Redirects to an admin page after a POST, keeping its filters/page when the form sent them back.
+    `also` lists other pages the form may return to (e.g. the dashboard); anything else goes to `endpoint`."""
     back = request.form.get('next', '')
-    if back == target or back.startswith(target + '?'):
-        return redirect(back)
-    return redirect(target)
+    for allowed in (endpoint, *also):
+        target = url_for(allowed)
+        if back == target or back.startswith(target + '?'):
+            return redirect(back)
+    return redirect(url_for(endpoint))
+
+
+def admin_dashboard_data(users):
+    """Everything the admin dashboard and its CSV report show, from one read of users/ (plus
+    alerts/ for acknowledgements and presence/ for active sessions). Dates use the server's local day."""
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_ms = today.timestamp() * 1000
+    yesterday_ms = (today - timedelta(days=1)).timestamp() * 1000
+    month_ms = today.replace(day=1).timestamp() * 1000
+    now_ms = time.time() * 1000
+
+    acks = db.reference('alerts').get() or {}
+    acks = acks if isinstance(acks, dict) else {}
+    presence = db.reference('presence').get() or {}
+    presence = presence if isinstance(presence, dict) else {}
+
+    stats = dict.fromkeys(('patients', 'patients_this_month', 'doctors_active', 'doctors_pending',
+                           'critical_today', 'critical_unacknowledged', 'assessments_today',
+                           'assessments_yesterday', 'assessments_total'), 0)
+    risk_counts = {level: 0 for level in RISK_LEVELS}
+    pending_doctors, recent_assessments = [], []
+
+    for uid, user in users.items():
+        if not isinstance(user, dict):
+            continue
+        role, created = user.get('role'), user.get('created_at')
+        if role == 'doctor':
+            if user.get('status') == 'approved':
+                stats['doctors_active'] += 1
+            elif user.get('status') == 'pending':
+                stats['doctors_pending'] += 1
+                name = user.get('name') or 'Unnamed doctor'
+                profile = user.get('profile') if isinstance(user.get('profile'), dict) else {}
+                pending_doctors.append({
+                    'uid': uid, 'name': name,
+                    'initials': ''.join(w[0].upper() for w in strip_dr(name).split()[:2]) or 'D',
+                    'specialization': profile.get('specialization') or 'Specialization not given',
+                    'applied': admin_date(created), 'created_at': created if isinstance(created, (int, float)) else 0})
+            continue
+        if role != 'patient':
+            continue
+        stats['patients'] += 1
+        if isinstance(created, (int, float)) and created >= month_ms:
+            stats['patients_this_month'] += 1
+        assessments = user.get('assessments') if isinstance(user.get('assessments'), dict) else {}
+        latest = assessments.get(user.get('latest_assessment_id'))
+        if isinstance(latest, dict):
+            risk_counts[risk_band(compute_composite(latest))[0]] += 1
+        patient_acks = acks.get(uid) if isinstance(acks.get(uid), dict) else {}
+        for aid, a in assessments.items():
+            if not isinstance(a, dict):
+                continue
+            stats['assessments_total'] += 1
+            at = a.get('created_at')
+            if not isinstance(at, (int, float)):
+                continue
+            level, label, color = risk_band(compute_composite(a))
+            if at >= today_ms:
+                stats['assessments_today'] += 1
+                if level == 'critical':
+                    stats['critical_today'] += 1
+                    ack = patient_acks.get(aid)
+                    if not (isinstance(ack, dict) and ack.get('acknowledged_at')):
+                        stats['critical_unacknowledged'] += 1
+            elif at >= yesterday_ms:
+                stats['assessments_yesterday'] += 1
+            recent_assessments.append({'name': user.get('name') or 'Unnamed patient', 'risk_label': label,
+                                       'risk_color': color, 'created_at': at, 'date': admin_date(at)})
+
+    stats['active_sessions'] = sum(1 for uid, seen in presence.items()
+                                   if uid in users and isinstance(seen, (int, float)) and now_ms - seen <= ACTIVE_SESSION_MS)
+    stats['assessments_change'] = stats['assessments_today'] - stats['assessments_yesterday']
+
+    risk_distribution = [{'level': r['level'], 'label': r['label'], 'range': r['range'], 'color': r['color'],
+                          'count': risk_counts[r['level']]} for r in risk_ranges()]
+    pending_doctors.sort(key=lambda d: d['created_at'])   # oldest application first
+    recent_assessments.sort(key=lambda a: a['created_at'], reverse=True)
+    return {'stats': stats, 'risk_distribution': risk_distribution, 'risk_assessed': sum(risk_counts.values()),
+            'critical_count': risk_counts['critical'], 'pending_doctors': pending_doctors,
+            'recent_assessments': recent_assessments[:5],
+            'today_label': f'{now:%A}, {now.day} {now:%B %Y}', 'today_iso': f'{now:%Y-%m-%d}'}
 
 
 @app.route('/admin')
@@ -2462,46 +2673,753 @@ def admin_back(endpoint):
 def admin_dashboard():
     users = admin_load_users()
     accounts = [admin_account_row(uid, u) for uid, u in users.items() if isinstance(u, dict)]
-
-    risk_counts = {level: 0 for level in RISK_LEVELS}
-    assessment_count = 0
-    recent_assessments = []
-    for uid, user in users.items():
-        if not isinstance(user, dict) or user.get('role') != 'patient':
-            continue
-        assessments = user.get('assessments') or {}
-        if not isinstance(assessments, dict):
-            continue
-        assessment_count += len(assessments)
-        latest = assessments.get(user.get('latest_assessment_id'))
-        if isinstance(latest, dict):
-            risk_counts[risk_band(compute_composite(latest))[0]] += 1
-        for a in assessments.values():
-            if isinstance(a, dict) and isinstance(a.get('created_at'), (int, float)):
-                level, label, color = risk_band(compute_composite(a))
-                recent_assessments.append({'name': user.get('name') or 'Unnamed patient', 'risk_label': label,
-                                           'risk_color': color, 'created_at': a['created_at'],
-                                           'date': admin_date(a['created_at'])})
-    recent_assessments.sort(key=lambda a: a['created_at'], reverse=True)
-
-    orders = admin_order_rows(users)
     accounts.sort(key=lambda account: account['created_at'], reverse=True)
+    orders = admin_order_rows(users)
+    data = admin_dashboard_data(users)
 
     return admin_page(
         'admin_dashboard.html', 'dashboard', users,
-        total_users=len(users),
-        total_patients=sum(1 for a in accounts if a['role'] == 'patient'),
-        total_doctors=sum(1 for a in accounts if a['role'] == 'doctor'),
-        assessment_count=assessment_count,
-        risk_counts=risk_counts,
-        risk_total=sum(risk_counts.values()),
-        critical_count=risk_counts['critical'],
-        pending_orders=sum(1 for o in orders if o['status'] == 'pending'),
+        **data,
+        critical_dismissed=session.get('_critical_dismissed') == data['critical_count'],
+        pending_orders=[o for o in orders if o['status'] == 'pending'],
         recent_users=accounts[:5],
-        recent_assessments=recent_assessments[:5],
         recent_orders=orders[:3],
         login_just_happened=session.pop('_login_toast', False)
     )
+
+
+@app.route('/admin/dismiss-critical', methods=['POST'])
+@admin_required
+def admin_dismiss_critical():
+    """Hides the critical-alerts banner for this admin session, until the critical count changes."""
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    count = request.form.get('count', '')
+    if count.isdigit():
+        session['_critical_dismissed'] = int(count)
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/report')
+@admin_required
+def admin_report():
+    """CSV of the dashboard figures. Aggregate counts only, no individual results."""
+    import csv
+    import io
+    data = admin_dashboard_data(admin_load_users())
+    s = data['stats']
+    rows = [
+        ('Platform report', data['today_label']),
+        ('Generated at', format_timestamp(time.time() * 1000, '%d %b %Y %H:%M')),
+        (),
+        ('Metric', 'Value'),
+        ('Total patients', s['patients']),
+        ('New patients this month', s['patients_this_month']),
+        ('Active doctors', s['doctors_active']),
+        ('Doctors pending approval', s['doctors_pending']),
+        ('Assessments today', s['assessments_today']),
+        ('Assessments yesterday', s['assessments_yesterday']),
+        ('Assessments, all time', s['assessments_total']),
+        ('Critical assessments today', s['critical_today']),
+        ('Critical today, unacknowledged', s['critical_unacknowledged']),
+        ('Active sessions (last 5 min)', s['active_sessions']),
+        (),
+        ('Risk band (latest assessment per patient)', 'Score range', 'Patients'),
+        *[(r['label'], r['range'], r['count']) for r in data['risk_distribution']],
+        ('Patients not yet assessed', '', s['patients'] - data['risk_assessed']),
+    ]
+    out = io.StringIO()
+    csv.writer(out).writerows(rows)
+    return app.response_class('﻿' + out.getvalue(), mimetype='text/csv', headers={
+        'Content-Disposition': f"attachment; filename=platform_report_{data['today_iso']}.csv"})
+
+
+# ========== ADMIN ANALYTICS ==========
+ANALYTICS_RANGES = {'7d': 7, '30d': 30, '90d': 90}
+RESPONSE_TARGET_MIN = 10   # alert response target, minutes
+
+
+def analytics_range(args):
+    """The selected period as local-midnight boundaries, plus the equal-length period before it."""
+    from datetime import date, datetime, timedelta
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    key, error, custom_open = (args.get('range') or '30d').lower(), '', False
+    start = end = None
+    if key == 'custom':
+        custom_open = True   # show the date picker
+        raw_from, raw_to = args.get('from', ''), args.get('to', '')
+        if raw_from or raw_to:
+            try:
+                first, last = date.fromisoformat(raw_from), date.fromisoformat(raw_to)
+                first, last = min(first, last), max(first, last)
+                last = min(last, today.date())
+                first = min(first, last)
+                start = datetime.combine(first, datetime.min.time())
+                end = datetime.combine(last, datetime.min.time()) + timedelta(days=1)
+            except ValueError:
+                error = 'Choose both a start and an end date. Showing the last 30 days instead.'
+    if start is None:
+        key = key if key in ANALYTICS_RANGES else '30d'   # also covers an unfinished custom range
+        days = ANALYTICS_RANGES[key]
+        start, end = today - timedelta(days=days - 1), today + timedelta(days=1)
+    days = (end - start).days
+    if key in ANALYTICS_RANGES:
+        label, compare = f'Last {days} days', f'previous {days} days'
+    else:
+        last_day = end - timedelta(days=1)
+        label = f'{start.day} {start:%b %Y}' if days == 1 else f'{start.day} {start:%b %Y} – {last_day.day} {last_day:%b %Y}'
+        compare = f'previous {days} day{"s" if days != 1 else ""}'
+    prev_start = start - (end - start)
+    ms = lambda dt: dt.timestamp() * 1000
+    return {'key': key, 'label': label, 'compare': compare, 'days': days, 'error': error, 'custom_open': custom_open,
+            'start': ms(start), 'end': ms(end), 'prev_start': ms(prev_start), 'prev_end': ms(start),
+            'from_iso': f'{start:%Y-%m-%d}', 'to_iso': f'{end - timedelta(days=1):%Y-%m-%d}',
+            'today': today, 'args': {k: v for k, v in (('range', key), ('from', f'{start:%Y-%m-%d}' if key == 'custom' else ''),
+                                                        ('to', f'{end - timedelta(days=1):%Y-%m-%d}' if key == 'custom' else '')) if v}}
+
+
+def load_model_metadata():
+    """Models/model_metadata.json as a dict ({} if missing or unreadable)."""
+    import json
+    for d in ('Models', 'models'):
+        try:
+            with open(os.path.join(APP_DIR, d, 'model_metadata.json'), encoding='utf-8') as f:
+                meta = json.load(f)
+            return meta if isinstance(meta, dict) else {}
+        except (OSError, ValueError):
+            continue
+    return {}
+
+
+def model_accuracy():
+    """(percent text, version) from the model metadata, so the figure follows the trained model."""
+    meta = load_model_metadata()
+    accuracy = meta.get('test_accuracy')
+    text = f'{accuracy * 100:.1f}%' if isinstance(accuracy, (int, float)) else '—'
+    return text, meta.get('version', '—')
+
+
+def model_architecture(path):
+    """Layer counts read from the .keras file's own config (no TensorFlow needed)."""
+    import json
+    import zipfile
+    try:
+        with zipfile.ZipFile(path) as z:
+            config = json.loads(z.read('config.json'))
+        layers = [l.get('class_name') for l in config['config']['layers']]
+        return {'conv': layers.count('Conv2D'), 'dense': layers.count('Dense'), 'pool': layers.count('MaxPooling2D')}
+    except Exception:
+        return None
+
+
+def ml_model_info():
+    """What the ML Models page shows about the facial emotion model: metadata + the model file itself."""
+    meta = load_model_metadata()
+    pct = lambda v: f'{v * 100:.2f}%' if isinstance(v, (int, float)) else '—'
+    info = {
+        'found': bool(meta), 'version': meta.get('version', ''),
+        'name': f"Custom CNN {meta.get('version', '')}".strip(),
+        'test_accuracy': pct(meta.get('test_accuracy')), 'val_accuracy': pct(meta.get('val_accuracy')),
+        'epochs': meta.get('trained_epochs'), 'params': meta.get('total_params'),
+        'input': f"{meta['input_size']}×{meta['input_size']} {meta.get('color_mode', '')}".strip() if meta.get('input_size') else '—',
+        'classes': meta.get('classes') or [], 'improvements': meta.get('improvements') or [],
+        'dataset': meta.get('dataset', '—'), 'preprocessing': meta.get('preprocessing', ''),
+        'loaded': FER_MODEL is not None, 'file': None, 'architecture': None,
+    }
+    if FER_MODEL_PATH:
+        stat = os.stat(FER_MODEL_PATH)
+        info['file'] = {'name': os.path.relpath(FER_MODEL_PATH, APP_DIR).replace('\\', '/'),
+                        'size': f'{stat.st_size / 1_048_576:.1f} MB', 'modified': format_timestamp(stat.st_mtime * 1000, '%d %b %Y')}
+        info['architecture'] = model_architecture(FER_MODEL_PATH)
+    # Notebook link: KAGGLE_NOTEBOOK_URL in .env, or "kaggle_url" in the metadata. Only kaggle.com links are used.
+    url = (os.environ.get('KAGGLE_NOTEBOOK_URL') or meta.get('kaggle_url') or '').strip()
+    info['kaggle_url'] = url if url.startswith(('https://www.kaggle.com/', 'https://kaggle.com/')) else ''
+    return info
+
+
+def ml_page(**extra):
+    users = admin_load_users()
+    settings = scoring_settings(refresh=True)
+    return admin_page('admin_ml_models.html', 'ml_models', users, model=ml_model_info(),
+                      weights=settings['weights'], thresholds=settings['thresholds'],
+                      default_weights=DEFAULT_FUSION_WEIGHTS, default_thresholds=DEFAULT_RISK_THRESHOLDS, **extra)
+
+
+@app.route('/admin/ml-models')
+@admin_required
+def admin_ml_models():
+    return ml_page()
+
+
+@app.route('/admin/ml-models/weights', methods=['POST'])
+@admin_required
+def admin_save_fusion_weights():
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    weights = clean_fusion_weights({k: request.form.get(k) for k in FUSION_KEYS})
+    if weights is None:
+        flash('Fusion weights must each be between 0 and 1 and add up to exactly 1.00.', 'error')
+        return redirect(url_for('admin_ml_models') + '#fusion')
+    db.reference('system/fusion_weights').set({**weights, 'updated_at': {'.sv': 'timestamp'},
+                                                'updated_by': session['user']['uid']})
+    scoring_settings(refresh=True)
+    flash('Fusion weights saved. They apply to assessments completed from now on.', 'success')
+    return redirect(url_for('admin_ml_models') + '#fusion')
+
+
+@app.route('/admin/ml-models/thresholds', methods=['POST'])
+@admin_required
+def admin_save_risk_thresholds():
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    thresholds = clean_risk_thresholds({k: request.form.get(k) for k in DEFAULT_RISK_THRESHOLDS})
+    if thresholds is None:
+        flash('Thresholds are out of range: Low 10-40, Moderate at least Low + 5 (max 70), '
+              'High at least Moderate + 5 (max 90).', 'error')
+        return redirect(url_for('admin_ml_models') + '#thresholds')
+    db.reference('system/risk_thresholds').set({**thresholds, 'updated_at': {'.sv': 'timestamp'},
+                                                 'updated_by': session['user']['uid']})
+    scoring_settings(refresh=True)
+    flash('Risk thresholds saved. All assessments are now classified with the new bands.', 'success')
+    return redirect(url_for('admin_ml_models') + '#thresholds')
+
+
+def month_starts(today, count):
+    from datetime import datetime
+    out = []
+    for back in range(count - 1, -1, -1):
+        year, month = today.year, today.month - back
+        while month <= 0:
+            month, year = month + 12, year - 1
+        out.append(datetime(year, month, 1))
+    return out
+
+
+def admin_analytics_data(args):
+    """Stats, chart series and per-assessment rows for /admin/analytics and its exports.
+    One read each of users/, alerts/, chats/ and login_counts/."""
+    from datetime import datetime, timedelta
+    rng = analytics_range(args)
+    users = admin_load_users()
+    acks = db.reference('alerts').get() or {}
+    acks = acks if isinstance(acks, dict) else {}
+    chats = db.reference('chats').get() or {}
+    chats = chats if isinstance(chats, dict) else {}
+    logins = db.reference('login_counts').get() or {}
+    logins = logins if isinstance(logins, dict) else {}
+    today = rng['today']
+    month_start = today.replace(day=1)
+    month_ms = month_start.timestamp() * 1000
+    in_range = lambda t: rng['start'] <= t < rng['end']
+    in_prev = lambda t: rng['prev_start'] <= t < rng['prev_end']
+
+    rows, responses = [], []   # responses: (alert created ms, minutes to acknowledge)
+    patients = paired = 0
+    patients_before_month = paired_before_month = 0
+    created_times = []
+    for uid, user in users.items():
+        if not isinstance(user, dict) or user.get('role') != 'patient':
+            continue
+        patients += 1
+        created = user.get('created_at') if isinstance(user.get('created_at'), (int, float)) else None
+        created_times.append(created)
+        wb = user.get('wristband') if isinstance(user.get('wristband'), dict) else {}
+        is_paired = bool(wb.get('device_id'))
+        paired += is_paired
+        if created is None or created < month_ms:
+            patients_before_month += 1
+            paired_at = wb.get('paired_at')
+            paired_before_month += is_paired and isinstance(paired_at, (int, float)) and paired_at < month_ms
+        name = user.get('name') or 'Unnamed patient'
+        patient_acks = acks.get(uid) if isinstance(acks.get(uid), dict) else {}
+        for aid, a in (user.get('assessments') or {}).items() if isinstance(user.get('assessments'), dict) else []:
+            if not isinstance(a, dict) or not isinstance(a.get('created_at'), (int, float)):
+                continue
+            score = compute_composite(a)
+            level, label, color = risk_band(score)
+            rows.append({'uid': uid, 'name': name, 'created_at': a['created_at'],
+                         'date': format_timestamp(a['created_at'], '%Y-%m-%d'), 'time': format_timestamp(a['created_at'], '%H:%M'),
+                         'phq': a.get('phq_score'), 'gad': a.get('gad_score'), 'pss': a.get('pss_score'),
+                         'facial': facial_mood(a, 'Skipped', ''), 'composite': score,
+                         'level': level, 'risk_label': label, 'risk_color': color})
+            ack = patient_acks.get(aid)
+            if alert_severity(score) and isinstance(ack, dict) and isinstance(ack.get('acknowledged_at'), (int, float)):
+                responses.append((a['created_at'], max(0, ack['acknowledged_at'] - a['created_at']) / 60000))
+    rows.sort(key=lambda r: r['created_at'], reverse=True)
+
+    cur = [r for r in rows if in_range(r['created_at'])]
+    prev = [r for r in rows if in_prev(r['created_at'])]
+    avg = lambda xs: sum(xs) / len(xs) if xs else None
+
+    def fmt_minutes(m):
+        if m is None:
+            return '—'
+        if m < 60:
+            return f'{m:.1f} min'
+        return f'{m / 60:.1f} h' if m < 1440 else f'{m / 1440:.1f} days'
+
+    def pct_change(now, before):
+        if not before:
+            return None
+        return round((now - before) / before * 100)
+
+    # Activities: logins (counted from when tracking started) + assessments + chat messages
+    def logins_between(lo, hi):
+        total = 0
+        for day, n in logins.items():
+            try:
+                t = datetime.strptime(day, '%Y-%m-%d').timestamp() * 1000
+            except ValueError:
+                continue
+            if lo <= t < hi and isinstance(n, int):
+                total += n
+        return total
+    message_times = [m['timestamp'] for chat in chats.values() if isinstance(chat, dict)
+                     for m in (chat.get('messages') or {}).values()
+                     if isinstance(m, dict) and isinstance(m.get('timestamp'), (int, float))]
+    act_cur = logins_between(rng['start'], rng['end']) + len(cur) + sum(1 for t in message_times if in_range(t))
+    act_prev = logins_between(rng['prev_start'], rng['prev_end']) + len(prev) + sum(1 for t in message_times if in_prev(t))
+
+    avg_cur, avg_prev = avg([r['composite'] for r in cur]), avg([r['composite'] for r in prev])
+    resp_cur = avg([m for t, m in responses if in_range(t)])
+    usage_now = paired / patients * 100 if patients else 0
+    usage_before = paired_before_month / patients_before_month * 100 if patients_before_month else 0
+    accuracy, model_version = model_accuracy()
+    stats = {
+        'total': len(cur), 'total_change': len(cur) - len(prev),
+        'avg_score': round(avg_cur, 1) if avg_cur is not None else None,
+        'avg_band': risk_band(avg_cur) if avg_cur is not None else None,
+        'avg_change': round(avg_cur - avg_prev, 1) if avg_cur is not None and avg_prev is not None else None,
+        'accuracy': accuracy, 'model_version': model_version,
+        'response': fmt_minutes(resp_cur), 'response_min': resp_cur,
+        'response_ok': resp_cur is not None and resp_cur < RESPONSE_TARGET_MIN,
+        'usage': round(usage_now), 'usage_change': round(usage_now - usage_before), 'paired': paired, 'patients': patients,
+        'activities': act_cur, 'activities_change': pct_change(act_cur, act_prev),
+    }
+
+    # Chart 1 + 2: last 12 months
+    months = month_starts(today, 12)
+    bounds = [m.timestamp() * 1000 for m in months] + [month_starts(today + timedelta(days=32), 1)[0].timestamp() * 1000]
+    month_labels = [f'{m:%b %y}' for m in months]
+    registrations = [sum(1 for c in created_times if c is None or c < bounds[i + 1]) for i in range(12)]
+    risk_series = []
+    labels = {r['level']: r['label'] for r in risk_ranges()}
+    for level in reversed(RISK_LEVELS):   # Critical first, as listed in the legend
+        risk_series.append({'level': level, 'label': labels[level],
+                            'color': {'low': '#059669', 'moderate': '#F59E0B', 'high': '#EA580C', 'critical': '#DC2626'}[level],
+                            'values': [sum(1 for r in rows if r['level'] == level and bounds[i] <= r['created_at'] < bounds[i + 1])
+                                       for i in range(12)]})
+
+    # Chart 3 + 4: last 14 days
+    days = [today - timedelta(days=13 - i) for i in range(14)]
+    day_bounds = [d.timestamp() * 1000 for d in days] + [(today + timedelta(days=1)).timestamp() * 1000]
+    day_labels = [f'{d.day} {d:%b}' for d in days]
+    daily = [sum(1 for r in rows if day_bounds[i] <= r['created_at'] < day_bounds[i + 1]) for i in range(14)]
+    response_daily = []
+    for i in range(14):
+        mins = [m for t, m in responses if day_bounds[i] <= t < day_bounds[i + 1]]
+        response_daily.append(round(avg(mins), 1) if mins else None)
+
+    charts = {
+        'registrations': {'labels': month_labels, 'values': registrations, 'has_data': any(registrations)},
+        'risk': {'labels': month_labels, 'series': risk_series, 'has_data': any(any(s['values']) for s in risk_series)},
+        'daily': {'labels': day_labels, 'values': daily, 'has_data': any(daily)},
+        'response': {'labels': day_labels, 'values': response_daily, 'target': RESPONSE_TARGET_MIN,
+                     'has_data': any(v is not None for v in response_daily)},
+    }
+    distribution = [{'label': s['label'], 'color': s['color'], 'count': sum(1 for r in cur if r['level'] == s['level'])}
+                    for s in reversed(risk_series)]
+    return {'range': rng, 'stats': stats, 'charts': charts, 'rows': cur, 'distribution': distribution,
+            'users': users, 'generated': format_timestamp(time.time() * 1000, '%d %b %Y, %H:%M')}
+
+
+@app.route('/admin/analytics')
+@admin_required
+def admin_analytics():
+    data = admin_analytics_data(request.args)
+    users, period = data.pop('users'), data.pop('range')   # 'range' would shadow Jinja's range()
+    return admin_page('admin_analytics.html', 'analytics', users, period=period, **data,
+                      range_options=[('7d', '7D'), ('30d', '30D'), ('90d', '90D')])
+
+
+def csv_cell(value):
+    """Stops spreadsheet apps treating a cell (e.g. a patient name) as a formula."""
+    text = '' if value is None else str(value)
+    return "'" + text if text[:1] in ('=', '+', '-', '@', '\t', '\r') else text
+
+
+@app.route('/admin/analytics/export.csv')
+@admin_required
+def admin_analytics_csv():
+    import csv
+    import io
+    data = admin_analytics_data(request.args)
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(['Patient', 'Date', 'Time', 'PHQ-9', 'GAD-7', 'PSS', 'Facial scan', 'Composite', 'Risk level'])
+    for r in data['rows']:
+        writer.writerow([csv_cell(r['name']), r['date'], r['time'], csv_cell(r['phq']), csv_cell(r['gad']),
+                         csv_cell(r['pss']), csv_cell(r['facial'] or '-'), r['composite'], r['risk_label']])
+    rng = data['range']
+    return app.response_class('﻿' + out.getvalue(), mimetype='text/csv', headers={
+        'Content-Disposition': f"attachment; filename=assessments_{rng['from_iso']}_to_{rng['to_iso']}.csv"})
+
+
+@app.route('/admin/analytics/export.pdf')
+@admin_required
+def admin_analytics_pdf():
+    import io
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
+    from reportlab.graphics.shapes import Drawing, String
+    from reportlab.graphics.charts.barcharts import VerticalBarChart
+    from reportlab.graphics.charts.linecharts import HorizontalLineChart
+    from reportlab.graphics.charts.legends import Legend
+    from reportlab.graphics.widgets.markers import makeMarker
+    import math
+
+    data = admin_analytics_data(request.args)
+    rng, s, charts = data['range'], data['stats'], data['charts']
+    green, ink, muted, line = colors.HexColor('#0F7A5F'), colors.HexColor('#0F172A'), colors.HexColor('#64748B'), colors.HexColor('#E2E8F0')
+    title = ParagraphStyle('t', fontName='Helvetica-Bold', fontSize=20, textColor=ink, leading=24)
+    sub = ParagraphStyle('s', fontName='Helvetica', fontSize=10, textColor=muted, leading=14)
+    h2 = ParagraphStyle('h', fontName='Helvetica-Bold', fontSize=12, textColor=ink, leading=16, spaceBefore=10, spaceAfter=4)
+    note = ParagraphStyle('n', fontName='Helvetica', fontSize=8, textColor=muted, leading=11)
+    width = A4[0] - 36 * mm
+
+    def sign(n, unit=''):
+        return f'{n:+g}{unit}' if n else f'0{unit}'
+
+    band = s['avg_band']
+    stat_rows = [
+        ['Total assessments', str(s['total']), f"{sign(s['total_change'])} vs {rng['compare']}"],
+        ['Average risk score', '—' if s['avg_score'] is None else f"{s['avg_score']} / 100",
+         '' if band is None else f"{band[1]} range" + ('' if s['avg_change'] is None else f" · {sign(s['avg_change'])} vs {rng['compare']}")],
+        ['Detection rate', s['accuracy'], f"Model accuracy {s['model_version']} (FER-2013)"],
+        ['Avg response time', s['response'], f"Target: under {RESPONSE_TARGET_MIN} min" + ('' if s['response_min'] is None else (' (met)' if s['response_ok'] else ' (missed)'))],
+        ['Wristband usage', f"{s['usage']}%", f"{s['paired']} of {s['patients']} patients paired · {sign(s['usage_change'], ' pts')} this month"],
+        ['Activities completed', str(s['activities']), 'Logins, assessments and chat messages' + ('' if s['activities_change'] is None else f" · {sign(s['activities_change'], '%')} vs {rng['compare']}")],
+    ]
+    stat_table = Table([['Metric', 'Value', 'Detail']] + stat_rows, colWidths=[45 * mm, 32 * mm, width - 77 * mm])
+    stat_table.setStyle(TableStyle([
+        ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 9), ('FONT', (0, 1), (-1, -1), 'Helvetica', 9),
+        ('FONT', (1, 1), (1, -1), 'Helvetica-Bold', 10), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('BACKGROUND', (0, 0), (-1, 0), green), ('TEXTCOLOR', (2, 1), (2, -1), muted),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.5, line), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+
+    def empty(drawing, text='No data available for this period'):
+        drawing.add(String(drawing.width / 2, drawing.height / 2, text, textAnchor='middle', fontName='Helvetica', fontSize=9, fillColor=muted))
+        return drawing
+
+    def style_axes(chart, labels, step):
+        chart.categoryAxis.categoryNames = [l if i % step == 0 else '' for i, l in enumerate(labels)]
+        chart.categoryAxis.labels.fontName = chart.valueAxis.labels.fontName = 'Helvetica'
+        chart.categoryAxis.labels.fontSize = chart.valueAxis.labels.fontSize = 7
+        chart.categoryAxis.labels.fillColor = chart.valueAxis.labels.fillColor = muted
+        chart.categoryAxis.strokeColor = chart.valueAxis.strokeColor = line
+        chart.valueAxis.visibleGrid = True
+        chart.valueAxis.gridStrokeColor = line
+        chart.valueAxis.valueMin = 0
+
+    def count_axis(chart, series):
+        top = max((v for row in series for v in row if v is not None), default=0)
+        chart.valueAxis.valueStep = max(1, math.ceil(top / 5))   # counts: no 0.5 steps
+
+    def line_chart(series, labels, colours, height=62 * mm, value_max=None, counts=False, markers=False):
+        d = Drawing(width / 2 - 4 * mm, height)
+        c = HorizontalLineChart()
+        c.x, c.y, c.width, c.height = 26, 22, d.width - 34, height - 34
+        c.data = series
+        style_axes(c, labels, 2)
+        if value_max:
+            c.valueAxis.valueMax = value_max
+        if counts:
+            count_axis(c, series)
+        for i, col in enumerate(colours):
+            c.lines[i].strokeColor = colors.HexColor(col)
+            c.lines[i].strokeWidth = 2
+            if markers and i == 0:
+                c.lines[i].symbol = makeMarker('FilledCircle', size=4, fillColor=colors.HexColor(col), strokeColor=None)
+        d.add(c)
+        return d
+
+    def bar_chart(series, labels, colours, stacked=False, height=62 * mm, step=2):
+        d = Drawing(width / 2 - 4 * mm, height)
+        c = VerticalBarChart()
+        c.x, c.y, c.width, c.height = 26, 22, d.width - 34, height - 34
+        c.data = series
+        style_axes(c, labels, step)
+        if stacked:
+            c.categoryAxis.style = 'stacked'
+            count_axis(c, [[sum(col) for col in zip(*series)]])
+        else:
+            count_axis(c, series)
+        c.barSpacing, c.groupSpacing = 0, 4
+        for i, col in enumerate(colours):
+            c.bars[i].fillColor = colors.HexColor(col)
+            c.bars[i].strokeColor = None
+        d.add(c)
+        return d
+
+    reg, risk, daily, resp = charts['registrations'], charts['risk'], charts['daily'], charts['response']
+    blank = lambda: Drawing(width / 2 - 4 * mm, 62 * mm)
+    c1 = line_chart([reg['values']], reg['labels'], ['#0F7A5F'], counts=True) if reg['has_data'] else empty(blank())
+    if risk['has_data']:
+        c2 = bar_chart([sr['values'] for sr in risk['series']], risk['labels'], [sr['color'] for sr in risk['series']], stacked=True)
+        legend = Legend()
+        legend.x, legend.y, legend.alignment = 30, c2.height - 4, 'right'
+        legend.columnMaximum, legend.fontName, legend.fontSize = 1, 'Helvetica', 7
+        legend.deltax, legend.dxTextSpace, legend.dx, legend.dy = 56, 4, 6, 6
+        legend.colorNamePairs = [(colors.HexColor(sr['color']), sr['label']) for sr in risk['series']]
+        c2.add(legend)
+    else:
+        c2 = empty(blank())
+    c3 = bar_chart([daily['values']], daily['labels'], ['#0F7A5F']) if daily['has_data'] else empty(blank())
+    if resp['has_data']:
+        # Days with no acknowledged alerts have no average, so they're left as gaps (not drawn as 0 minutes)
+        values = resp['values']
+        top = max(v for v in values if v is not None)
+        c4 = line_chart([values, [resp['target']] * len(values)], resp['labels'], ['#2563EB', '#DC2626'],
+                        value_max=max(top, resp['target']) * 1.15, markers=True)
+    else:
+        c4 = empty(blank(), 'No acknowledged alerts in the last 14 days')
+
+    def chart_cell(heading, drawing):
+        return [Paragraph(heading, ParagraphStyle('ch', parent=h2, fontSize=10, spaceBefore=0)), drawing]
+
+    grid = Table([[chart_cell('Patient registrations (cumulative, 12 months)', c1), chart_cell('Risk distribution by month', c2)],
+                  [chart_cell('Daily assessment completions (14 days)', c3), chart_cell(f'Alert response time, minutes (target {RESPONSE_TARGET_MIN})', c4)]],
+                 colWidths=[width / 2] * 2)
+    grid.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                              ('BOTTOMPADDING', (0, 0), (-1, -1), 10)]))
+
+    dist = data['distribution']
+    dist_table = Table([['Risk level', 'Assessments']] + [[d['label'], str(d['count'])] for d in dist],
+                       colWidths=[45 * mm, 32 * mm], hAlign='LEFT')
+    dist_table.setStyle(TableStyle([
+        ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 9), ('FONT', (0, 1), (-1, -1), 'Helvetica', 9),
+        ('BACKGROUND', (0, 0), (-1, 0), green), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.5, line), ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        *[('TEXTCOLOR', (0, i + 1), (0, i + 1), colors.HexColor(d['color'])) for i, d in enumerate(dist)],
+    ]))
+
+    story = [Paragraph('Analytics &amp; Reports', title),
+             Paragraph(f"Mental Disorder Detection · {rng['label']} · generated {data['generated']}", sub),
+             Spacer(1, 8 * mm), Paragraph('Key figures', h2), stat_table]
+    if not data['rows']:
+        story += [Spacer(1, 3 * mm), Paragraph('No assessments were completed in this period.', note)]
+    story += [Paragraph(f"Assessments by risk level ({rng['label'].lower() if rng['key'] != 'custom' else rng['label']})", h2), dist_table,
+              Spacer(1, 4 * mm), KeepTogether([Paragraph('Trends', h2), grid]),
+              Paragraph('Activities count logins from when login tracking began. Detection rate is the facial '
+                        'emotion model\'s test accuracy on FER-2013, not a clinical detection rate.', note)]
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
+                            title='Analytics & Reports', author='Mental Disorder Detection')
+    doc.build(story)
+    return app.response_class(buf.getvalue(), mimetype='application/pdf', headers={
+        'Content-Disposition': f"attachment; filename=analytics_report_{rng['from_iso']}_to_{rng['to_iso']}.pdf"})
+
+
+# ========== ADMIN ALERTS LOG ==========
+# Every patient's alerts (patient_alerts(), the same source as /doctor/risk-alerts), across all doctors.
+ADMIN_ALERTS_PAGE_SIZE = 25
+ADMIN_ALERT_STATUSES = ('all', 'unread', 'acknowledged')
+ADMIN_ALERT_SEVERITIES = ('all', 'critical', 'high')
+ADMIN_ALERT_PERIODS = (('all', 'All time'), ('today', 'Today'), ('week', 'This week'), ('month', 'This month'))
+
+
+def alert_display_id(patient_uid, assessment_id):
+    """Short readable id: first 8 characters of the patient uid + the assessment time in base 36."""
+    n, digits = int(assessment_id), ''
+    while True:
+        n, r = divmod(n, 36)
+        digits = '0123456789abcdefghijklmnopqrstuvwxyz'[r] + digits
+        if not n:
+            break
+    return f'AL-{patient_uid[:8]}-{digits}'.upper()
+
+
+def admin_alerts_data(args):
+    from datetime import datetime
+    users = admin_load_users()
+    acks = db.reference('alerts').get() or {}
+    acks = acks if isinstance(acks, dict) else {}
+
+    alerts = []
+    for uid, user in users.items():
+        if not isinstance(user, dict) or user.get('role') != 'patient' or not user.get('assessments'):
+            continue
+        doctor_uid = user.get('assigned_doctor_uid')
+        doctor = users.get(doctor_uid) if isinstance(doctor_uid, str) else None
+        doctor_name = f"Dr. {strip_dr(doctor.get('name')) or 'Unnamed'}" if isinstance(doctor, dict) else 'Unassigned'
+        for a in patient_alerts(uid, user, acks.get(uid) if isinstance(acks.get(uid), dict) else {}):
+            response_ms = a['ack_at'] - a['created_at'] if a['acknowledged'] and isinstance(a['ack_at'], (int, float)) else None
+            a.update(display_id=alert_display_id(uid, a['assessment_id']), doctor_name=doctor_name,
+                     patient_email=user.get('email', ''), ago=time_ago(a['created_at']),
+                     response_ms=max(0, response_ms) if response_ms is not None else None,
+                     response=format_duration(max(0, response_ms)) if response_ms is not None else '—',
+                     ack_by_label=('' if not a['acknowledged'] else 'a doctor' if a['ack_by_name'] == 'a doctor'
+                                   else f"Dr. {strip_dr(a['ack_by_name'])}"))
+            alerts.append(a)
+    alerts.sort(key=lambda a: a['created_at'], reverse=True)
+
+    # Stats are system-wide, whatever filters are applied
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight = today.timestamp() * 1000
+    acknowledged = [a for a in alerts if a['acknowledged']]
+    responses = [a['response_ms'] for a in acknowledged if a['response_ms'] is not None]
+    avg_ms = sum(responses) / len(responses) if responses else None
+    stats = {
+        'total': len(alerts),
+        'today': sum(1 for a in alerts if a['created_at'] >= midnight),
+        'today_label': f'{today:%A}, {today.day} {today:%B %Y}',
+        'critical_open': sum(1 for a in alerts if a['severity'] == 'critical' and not a['acknowledged']),
+        'acknowledged': len(acknowledged),
+        'ack_rate': round(len(acknowledged) / len(alerts) * 100) if alerts else 0,
+        'avg_response': format_duration(avg_ms) if avg_ms is not None else None,
+        'response_ok': avg_ms is not None and avg_ms < RESPONSE_TARGET_MIN * 60000,
+    }
+
+    query = (args.get('q') or '').strip()[:100]
+    status = (args.get('status') or 'all').lower()
+    status = status if status in ADMIN_ALERT_STATUSES else 'all'
+    severity = (args.get('severity') or 'all').lower()
+    severity = severity if severity in ADMIN_ALERT_SEVERITIES else 'all'
+    period = (args.get('period') or 'all').lower()
+    period = period if period in dict(ADMIN_ALERT_PERIODS) else 'all'
+
+    shown = alerts_in_range(alerts, period, '', '')
+    if query:
+        # Patient name, or the alert id with or without "#" (the internal id works too)
+        q = query.lower().lstrip('#')
+        shown = [a for a in shown if q in a['patient_name'].lower() or q in a['display_id'].lower() or q in a['id'].lower()]
+    if status != 'all':
+        shown = [a for a in shown if a['acknowledged'] == (status == 'acknowledged')]
+    if severity != 'all':
+        shown = [a for a in shown if a['severity'] == severity]
+
+    filters = {k: v for k, v in (('q', query), ('status', status), ('severity', severity), ('period', period))
+               if v and v != 'all'}
+    return {'alerts': shown, 'stats': stats, 'filters': filters, 'query': query, 'status': status,
+            'severity': severity, 'period': period, 'users': users,
+            'period_label': dict(ADMIN_ALERT_PERIODS)[period]}
+
+
+@app.route('/admin/alerts')
+@admin_required
+def admin_alerts():
+    data = admin_alerts_data(request.args)
+    shown = data.pop('alerts')
+    total_pages = max(1, -(-len(shown) // ADMIN_ALERTS_PAGE_SIZE))
+    try:
+        page = min(max(int(request.args.get('page', 1)), 1), total_pages)
+    except ValueError:
+        page = 1
+    start = (page - 1) * ADMIN_ALERTS_PAGE_SIZE
+    bands = risk_ranges()
+    return admin_page('admin_alerts.html', 'alerts', data.pop('users'), **data,
+                      page_alerts=shown[start:start + ADMIN_ALERTS_PAGE_SIZE], match_total=len(shown),
+                      first_index=start + 1, page=page, total_pages=total_pages,
+                      statuses=ADMIN_ALERT_STATUSES, severities=ADMIN_ALERT_SEVERITIES, periods=ADMIN_ALERT_PERIODS,
+                      high_min=bands[2]['min'], critical_min=bands[3]['min'])
+
+
+@app.route('/admin/alerts/export.csv')
+@admin_required
+def admin_alerts_csv():
+    import csv
+    import io
+    data = admin_alerts_data(request.args)
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(['Alert ID', 'Patient', 'Patient email', 'Doctor', 'Type', 'Composite score', 'Risk', 'Created',
+                     'Status', 'Acknowledged by', 'Acknowledged at', 'Response time', 'Response minutes', 'Note'])
+    for a in data['alerts']:
+        writer.writerow([
+            a['display_id'], csv_cell(a['patient_name']), csv_cell(a['patient_email']), csv_cell(a['doctor_name']),
+            'Composite Alert', a['score'], a['severity_label'], format_timestamp(a['created_at'], '%Y-%m-%d %H:%M'),
+            'Acknowledged' if a['acknowledged'] else 'Unread', csv_cell(a['ack_by_label']),
+            format_timestamp(a['ack_at'], '%Y-%m-%d %H:%M') if a['acknowledged'] else '',
+            a['response'] if a['acknowledged'] else '',
+            round(a['response_ms'] / 60000, 1) if a['response_ms'] is not None else '', csv_cell(a['note'])])
+    return app.response_class('﻿' + out.getvalue(), mimetype='text/csv', headers={
+        'Content-Disposition': f"attachment; filename=alerts_log_{time.strftime('%Y-%m-%d')}.csv"})
+
+
+@app.route('/admin/alerts/export.pdf')
+@admin_required
+def admin_alerts_pdf():
+    import io
+    from xml.sax.saxutils import escape
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+    data = admin_alerts_data(request.args)
+    s, alerts = data['stats'], data['alerts']
+    green, ink, muted, line = colors.HexColor('#0F7A5F'), colors.HexColor('#0F172A'), colors.HexColor('#64748B'), colors.HexColor('#E2E8F0')
+    title = ParagraphStyle('t', fontName='Helvetica-Bold', fontSize=20, textColor=ink, leading=24)
+    sub = ParagraphStyle('s', fontName='Helvetica', fontSize=10, textColor=muted, leading=14)
+    h2 = ParagraphStyle('h', fontName='Helvetica-Bold', fontSize=12, textColor=ink, leading=16, spaceBefore=10, spaceAfter=6)
+    cell = ParagraphStyle('c', fontName='Helvetica', fontSize=8, textColor=ink, leading=10)
+    width = landscape(A4)[0] - 30 * mm
+
+    labels = {'q': 'Search', 'status': 'Status', 'severity': 'Severity', 'period': 'Date'}
+    shown_filters = ', '.join(f"{labels[k]}: {data['period_label'] if k == 'period' else v}" for k, v in data['filters'].items())
+    label = ParagraphStyle('l', fontName='Helvetica-Bold', fontSize=7.5, textColor=muted, leading=10)
+    value = ParagraphStyle('v', fontName='Helvetica-Bold', fontSize=17, textColor=ink, leading=21)
+    note = ParagraphStyle('n', fontName='Helvetica', fontSize=8, textColor=muted, leading=10)
+    stat = lambda name, val, detail, colour='#0F172A': [Paragraph(name, label), Paragraph(f"<font color='{colour}'>{val}</font>", value),
+                                                         Paragraph(detail, note)]
+    cards = Table([[
+        stat('TOTAL TODAY', s['today'], escape(s['today_label'])),
+        stat('CRITICAL UNACKNOWLEDGED', s['critical_open'], 'Needs immediate attention' if s['critical_open'] else 'None waiting',
+             '#DC2626' if s['critical_open'] else '#0F172A'),
+        stat('ACKNOWLEDGED', s['acknowledged'], f"{s['ack_rate']}% acknowledgment rate ({s['total']} alerts)"),
+        stat('AVG RESPONSE TIME', s['avg_response'] or '—', f'Target &lt;{RESPONSE_TARGET_MIN} min'),
+    ]], colWidths=[width / 4] * 4)
+    cards.setStyle(TableStyle([('BOX', (0, 0), (-1, -1), 0.5, line), ('INNERGRID', (0, 0), (-1, -1), 0.5, line),
+                               ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+                               ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                               ('LEFTPADDING', (0, 0), (-1, -1), 10)]))
+
+    sev_colour = {'critical': '#DC2626', 'high': '#EA580C'}
+    rows = [['Alert ID', 'Patient', 'Doctor', 'Type', 'Trigger', 'Risk', 'Created', 'Status', 'Response']]
+    for a in alerts:
+        status = f"Ack by {escape(a['ack_by_label'])}" if a['acknowledged'] else "<font color='#DC2626'><b>Unread</b></font>"
+        rows.append([a['display_id'], Paragraph(escape(a['patient_name']), cell), Paragraph(escape(a['doctor_name']), cell),
+                     'Composite', f"{a['score']}/100",
+                     Paragraph(f"<font color='{sev_colour[a['severity']]}'><b>{a['severity_label']}</b></font>", cell),
+                     format_timestamp(a['created_at'], '%d %b %Y %H:%M'), Paragraph(status, cell), a['response']])
+    table = Table(rows, repeatRows=1, colWidths=[w * mm for w in (44, 38, 37, 19, 18, 17, 30, 44, 19)])
+    table.setStyle(TableStyle([
+        ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 8), ('FONT', (0, 1), (-1, -1), 'Helvetica', 8),
+        ('FONT', (0, 1), (0, -1), 'Courier', 7.5),
+        ('BACKGROUND', (0, 0), (-1, 0), green), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.4, line), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+
+    story = [Paragraph('Alerts Log', title),
+             Paragraph(f"Mental Disorder Detection · generated {format_timestamp(time.time() * 1000, '%d %b %Y, %H:%M')}", sub),
+             Spacer(1, 6 * mm), cards,
+             Paragraph(f"{len(alerts)} alert{'s' if len(alerts) != 1 else ''}" + (f" · {escape(shown_filters)}" if shown_filters else ' · all alerts'), h2)]
+    story.append(table if alerts else Paragraph('No alerts match these filters.', sub))
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=15 * mm, rightMargin=15 * mm, topMargin=14 * mm,
+                      bottomMargin=14 * mm, title='Alerts Log', author='Mental Disorder Detection').build(story)
+    return app.response_class(buf.getvalue(), mimetype='application/pdf', headers={
+        'Content-Disposition': f"attachment; filename=alerts_log_{time.strftime('%Y-%m-%d')}.pdf"})
 
 
 @app.route('/admin/dashboard')
@@ -2581,7 +3499,8 @@ def admin_accounts():
                       # Only non-default filters, so pagination links stay short
                       filter_args={k: v for k, v in (('q', query), ('role', role_filter), ('status', status_filter))
                                    if v and v != 'all'},
-                      open_create=request.args.get('create') == '1')
+                      open_create=request.args.get('create') == '1',
+                      create_role='doctor' if request.args.get('new_role') == 'doctor' else 'patient')
 
 
 @app.route('/admin/orders', endpoint='admin_orders')
@@ -2730,6 +3649,7 @@ def admin_delete_user(user_uid):
             f'wristband_orders/{user_uid}': None
         }
         deletions[f'chat_unread/{user_uid}'] = None
+        deletions[f'presence/{user_uid}'] = None
         if profile.get('role') == 'patient':
             device_id = (profile.get('wristband') or {}).get('device_id')
             if isinstance(device_id, str) and is_safe_key(device_id):
@@ -2856,17 +3776,17 @@ def admin_review_doctor(doctor_uid, decision):
 
     if not is_safe_key(doctor_uid):
         flash('That doctor account could not be found.', 'error')
-        return admin_back('admin_approvals')
+        return admin_back('admin_approvals', 'admin_dashboard')
 
     if decision not in ('approve', 'reject'):
         flash('That doctor review action is not valid.', 'error')
-        return admin_back('admin_approvals')
+        return admin_back('admin_approvals', 'admin_dashboard')
 
     doctor_ref = db.reference(f'users/{doctor_uid}')
     doctor = doctor_ref.get()
     if not isinstance(doctor, dict) or doctor.get('role') != 'doctor' or doctor.get('status') != 'pending':
         flash('That doctor account is no longer pending approval.', 'error')
-        return admin_back('admin_approvals')
+        return admin_back('admin_approvals', 'admin_dashboard')
 
     # Approval only grants access; existing patients are not reassigned to the new doctor
     status = 'approved' if decision == 'approve' else 'rejected'
@@ -2874,12 +3794,12 @@ def admin_review_doctor(doctor_uid, decision):
         auth.update_user(doctor_uid, disabled=decision != 'approve')
     except Exception:
         flash('Firebase Auth could not apply this doctor review.', 'error')
-        return admin_back('admin_approvals')
+        return admin_back('admin_approvals', 'admin_dashboard')
     doctor_ref.update({'status': status, 'reviewed_at': {'.sv': 'timestamp'},
                        'reviewed_by': session['user']['uid']})
     action = 'approved' if decision == 'approve' else 'rejected'
     flash(f"{doctor.get('name') or 'Doctor'} was {action}.", 'success')
-    return admin_back('admin_approvals')
+    return admin_back('admin_approvals', 'admin_dashboard')
 
 
 @app.route('/api/admin/assign-patient-to-doctor', methods=['POST'])
@@ -2895,6 +3815,12 @@ def admin_assign_patient_to_doctor():
 # ========== LOGOUT ==========
 @app.route('/logout')
 def logout():
+    uid = (session.get('user') or {}).get('uid')
+    if is_safe_key(uid):
+        try:
+            db.reference(f'presence/{uid}').delete()   # stop counting as an active session
+        except Exception:
+            pass
     session.clear()  # also drops the admin CSRF token
     return redirect(url_for('home'))
 

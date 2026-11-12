@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ML Models | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+{% macro icon(name, size=18) -%}
+<svg class="ad-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'cpu' %}<rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+{%- elif name == 'external' %}<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+{%- elif name == 'refresh' %}<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+{%- elif name == 'sliders' %}<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+{%- elif name == 'layers' %}<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
+{%- elif name == 'x' %}<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+{%- elif name == 'check' %}<polyline points="20 6 9 17 4 12"/>
+{%- endif %}</svg>
+{%- endmacro %}
+{% set m = model %}
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+
+  <main class="main-area">
+{% include '_admin_header.html' %}
+
+    <section class="ad-head">
+      <div>
+        <h1>ML Models</h1>
+        <p>Model management, fusion weights, and risk thresholds</p>
+      </div>
+    </section>
+
+    {# ===== Active model ===== #}
+    <section class="ml-model" aria-labelledby="modelName">
+      <div class="ml-model-main">
+        <div class="ml-model-title">
+          <span class="ml-model-icon">{{ icon('cpu', 22) }}</span>
+          <div>
+            <span class="ml-eyebrow">Facial emotion model</span>
+            <h2 id="modelName">{{ m.name if m.found else 'Model metadata not found' }}
+              {% if m.found %}<span class="ml-badge ml-badge-green" title="Test accuracy on FER-2013">{{ m.test_accuracy }}</span>{% endif %}
+            </h2>
+          </div>
+          {% if m.loaded %}
+          <span class="ml-status ml-status-active"><span class="ml-dot"></span>Active</span>
+          {% else %}
+          <span class="ml-status ml-status-fallback" title="The custom model didn't load at startup, so scans use DeepFace">Not loaded · DeepFace fallback</span>
+          {% endif %}
+        </div>
+
+        {% if m.found %}
+        <dl class="ml-info">
+          <div><dt>Trained</dt><dd>{{ m.epochs if m.epochs else '—' }} epochs{% if m.file %} ({{ m.file.modified }}){% endif %}</dd></div>
+          <div><dt>Algorithm</dt><dd>Custom CNN (VGG-style{% if m.architecture %}, {{ m.architecture.conv }} Conv2D layers{% endif %})</dd></div>
+          <div><dt>Dataset</dt><dd>{{ m.dataset }}{% if m.dataset == 'FER-2013' %} (35,887 images, {{ m.classes|length }} emotion classes){% endif %}</dd></div>
+        </dl>
+
+        <div class="ml-metrics">
+          <div><span>Total parameters</span><strong>{{ '{:,}'.format(m.params) if m.params else '—' }}</strong></div>
+          <div><span>Input size</span><strong>{{ m.input }}</strong></div>
+          <div><span>Test accuracy</span><strong class="ml-good">{{ m.test_accuracy }}</strong></div>
+          <div><span>Validation accuracy</span><strong>{{ m.val_accuracy }}</strong></div>
+        </div>
+
+        <div class="ml-split">
+          <div>
+            <h3 class="ml-subhead">Classes supported</h3>
+            <ul class="ml-classes">{% for c in m.classes %}<li>{{ c }}</li>{% endfor %}</ul>
+          </div>
+          {% if m.improvements %}
+          <div>
+            <h3 class="ml-subhead">Improvements applied</h3>
+            <ul class="ml-improvements">{% for i in m.improvements %}<li>{{ i }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+        </div>
+        {% if m.file %}<p class="admin-note">File: {{ m.file.name }} · {{ m.file.size }}{% if m.preprocessing %} · Preprocessing: {{ m.preprocessing }}{% endif %}</p>{% endif %}
+        {% else %}
+        <p class="an-empty-note">Models/model_metadata.json is missing or unreadable, so model details can't be shown.</p>
+        {% endif %}
+      </div>
+
+      <div class="ml-model-actions">
+        {% if m.kaggle_url %}
+        <a href="{{ m.kaggle_url }}" class="ad-btn" target="_blank" rel="noopener noreferrer">{{ icon('external', 16) }}View on Kaggle</a>
+        {% else %}
+        <span class="ad-btn is-disabled" aria-disabled="true">{{ icon('external', 16) }}View on Kaggle</span>
+        <small class="ml-hint">Add <code>KAGGLE_NOTEBOOK_URL=…</code> to <code>.env</code> to link the training notebook.</small>
+        {% endif %}
+        <button type="button" class="ad-btn ad-btn-primary" id="retrainOpen" aria-haspopup="dialog">{{ icon('refresh', 16) }}Trigger Manual Retrain</button>
+      </div>
+    </section>
+
+    <section class="ml-row">
+      {# ===== Fusion weights ===== #}
+      <form method="post" action="{{ url_for('admin_save_fusion_weights') }}" class="chart-panel ml-panel" id="fusion">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="panel-head"><h3 class="ad-title-icon">{{ icon('sliders') }}Fusion Weights</h3>
+          <button type="button" class="ml-reset" data-reset='{{ default_weights|tojson }}'>Reset to 0.25 each</button></div>
+        <p class="panel-sub">How much each part counts towards the composite risk score (0–100).</p>
+
+        {% for key, label, sub in [('phq', 'PHQ-9', 'Depression'), ('gad', 'GAD-7', 'Anxiety'), ('pss', 'PSS-10', 'Stress'), ('facial', 'CNN', 'Facial emotion')] %}
+        <div class="ml-slider">
+          <label for="w-{{ key }}"><strong>{{ label }}</strong> <span>({{ sub }})</span></label>
+          <output for="w-{{ key }}" id="w-{{ key }}-out">{{ '%.2f'|format(weights[key]) }}</output>
+          <input type="range" id="w-{{ key }}" name="{{ key }}" min="0" max="1" step="0.05" value="{{ weights[key] }}" class="ml-range">
+        </div>
+        {% endfor %}
+
+        <div class="ml-total" id="weightTotal" aria-live="polite">
+          <span>Total: <strong id="weightTotalValue">1.00</strong></span>
+          <span class="ml-total-mark" id="weightTotalMark">{{ icon('check', 16) }}</span>
+        </div>
+        <p class="ml-note">Weights apply to NEW assessments only. Historical scores unchanged.</p>
+        <p class="admin-note">If a patient skips the facial scan, the facial weight is shared across the three questionnaires in proportion.</p>
+        <button type="submit" class="ad-btn ad-btn-primary ml-save" id="saveWeights">Save Weights</button>
+      </form>
+
+      {# ===== Risk thresholds ===== #}
+      <form method="post" action="{{ url_for('admin_save_risk_thresholds') }}" class="chart-panel ml-panel" id="thresholds">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="panel-head"><h3 class="ad-title-icon">{{ icon('layers') }}Risk Thresholds</h3>
+          <button type="button" class="ml-reset" data-reset='{{ default_thresholds|tojson }}'>Reset to 25 / 50 / 70</button></div>
+        <p class="panel-sub">Where each risk band ends on the 0–100 composite score. Drag the handles.</p>
+
+        <div class="ml-bands" id="bandBar">
+          <div class="ml-band-track" aria-hidden="true">
+            <span class="ml-band ml-band-low" data-band="low"></span>
+            <span class="ml-band ml-band-moderate" data-band="moderate"></span>
+            <span class="ml-band ml-band-high" data-band="high"></span>
+            <span class="ml-band ml-band-critical" data-band="critical"></span>
+          </div>
+          <input type="range" class="ml-handle" name="low" min="0" max="100" step="1" value="{{ thresholds.low }}" data-min="10" data-max="40" aria-label="Low band ends at" aria-describedby="rule-low">
+          <input type="range" class="ml-handle" name="moderate" min="0" max="100" step="1" value="{{ thresholds.moderate }}" data-max="70" aria-label="Moderate band ends at" aria-describedby="rule-moderate">
+          <input type="range" class="ml-handle" name="high" min="0" max="100" step="1" value="{{ thresholds.high }}" data-max="90" aria-label="High band ends at" aria-describedby="rule-high">
+          <div class="ml-band-scale" aria-hidden="true"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+        </div>
+
+        <ul class="ml-band-legend">
+          <li><span class="ml-swatch" style="background: #059669;"></span><strong>Low</strong><span id="range-low"></span><small id="rule-low">ends between 10 and 40</small></li>
+          <li><span class="ml-swatch" style="background: #D97706;"></span><strong>Moderate</strong><span id="range-moderate"></span><small id="rule-moderate">ends at least 5 above Low, max 70</small></li>
+          <li><span class="ml-swatch" style="background: #EA580C;"></span><strong>High</strong><span id="range-high"></span><small id="rule-high">ends at least 5 above Moderate, max 90</small></li>
+          <li><span class="ml-swatch" style="background: #DC2626;"></span><strong>Critical</strong><span id="range-critical"></span><small>everything above High</small></li>
+        </ul>
+        <p class="ml-note">Thresholds affect how NEW and CURRENT assessments are classified.</p>
+        <p class="admin-note">This also moves the doctor alert levels: High and Critical alerts follow these bands.</p>
+        <button type="submit" class="ad-btn ad-btn-primary ml-save">Save Thresholds</button>
+      </form>
+    </section>
+  </main>
+</div>
+
+<dialog class="ml-dialog" id="retrainDialog" aria-labelledby="retrainTitle">
+  <div class="ml-dialog-head">
+    <h2 id="retrainTitle">Retrain the facial emotion model</h2>
+    <button type="button" class="ad-alert-close" id="retrainClose" aria-label="Close">{{ icon('x', 16) }}</button>
+  </div>
+  <p>Training runs on Kaggle's GPUs, not on this server. The app picks up a new model when Flask restarts.</p>
+  <ol class="ml-steps">
+    <li><strong>Open the training notebook on Kaggle.</strong>{% if m.kaggle_url %} <a href="{{ m.kaggle_url }}" target="_blank" rel="noopener noreferrer">Open notebook ↗</a>{% else %} (No link is set yet: add <code>KAGGLE_NOTEBOOK_URL</code> to <code>.env</code>.){% endif %}</li>
+    <li><strong>Turn on the GPU accelerator and click "Run All".</strong> Training takes a while; wait for the final cell to write the model files.</li>
+    <li><strong>Download the outputs:</strong> <code>fer_emotion_model.keras</code> and <code>model_metadata.json</code> from the notebook's Output tab.</li>
+    <li><strong>Replace the two files in the <code>Models/</code> folder</strong> of this project. Keep <code>haarcascade_frontalface_default.xml</code>; it isn't part of training.</li>
+    <li><strong>Restart Flask</strong> (stop it with Ctrl+C, then run <code>python app.py</code>). The model loads once at startup; if it fails to load, the console shows a warning and scans fall back to DeepFace.</li>
+    <li><strong>Come back to this page</strong> to check the new accuracy and that the status says <em>Active</em>.</li>
+  </ol>
+  <p class="admin-note">The model file is stored with Git LFS, so commit it as usual and LFS handles the upload.</p>
+</dialog>
+
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin_ml_models.js') }}"></script>
+</body>
+</html>

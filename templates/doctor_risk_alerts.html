@@ -41,7 +41,7 @@
 
     <section class="ra-head">
       <h1>Risk Alerts</h1>
-      <p>Assessments from your patients that scored High (51–70) or Critical (71+). Acknowledge an alert once you've reviewed it.</p>
+      <p>Assessments from your patients that {% set bands = risk_ranges() %}scored High ({{ bands[2]['min'] }}–{{ bands[2]['max'] }}) or Critical ({{ bands[3]['min'] }}+). Acknowledge an alert once you've reviewed it.</p>
     </section>
 
     <section class="stats-grid ra-stats" aria-label="Alert summary">

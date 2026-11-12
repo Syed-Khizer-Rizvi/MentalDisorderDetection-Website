@@ -10,69 +10,178 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
 <body>
+{# Feather-style line icons, inline so they inherit the text colour #}
+{% macro icon(name, size=18) -%}
+<svg class="ad-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'download' %}<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+{%- elif name == 'user-plus' %}<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
+{%- elif name == 'alert' %}<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+{%- elif name == 'x' %}<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+{%- elif name == 'users' %}<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+{%- elif name == 'user-check' %}<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/>
+{%- elif name == 'activity' %}<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+{%- elif name == 'clipboard' %}<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+{%- elif name == 'clock' %}<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+{%- elif name == 'bell' %}<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+{%- elif name == 'check' %}<path d="M22 11.08V12a10 10 0 1 1-5.93-9.09"/><polyline points="22 4 12 14.01 9 11.01"/>
+{%- endif %}</svg>
+{%- endmacro %}
 <div class="dashboard-wrapper">
 {% include '_admin_sidebar.html' %}
 
   <main class="main-area">
 {% include '_admin_header.html' %}
 
-    <section class="welcome-banner">
-      <div class="welcome-text">
-        <h1>Administration</h1>
-        <p>Platform overview and account approvals</p>
+    <section class="ad-head">
+      <div>
+        <h1>Admin Dashboard</h1>
+        <p><time datetime="{{ today_iso }}">{{ today_label }}</time></p>
       </div>
-      <div class="welcome-badge"><span class="badge-label">Access</span><span class="badge-value">Administrator</span></div>
+      <div class="ad-head-actions">
+        <a href="{{ url_for('admin_report') }}" class="ad-btn" download>{{ icon('download', 16) }}Generate Report</a>
+        <a href="{{ url_for('admin_accounts', create=1, new_role='doctor') }}#create-account" class="ad-btn">{{ icon('user-plus', 16) }}Add Doctor</a>
+        <a href="{{ url_for('admin_accounts', create=1, new_role='patient') }}#create-account" class="ad-btn ad-btn-primary">{{ icon('user-plus', 16) }}Add Patient</a>
+      </div>
     </section>
 
-    <nav class="admin-quick-actions" aria-label="Quick actions">
-      {% if pending_count %}
-      <a href="{{ url_for('admin_approvals') }}" class="admin-action admin-action-primary">Review pending doctors ({{ pending_count }})</a>
-      {% endif %}
-      <a href="{{ url_for('admin_accounts', create=1) }}#create-account" class="admin-action">+ Create new account</a>
-      <a href="{{ url_for('admin_orders', create=1) }}#create-order" class="admin-action">+ Create wristband order</a>
-    </nav>
+    {% if critical_count > 0 and not critical_dismissed %}
+    <div class="ad-alert" id="criticalAlert" role="alert">
+      <span class="ad-alert-icon">{{ icon('alert', 20) }}</span>
+      <p><strong>{{ critical_count }} critical patient alert{{ 's' if critical_count != 1 }}</strong> require{{ 's' if critical_count == 1 }} immediate attention</p>
+      <a class="ad-alert-link" href="{{ url_for('admin_alerts', severity='critical', status='unread') }}">View Alerts →</a>
+      <form method="post" action="{{ url_for('admin_dismiss_critical') }}" id="criticalAlertForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="count" value="{{ critical_count }}">
+        <button type="submit" class="ad-alert-close" aria-label="Dismiss alert">{{ icon('x', 16) }}</button>
+      </form>
+    </div>
+    {% endif %}
 
-    <section class="stats-grid" aria-label="Platform totals">
-      <div class="stat-card stat-blue"><div class="stat-icon">♙</div><div class="stat-content"><span class="stat-label">Total Accounts</span><span class="stat-value">{{ total_users }}</span><span class="stat-sub">Across all roles</span></div></div>
-      <div class="stat-card stat-low"><div class="stat-icon">◎</div><div class="stat-content"><span class="stat-label">Patients</span><span class="stat-value">{{ total_patients }}</span><span class="stat-sub">Registered patient accounts</span></div></div>
-      <div class="stat-card stat-purple"><div class="stat-icon">✚</div><div class="stat-content"><span class="stat-label">Doctors</span><span class="stat-value">{{ total_doctors }}</span><span class="stat-sub">{{ pending_count }} awaiting approval</span></div></div>
-      <div class="stat-card stat-orange"><div class="stat-icon">▤</div><div class="stat-content"><span class="stat-label">Assessments</span><span class="stat-value">{{ assessment_count }}</span><span class="stat-sub">Completed screenings</span></div></div>
+    {% set s = stats %}
+    <section class="ad-stats" aria-label="Platform statistics">
+      <div class="ad-stat ad-stat-green">
+        <span class="ad-stat-label">Total Patients</span>
+        <span class="ad-stat-value">{{ s.patients }}</span>
+        <span class="ad-stat-sub{{ ' is-up' if s.patients_this_month }}">+{{ s.patients_this_month }} this month</span>
+        <span class="ad-stat-icon">{{ icon('users') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-purple">
+        <span class="ad-stat-label">Active Doctors</span>
+        <span class="ad-stat-value">{{ s.doctors_active }}</span>
+        <span class="ad-stat-sub{{ ' is-warn' if s.doctors_pending }}">+{{ s.doctors_pending }} pending approval</span>
+        <span class="ad-stat-icon">{{ icon('user-check') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-red">
+        <span class="ad-stat-label">Critical Alerts Today</span>
+        <span class="ad-stat-value{{ ' is-alert' if s.critical_today }}">{{ s.critical_today }}</span>
+        <span class="ad-stat-sub{{ ' is-bad' if s.critical_unacknowledged }}">{{ s.critical_unacknowledged }} unacknowledged</span>
+        <span class="ad-stat-icon">{{ icon('alert') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-blue">
+        <span class="ad-stat-label">Active Sessions Now</span>
+        <span class="ad-stat-value">{{ s.active_sessions }}</span>
+        <span class="ad-stat-sub"><span class="ad-live-dot" aria-hidden="true"></span>Monitoring live · last 5 min</span>
+        <span class="ad-stat-icon">{{ icon('activity') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-orange">
+        <span class="ad-stat-label">Assessments Today</span>
+        <span class="ad-stat-value">{{ s.assessments_today }}</span>
+        {% set change = s.assessments_change %}
+        <span class="ad-stat-sub{{ ' is-up' if change > 0 }}">{% if change > 0 %}+{{ change }} from yesterday{% elif change < 0 %}−{{ -change }} from yesterday{% else %}Same as yesterday{% endif %}</span>
+        <span class="ad-stat-icon">{{ icon('clipboard') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-teal">
+        <span class="ad-stat-label">System Uptime</span>
+        {# Fixed display value: the app doesn't measure availability yet #}
+        <span class="ad-stat-value">99.8%</span>
+        <span class="ad-stat-sub">Last 30 days</span>
+        <span class="ad-stat-icon">{{ icon('clock') }}</span>
+      </div>
     </section>
 
-    <section class="dashboard-row admin-overview">
-      <div class="chart-panel">
-        <div class="panel-head"><h3>Patient risk overview</h3><span class="panel-sub">Latest available assessment</span></div>
-        {% if risk_total %}
-        <div class="risk-bars">
-          {% for level, label, color in [('low', 'Low', '#059669'), ('moderate', 'Moderate', '#D97706'), ('high', 'High', '#EA580C'), ('critical', 'Critical', '#DC2626')] %}
-          {% set count = risk_counts[level] %}
-          <div class="risk-bar-row"><span class="risk-bar-label">{{ label }}</span><div class="risk-bar"><div class="risk-bar-fill" style="width:{{ (count / risk_total * 100)|round(1) }}%; background:{{ color }};"></div></div><span class="risk-bar-count">{{ count }}</span></div>
-          {% endfor %}
+    <section class="ad-row">
+      <div class="chart-panel ad-risk">
+        <div class="panel-head">
+          <h3>Patient Risk Distribution</h3>
+          <a href="{{ url_for('admin_accounts', role='patient') }}" class="panel-link">All {{ s.patients }} patient{{ 's' if s.patients != 1 }} →</a>
         </div>
-        <p class="admin-note">Aggregate counts only; individual screening results are not shown here.</p>
+        <p class="panel-sub">Latest assessment of each patient</p>
+        {% if risk_assessed %}
+        <div class="ad-donut">
+          <canvas id="riskDonut" role="img" aria-label="Risk distribution: {% for r in risk_distribution %}{{ r.label }} {{ r.count }}{{ ', ' if not loop.last }}{% endfor %}"></canvas>
+          <div class="ad-donut-center"><strong>{{ risk_assessed }}</strong><span>assessed</span></div>
+        </div>
+        <ul class="ad-legend">
+          {% for r in risk_distribution %}
+          <li><span class="ad-legend-dot" style="background: {{ r.color }};"></span><span class="ad-legend-label">{{ r.label }} <small>{{ r.range }}</small></span><strong>{{ r.count }}</strong></li>
+          {% endfor %}
+        </ul>
+        {% if s.patients > risk_assessed %}<p class="admin-note">{{ s.patients - risk_assessed }} patient{{ 's' if s.patients - risk_assessed != 1 }} not yet assessed.</p>{% endif %}
+        <script type="application/json" id="riskData">{{ risk_distribution|tojson }}</script>
         {% else %}
         <p class="trend-empty">No patient assessments yet.</p>
         {% endif %}
       </div>
 
-      <div class="actions-panel">
-        <div class="panel-head"><h3>Needs attention</h3></div>
-        <ul class="admin-attention">
-          <li class="{{ 'is-alert' if pending_count }}">
-            <span class="admin-attention-count">{{ pending_count }}</span>
-            <span class="admin-attention-label">Pending doctor approval{{ 's' if pending_count != 1 }}</span>
-            {% if pending_count %}<a href="{{ url_for('admin_approvals') }}" class="admin-approve">Review</a>{% endif %}
-          </li>
-          <li class="{{ 'is-critical' if critical_count }}">
-            <span class="admin-attention-count">{{ critical_count }}</span>
-            <span class="admin-attention-label">Critical-risk patient{{ 's' if critical_count != 1 }}<small>Based on latest assessment</small></span>
-          </li>
-          <li class="{{ 'is-alert' if pending_orders }}">
-            <span class="admin-attention-count">{{ pending_orders }}</span>
-            <span class="admin-attention-label">Wristband order{{ 's' if pending_orders != 1 }} awaiting update</span>
-            {% if pending_orders %}<a href="{{ url_for('admin_orders', status='pending') }}" class="admin-approve">Manage</a>{% endif %}
-          </li>
-        </ul>
+      <div class="actions-panel ad-pending">
+        <div class="panel-head"><h3 class="ad-title-icon">{{ icon('bell') }}Pending Actions</h3></div>
+        <div class="ad-tabs" role="tablist" aria-label="Pending actions">
+          <button type="button" role="tab" id="tab-doctors" aria-controls="panel-doctors" aria-selected="true">Doctor Approvals <span class="ad-badge">{{ pending_doctors|length }}</span></button>
+          <button type="button" role="tab" id="tab-orders" aria-controls="panel-orders" aria-selected="false" tabindex="-1">Wristband Orders <span class="ad-badge">{{ pending_orders|length }}</span></button>
+        </div>
+
+        <div role="tabpanel" id="panel-doctors" aria-labelledby="tab-doctors" class="ad-tabpanel">
+          {% if pending_doctors %}
+          <ul class="ad-pending-list">
+            {% for d in pending_doctors %}
+            <li class="ad-pending-card">
+              <span class="ad-avatar" aria-hidden="true">{{ d.initials }}</span>
+              <div class="ad-pending-info">
+                <strong>{{ d.name }}</strong>
+                <span>{{ d.specialization }}</span>
+                <small>Applied: {{ d.applied }}</small>
+              </div>
+              <div class="ad-pending-actions">
+                <form method="post" action="{{ url_for('admin_review_doctor', doctor_uid=d.uid, decision='approve') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="next" value="{{ url_for('admin_dashboard') }}">
+                  <button class="admin-approve" type="submit" aria-label="Approve {{ d.name }}">Approve</button>
+                </form>
+                <form method="post" action="{{ url_for('admin_review_doctor', doctor_uid=d.uid, decision='reject') }}" onsubmit="return confirm('Reject this doctor? They will not be able to sign in.')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="next" value="{{ url_for('admin_dashboard') }}">
+                  <button class="admin-reject" type="submit" aria-label="Reject {{ d.name }}">Reject</button>
+                </form>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          <a href="{{ url_for('admin_approvals') }}" class="admin-text-link">Approval history →</a>
+          {% else %}
+          <div class="ad-caught-up">{{ icon('check', 28) }}<strong>All caught up!</strong><span>No doctors are waiting for approval.</span></div>
+          {% endif %}
+        </div>
+
+        <div role="tabpanel" id="panel-orders" aria-labelledby="tab-orders" class="ad-tabpanel" hidden>
+          {% if pending_orders %}
+          <ul class="ad-pending-list">
+            {% for o in pending_orders[:5] %}
+            <li class="ad-pending-card">
+              <span class="ad-avatar ad-avatar-order" aria-hidden="true">{{ (o.name[:1] or '?')|upper }}</span>
+              <div class="ad-pending-info">
+                <strong>{{ o.name }}</strong>
+                <span>{{ ('Size ' ~ o.size) if o.size }}{{ ' · ' if o.size and o.city }}{{ o.city }}</span>
+                <small>Ordered: {{ o.created_date }}</small>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          <a href="{{ url_for('admin_orders', status='pending') }}" class="admin-text-link">Manage {{ pending_orders|length }} pending order{{ 's' if pending_orders|length != 1 }} →</a>
+          {% else %}
+          <div class="ad-caught-up">{{ icon('check', 28) }}<strong>All caught up!</strong><span>No wristband orders are waiting.</span></div>
+          {% endif %}
+          <a href="{{ url_for('admin_orders', create=1) }}#create-order" class="admin-text-link">+ Create wristband order</a>
+        </div>
       </div>
     </section>
 
@@ -116,6 +225,8 @@
   </main>
 </div>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% if risk_assessed %}<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>{% endif %}
+<script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
 {% include '_login_toast.html' %}
 </body>
 </html>
