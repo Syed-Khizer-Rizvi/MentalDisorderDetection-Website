@@ -197,7 +197,8 @@
   async function useGoogleUser(user) {
     const data = await verifyToken(user);
     if (data.success) {
-      showAuthSuccess('Login successful! Redirecting to your dashboard...', data.redirect);
+      showAuthSuccess(data.mfa_required ? 'Password accepted. Enter your two-factor code next...'
+                                        : 'Login successful! Redirecting to your dashboard...', data.redirect);
     } else if (data.needs_registration) {
       setGoogleMode(user);
     } else {

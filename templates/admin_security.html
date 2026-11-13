@@ -77,6 +77,21 @@
       </div>
     </section>
 
+    {# ===== Admin 2FA ===== #}
+    {% set m = mfa_panel %}
+    <section class="chart-panel sc-mfa {{ 'is-on' if m.enrolled else 'is-off' }}" aria-labelledby="mfaTitle">
+      <span class="sc-mfa-icon">{{ icon('key', 22) }}</span>
+      <div class="sc-mfa-body">
+        <h3 id="mfaTitle">Admin two-factor authentication
+          {% if m.enrolled %}<span class="sc-mfa-status is-on">{{ icon('check', 13) }}Enrolled</span>{% else %}<span class="sc-mfa-status is-off">{{ icon('x', 13) }}Not enrolled</span>{% endif %}</h3>
+        <p>{% if m.enrolled %}An authenticator-app code is required after the password (set up {{ m.enrolled_ago }}). {{ m.backup_left }} of 8 backup codes unused.
+           {% else %}The admin account signs in with a password only. Adding an authenticator app (Google Authenticator, Microsoft Authenticator, Authy…) means a stolen password alone isn't enough.{% endif %}</p>
+      </div>
+      {% if m.is_admin_uid %}
+      <a href="{{ url_for('admin_mfa_setup') }}" class="ad-btn {{ '' if m.enrolled else 'ad-btn-primary' }}">{{ 'Manage 2FA' if m.enrolled else 'Set up 2FA' }}</a>
+      {% else %}<span class="sc-mfa-note">Only the configured admin account can change 2FA.</span>{% endif %}
+    </section>
+
     <section class="sc-grid">
       {# ===== Active sessions ===== #}
       <div class="chart-panel sc-panel sc-wide">
@@ -143,6 +158,8 @@
           <div><dt>Admin CSRF token</dt><dd>Per admin session <small>no time-based expiry; cleared at logout</small></dd></div>
           <div><dt>Session storage</dt><dd>Signed browser cookie <small>Flask default (client-side, not server-side); ends when the browser closes</small></dd></div>
           <div><dt>Session cookie flags</dt><dd>HttpOnly {{ 'on' if p.cookie_httponly else 'off' }} · Secure {{ 'on' if p.cookie_secure else 'off' }} · SameSite {{ p.cookie_samesite or 'not set (browsers treat it as Lax)' }}</dd></div>
+          <div><dt>Rate limits (per IP)</dt><dd>{% if p.rate_limits %}<ul class="sc-limits">{% for name, limit in p.rate_limits %}<li><span>{{ name }}</span><code>{{ limit }}</code></li>{% endfor %}</ul>
+            <small>Exceeding a limit returns 429 and is logged on Activity Logs. Counters are in memory (reset on restart).</small>{% else %}None{% endif %}</dd></div>
           <div><dt>Firebase rules deployed</dt><dd>{% if p.rules_ok %}{{ p.rules_exprs }} rule expressions on {{ p.rules_paths }} paths <small>{{ 'matches database.rules.json' if p.rules_match else 'differs from database.rules.json' }}</small>{% else %}Couldn't be read{% endif %}</dd></div>
         </dl>
       </div>

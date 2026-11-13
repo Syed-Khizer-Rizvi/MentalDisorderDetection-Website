@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Two-Factor Authentication | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+{% macro icon(name, size=18) -%}
+<svg class="ad-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'key' %}<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+{%- elif name == 'alert' %}<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+{%- elif name == 'check' %}<polyline points="20 6 9 17 4 12"/>
+{%- elif name == 'back' %}<polyline points="15 18 9 12 15 6"/>
+{%- elif name == 'printer' %}<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+{%- elif name == 'copy' %}<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+{%- endif %}</svg>
+{%- endmacro %}
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+
+  <main class="main-area">
+{% include '_admin_header.html' %}
+
+    <section class="ad-head">
+      <div class="sc-title">
+        <span class="sc-title-icon">{{ icon('key', 22) }}</span>
+        <div><h1>Two-Factor Authentication</h1><p>An authenticator-app code after the password, for the admin account</p></div>
+      </div>
+      <a href="{{ url_for('admin_security') }}" class="ad-btn">{{ icon('back', 16) }}Back to Security</a>
+    </section>
+
+    {% if mode == 'nokey' %}
+    <div class="sc-critical" role="alert"><span class="sc-critical-icon">{{ icon('alert', 20) }}</span>
+      <div><strong>Set SECRET_KEY in .env first.</strong>
+        <p>The authenticator secret is encrypted with a key derived from SECRET_KEY. Without a fixed key, the server makes a new one at every restart, which would lock 2FA out. Add <code>SECRET_KEY</code> to <code>.env</code>, restart the server, then come back.</p></div></div>
+
+    {% elif mode == 'setup' %}
+    <section class="chart-panel mf-card">
+      <ol class="mf-steps">
+        <li><strong>Install an authenticator app</strong> on your phone: Google Authenticator, Microsoft Authenticator, Authy or 1Password all work.</li>
+        <li><strong>Scan this QR code</strong> in the app (or type the setup key).</li>
+      </ol>
+      <div class="mf-qr-wrap">
+        <div class="mf-qr" role="img" aria-label="QR code for the authenticator app">{{ qr_svg|safe }}</div>
+        <div class="mf-manual">
+          <span>Can't scan? Enter this key:</span>
+          <code id="manualKey">{{ manual }}</code>
+          <button type="button" class="db-link-btn" data-copy-target="manualKey">{{ icon('copy', 13) }} Copy key</button>
+          <small>Account: {{ session['user'].email or 'admin' }} · Type: time-based · 6 digits · 30 seconds</small>
+        </div>
+      </div>
+      <form method="post" action="{{ url_for('admin_mfa_enroll') }}" class="mf-form" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="enrollCode"><strong>3. Enter the 6-digit code</strong> the app shows to confirm it's working</label>
+        <div class="mf-code-row">
+          <input id="enrollCode" name="code" class="mf-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required
+                 placeholder="••••••"{% if error %} aria-invalid="true" aria-describedby="enrollError"{% endif %} autofocus>
+          <button type="submit" class="ad-btn ad-btn-primary">Turn on 2FA</button>
+        </div>
+        {% if error %}<p class="st-error" id="enrollError" role="alert">{{ error }}</p>{% endif %}
+      </form>
+      <p class="admin-note">The setup key is encrypted before it's stored in Firebase. Your next admin sign-in will ask for a code after the password.</p>
+    </section>
+
+    {% elif mode == 'codes' %}
+    <section class="chart-panel mf-card mf-codes-card">
+      <div class="mf-warning" role="alert">{{ icon('alert', 18) }}<div><strong>Save these backup codes now. They won't be shown again.</strong>
+        Each one works once, if you lose your phone. They're stored only as hashes, so nobody (including this page) can show them later.</div></div>
+      {% if first_time %}<p class="mf-success">{{ icon('check', 16) }}Two-factor authentication is on.</p>{% endif %}
+      <ol class="mf-codes" id="backupCodes">{% for c in codes %}<li><code>{{ c }}</code></li>{% endfor %}</ol>
+      <div class="mf-code-actions">
+        <button type="button" class="ad-btn" onclick="window.print()">{{ icon('printer', 16) }}Print</button>
+        <button type="button" class="ad-btn" data-copy-codes>{{ icon('copy', 16) }}Copy all</button>
+        <a href="{{ url_for('admin_security') }}" class="ad-btn ad-btn-primary">I've saved them</a>
+      </div>
+    </section>
+
+    {% else %}{# manage #}
+    <section class="chart-panel mf-card">
+      <p class="mf-success">{{ icon('check', 16) }}Two-factor authentication is on (set up {{ enrolled_ago }}).</p>
+      <p class="mf-left">{{ backup_left }} of 8 backup codes unused.{% if backup_left <= 3 %} <strong>Generate new ones soon.</strong>{% endif %}</p>
+
+      <div class="mf-manage">
+        <form method="post" action="{{ url_for('admin_mfa_regenerate') }}" class="mf-box" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <h3>New backup codes</h3>
+          <p>Backup codes are stored as hashes, so they can't be shown again. Generating new ones replaces all the old ones. Confirm with a current code.</p>
+          <div class="mf-code-row">
+            <input name="code" class="mf-code" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" required aria-label="Authenticator code">
+            <button type="submit" class="ad-btn">Generate new codes</button>
+          </div>
+          {% if error and error_form == 'regenerate' %}<p class="st-error" role="alert">{{ error }}</p>{% endif %}
+        </form>
+
+        <form method="post" action="{{ url_for('admin_mfa_disable') }}" class="mf-box mf-danger" autocomplete="off"
+              onsubmit="return confirm('Turn off two-factor authentication? The admin account will be protected by its password only.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <h3>Turn off 2FA</h3>
+          <p>Removes the authenticator and all backup codes. Confirm with a current code or a backup code.</p>
+          <div class="mf-code-row">
+            <input name="code" class="mf-code" autocomplete="one-time-code" placeholder="Code or backup code" required aria-label="Authenticator or backup code">
+            <button type="submit" class="ad-btn mf-btn-danger">Disable 2FA</button>
+          </div>
+          {% if error and error_form == 'disable' %}<p class="st-error" role="alert">{{ error }}</p>{% endif %}
+        </form>
+      </div>
+      <p class="admin-note">Locked out (lost phone and backup codes)? Delete <code>users/&lt;admin uid&gt;/mfa</code> in the Firebase console to turn 2FA off, then set it up again. If SECRET_KEY ever changes, authenticator codes stop working but backup codes still do.</p>
+    </section>
+    {% endif %}
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script>
+  // Copy helpers (clipboard API needs HTTPS or localhost; falls back to a hidden textarea)
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+  }
+  document.querySelectorAll('[data-copy-target]').forEach((b) => b.addEventListener('click', async () => {
+    await copyText(document.getElementById(b.dataset.copyTarget).textContent.replace(/\s/g, ''));
+    b.lastChild.textContent = ' Copied';
+  }));
+  document.querySelectorAll('[data-copy-codes]').forEach((b) => b.addEventListener('click', async () => {
+    await copyText(Array.from(document.querySelectorAll('#backupCodes code')).map((c) => c.textContent).join('\n'));
+    b.lastChild.textContent = 'Copied';
+  }));
+</script>
+</body>
+</html>

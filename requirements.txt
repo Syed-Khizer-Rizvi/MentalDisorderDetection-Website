@@ -16,6 +16,13 @@ jax[cpu]==0.12.0.1
 # PDF export on the admin Analytics page (charts are drawn with ReportLab's own graphics)
 reportlab==5.1.0
 
+# Security: rate limiting (in-memory counters; use Redis in production with several workers),
+# admin two-factor authentication (TOTP + QR code) and encryption of the stored TOTP secret
+flask-limiter==4.1.1
+pyotp==2.10.0
+qrcode==8.2
+cryptography==50.0.2
+
 # Fallback when the custom model file is missing. DeepFace 0.0.103 runs on ONNX Runtime
 # and installs opencv-contrib-python-headless, which provides cv2 for app.py.
 deepface==0.0.103

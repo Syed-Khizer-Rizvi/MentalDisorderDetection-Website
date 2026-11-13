@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Two-Factor Sign-In | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body class="mf-verify-page">
+  <main class="mf-verify">
+    <img src="{{ url_for('static', filename='images/logo.png') }}" alt="" class="mf-verify-logo">
+    <h1>Two-factor sign-in</h1>
+    <p class="mf-verify-sub">Password accepted for <strong>{{ email or 'the admin account' }}</strong>. Enter the 6-digit code from your authenticator app.</p>
+    <form method="post" action="{{ url_for('admin_mfa_verify') }}" autocomplete="off" class="mf-verify-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="mfaCode" class="sr-only">Authenticator or backup code</label>
+      <input id="mfaCode" name="code" class="mf-code mf-code-lg" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required autofocus
+             placeholder="••••••"{% if error %} aria-invalid="true" aria-describedby="mfaError"{% endif %}>
+      {% if error %}<p class="st-error" id="mfaError" role="alert">{{ error }}</p>{% endif %}
+      <button type="submit" class="ad-btn ad-btn-primary mf-verify-btn">Verify and sign in</button>
+    </form>
+    <details class="mf-backup-hint">
+      <summary>Lost your phone?</summary>
+      <p>Type one of your backup codes (like <code>ABCDE-FGHJK</code>) in the same box instead. Each backup code works once.</p>
+    </details>
+    <a href="{{ url_for('logout') }}" class="mf-cancel">Cancel and sign out</a>
+    <p class="mf-verify-note">5 attempts per 15 minutes. This step expires 5 minutes after the password.</p>
+  </main>
+  <script>
+    // Backup codes contain letters: switch the keyboard when the user starts typing one
+    const box = document.getElementById('mfaCode');
+    box.addEventListener('input', () => { box.inputMode = /[a-z]/i.test(box.value) ? 'text' : 'numeric'; });
+  </script>
+</body>
+</html>

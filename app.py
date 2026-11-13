@@ -29,6 +29,29 @@ else:
 # Placeholder never matches a real Firebase UID, so no one is admin until .env sets it
 ADMIN_UID = os.environ.get('ADMIN_UID', 'SET_IN_ENV_FILE').strip()
 
+# ========== RATE LIMITING ==========
+# Per client IP. In-memory storage: counters live in this process and reset on restart, and each
+# worker process counts separately; production with several workers should use Redis
+# (storage_uri='redis://...'). Behind a reverse proxy, remote_addr is the proxy's address, so
+# ProxyFix would be needed for real client IPs.
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+# Endpoints that poll or stream frames: the default 50/hour would break them in normal use
+# (the alert badge polls every minute, Live Mode every 10 s); they're still behind login.
+RATE_LIMIT_EXEMPT = {'static', 'alerts_unread', 'chat_unread', 'chat_token', 'admin_activity_logs'}
+RATE_LIMITS = {   # shown on the Security page; applied with @limiter.limit on each route
+    'verify_token': '10 per minute', 'register_profile': '5 per hour', 'wristband_pair': '10 per hour',
+    'wristband_data': '120 per minute', 'admin_login': '10 per minute', 'admin_mfa_verify': '5 per 15 minutes',
+    'analyze_emotion': '60 per minute',
+}
+limiter = Limiter(
+    get_remote_address, app=app,
+    default_limits=['200 per day', '50 per hour'],
+    default_limits_exempt_when=lambda: request.endpoint in RATE_LIMIT_EXEMPT or request.endpoint in RATE_LIMITS,
+    storage_uri='memory://', headers_enabled=True, strategy='fixed-window',
+)
+
 # ========== INITIALIZE FIREBASE ADMIN ==========
 cred = credentials.Certificate('firebase_key.json')
 firebase_admin.initialize_app(cred, {
@@ -518,12 +541,14 @@ def register():
 
 
 @app.route('/admin/login', methods=['GET', 'POST'])
+@limiter.limit(RATE_LIMITS['admin_login'])
 def admin_login():
     return redirect(url_for('login'))
 
 
 # ========== API ROUTES (called by frontend JS) ==========
 @app.route('/api/verify-token', methods=['POST'])
+@limiter.limit(RATE_LIMITS['verify_token'])
 def verify_token():
     try:
         data = request.get_json()
@@ -566,13 +591,21 @@ def verify_token():
                        else 'Your doctor account was not approved. Please contact the administrator.')
             return jsonify({'success': False, 'error': message}), 403
 
-        session['user'] = {
+        user_record = {
             'uid': uid,
             'email': email,
             'name': profile.get('name', ''),
             'role': profile.get('role', 'patient'),
             'status': profile.get('status', 'active')
         }
+        if uid == ADMIN_UID and mfa_enrolled_profile(profile):
+            # Password accepted, but no session yet: /admin/mfa-verify creates it after the second factor
+            session.pop('user', None)
+            session['_mfa_pending'] = {'user': user_record, 'at': time.time()}
+            activity_log('mfa_challenge', 'Password accepted; 2FA code requested', 'info', details={'email': email}, user=user_record)
+            return jsonify({'success': True, 'mfa_required': True, 'redirect': url_for('admin_mfa_verify')})
+
+        session['user'] = user_record
         session['_login_toast'] = True   # one-time: popped by the next dashboard load
         try:
             # Daily login total for the admin analytics "Activities Completed" figure (server-local day)
@@ -592,6 +625,7 @@ def verify_token():
 
 
 @app.route('/api/register-profile', methods=['POST'])
+@limiter.limit(RATE_LIMITS['register_profile'])
 def register_profile():
     try:
         data = request.get_json()
@@ -795,6 +829,7 @@ def patient_facial_scan():
 
 
 @app.route('/api/analyze-emotion', methods=['POST'])
+@limiter.limit(RATE_LIMITS['analyze_emotion'])
 @login_required
 @role_required('patient')
 def analyze_emotion():
@@ -1032,6 +1067,7 @@ def wristband_key_hash(api_key):
 
 
 @app.route('/api/wristband/pair', methods=['POST'])
+@limiter.limit(RATE_LIMITS['wristband_pair'])
 @login_required
 @role_required('patient')
 def wristband_pair():
@@ -1067,6 +1103,7 @@ def wristband_device_config():
 
 
 @app.route('/api/wristband/data', methods=['POST'])
+@limiter.limit(RATE_LIMITS['wristband_data'])
 def wristband_data():
     """Sensor readings from a paired ESP32. Sending the device's `timestamp` makes retries safe:
     a reading with the same timestamp is stored once."""
@@ -1598,6 +1635,31 @@ def is_safe_key(value):
     """Firebase UIDs and push IDs are URL-safe; anything else could alter a database path."""
     import re
     return bool(re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value or ''))
+
+
+# ========== RATE LIMIT RESPONSES ==========
+_rate_limit_logged = {}   # (ip, endpoint) -> last time logged, so a flood can't flood the log too
+
+
+@app.errorhandler(429)
+def too_many_requests(error):
+    now = time.time()
+    key = (request.remote_addr, request.endpoint)
+    if now - _rate_limit_logged.get(key, 0) > 60:
+        if len(_rate_limit_logged) > 5000:
+            _rate_limit_logged.clear()
+        _rate_limit_logged[key] = now
+        actor = session.get('user') or {'uid': 'anonymous', 'name': 'Unknown', 'role': 'guest'}
+        activity_log('rate_limit_exceeded', f'Rate limit exceeded on {request.path}', 'alert',
+                     details={'path': request.path, 'method': request.method, 'limit': str(error.description)}, user=actor)
+    message = 'Too many requests. Please wait a little and try again.'
+    if request.path.startswith('/api/') or request.is_json or request.accept_mimetypes.best == 'application/json':
+        return jsonify({'success': False, 'error': message, 'rate_limited': True}), 429
+    page = ('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<title>Too many requests</title><body style="font-family:system-ui,sans-serif;max-width:520px;margin:15vh auto;'
+            'padding:0 16px;color:#0F172A"><h1 style="font-size:22px">Too many requests</h1>'
+            f'<p style="color:#475569">{message}</p><p><a href="/" style="color:#0F7A5F">Back to the home page</a></p></body>')
+    return page, 429
 
 
 # ========== PRESENCE (admin "Active Sessions Now") ==========
@@ -3538,8 +3600,8 @@ def csrf_coverage():
         if 'POST' not in rule.methods:
             continue
         src = inspect.getsource(inspect.unwrap(app.view_functions[rule.endpoint]))
-        if 'admin_csrf_valid' in src:
-            out['token'] += 1
+        if 'admin_csrf_valid' in src or re.search(r"compare_digest\(request\.form\.get\('csrf_token'", src):
+            out['token'] += 1           # per-session form token (admin pages, and the 2FA sign-in step)
         elif rule.endpoint == 'wristband_data':
             out['device'] += 1          # device API key, no browser session to forge
         elif re.search(r'is_json|get_json\((?![^)]*force=True)', src):
@@ -3571,6 +3633,9 @@ def security_data():
     # POST routes that change nothing (a redirect and a 501 placeholder) aren't CSRF risks
     csrf['none'] = [r for r in csrf['none'] if r not in ('/admin/login', '/api/admin/assign-patient-to-doctor')]
     secret_weak = not SECRET_KEY_FROM_ENV or len(app.secret_key) < 32   # temporary fallback key, or too short
+    limiter_active = bool(app.extensions.get('limiter')) and limiter.enabled and app.config.get('RATELIMIT_ENABLED', True)
+    admin_profile = users.get(ADMIN_UID) if isinstance(users.get(ADMIN_UID), dict) else {}
+    admin_mfa = admin_profile.get('mfa') if mfa_enrolled_profile(admin_profile) else None
 
     def item(key, label, points, status, detail):
         return {'key': key, 'label': label, 'points': points, 'status': status, 'detail': detail,
@@ -3600,10 +3665,13 @@ def security_data():
              f"the wristband endpoint uses a device key." + (f" Unprotected: {', '.join(csrf['none'])}." if csrf['none'] else '')),
         item('password', 'Password minimum length', 5, 'pass',
              'Firebase Auth requires at least 6 characters; admin account forms enforce the same.'),
-        item('ratelimit', 'Rate limiting on sign-in', 10, 'pass' if 'limiter' in app.extensions else 'fail',
-             'Not implemented: nothing limits repeated sign-in or API attempts.' if 'limiter' not in app.extensions else 'Flask-Limiter is active.'),
-        item('mfa', 'Two-factor authentication for admin', 15, 'fail',
-             'Not implemented: the sign-in flow has no second factor.'),
+        item('ratelimit', 'Rate limiting on sign-in', 10, 'pass' if limiter_active else 'fail',
+             f"Flask-Limiter is active: sign-in {RATE_LIMITS['verify_token']}, 2FA codes {RATE_LIMITS['admin_mfa_verify']}, "
+             f"default 200/day and 50/hour per route per IP." if limiter_active else 'Not active: nothing limits repeated sign-in or API attempts.'),
+        item('mfa', 'Two-factor authentication for admin', 15, 'pass' if admin_mfa else 'fail',
+             f"Authenticator app (TOTP) enrolled {time_ago(admin_mfa.get('enrolled_at'))}; "
+             f"{len(admin_mfa.get('backup_codes') or {})} of {MFA_BACKUP_COUNT} backup codes unused." if admin_mfa else
+             'Not enrolled: the admin signs in with a password only. Set it up below.'),
     ]
     score = sum(c['earned'] for c in checks)
     na_points = sum(c['points'] for c in checks if c['status'] == 'na')
@@ -3696,8 +3764,12 @@ def security_data():
         (not app.debug or is_local, 'Debug mode off in production', 'Debug mode is on (fine on this local machine; never enable it on a public server).'
          if app.debug else 'Debug mode is off.'),
         (passed['https'], 'Serve over HTTPS with Secure cookies', 'Set SESSION_COOKIE_SECURE once deployed on HTTPS.'),
-        (passed['ratelimit'], 'Implement rate limiting on login', 'e.g. Flask-Limiter on /api/verify-token and the device endpoint.'),
-        (passed['mfa'], 'Add 2FA for the admin account', 'Firebase Auth supports TOTP/SMS multi-factor; the sign-in page would need a second step.'),
+        (passed['ratelimit'], 'Rate limiting on login' if passed['ratelimit'] else 'Implement rate limiting on login',
+         'Active on sign-in, registration, 2FA, pairing and the device endpoint. Uses in-memory counters: use Redis with several workers.'
+         if passed['ratelimit'] else 'e.g. Flask-Limiter on /api/verify-token and the device endpoint.'),
+        (passed['mfa'], '2FA enabled for the admin account' if passed['mfa'] else 'Add 2FA for the admin account',
+         'Authenticator-app codes are required after the password; backup codes are stored hashed.' if passed['mfa']
+         else 'Set up an authenticator app from the 2FA panel on this page.'),
         (False, 'Enable Firebase App Check', 'Not configured: it lets Firebase reject requests that don\'t come from this app.'),
         (False, 'Set up automated security scanning', 'e.g. pip-audit or GitHub Dependabot for dependency vulnerabilities.'),
     ]
@@ -3707,7 +3779,17 @@ def security_data():
         'cookie_samesite': app.config.get('SESSION_COOKIE_SAMESITE'), 'rules_exprs': exprs, 'rules_paths': rule_paths,
         'rules_ok': rules['ok'], 'rules_match': rules['matches_local'],
     }
-    return {'checks': checks, 'score': score, 'na_points': na_points, 'secret_weak': secret_weak,
+    policies['rate_limits'] = [
+        ('Sign-in (/api/verify-token)', RATE_LIMITS['verify_token']), ('Admin 2FA code (/admin/mfa-verify)', RATE_LIMITS['admin_mfa_verify']),
+        ('Registration (/api/register-profile)', RATE_LIMITS['register_profile']), ('Wristband pairing', RATE_LIMITS['wristband_pair']),
+        ('Wristband data (ESP32)', RATE_LIMITS['wristband_data']), ('Facial scan frames', RATE_LIMITS['analyze_emotion']),
+        ('2FA setup / changes', f"{RATE_LIMITS['admin_mfa_enroll']} · {RATE_LIMITS['admin_mfa_manage']}"),
+        ('Every other route', '200 per day, 50 per hour'),
+    ] if limiter_active else []
+    mfa_panel = {'enrolled': bool(admin_mfa), 'enrolled_ago': time_ago(admin_mfa.get('enrolled_at')) if admin_mfa else '',
+                 'backup_left': len(admin_mfa.get('backup_codes') or {}) if admin_mfa else 0,
+                 'is_admin_uid': (session.get('user') or {}).get('uid') == ADMIN_UID}
+    return {'checks': checks, 'score': score, 'na_points': na_points, 'secret_weak': secret_weak, 'mfa_panel': mfa_panel,
             'sessions': sessions, 'failed': failed, 'failed_total': len(failed_all), 'suspicious_ips': suspicious_ips,
             'access': access, 'recommendations': recommendations, 'policies': policies, 'users': users,
             'failed_all': failed_all, 'reason_label': reason_label}
@@ -3739,6 +3821,258 @@ def admin_failed_logins_csv():
         'Content-Disposition': f"attachment; filename=failed_logins_{time.strftime('%Y-%m-%d')}.csv"})
 
 
+# ========== ADMIN TWO-FACTOR AUTHENTICATION (TOTP) ==========
+# users/{ADMIN_UID}/mfa: totp_secret_enc (Fernet-encrypted with a key derived from SECRET_KEY),
+#   enrolled_at, backup_codes/{pbkdf2 hash}: true (8 one-time codes), last_step (anti-replay).
+# Admin only. If SECRET_KEY changes, the authenticator secret can't be decrypted any more: sign in
+# with a backup code, then disable and set up 2FA again.
+MFA_ISSUER = 'Mental Disorder Detection'
+MFA_PENDING_SECONDS = 300
+MFA_BACKUP_COUNT = 8
+MFA_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'   # no 0/O or 1/I confusion
+RATE_LIMITS.update({'admin_mfa_enroll': '10 per 15 minutes', 'admin_mfa_manage': '5 per 15 minutes'})
+
+
+def _mfa_fernet():
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=b'mdd-admin-mfa', info=b'totp-secret').derive(app.secret_key.encode())
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def mfa_encrypt(secret):
+    return _mfa_fernet().encrypt(secret.encode()).decode()
+
+
+def mfa_decrypt(token):
+    """The TOTP secret, or None if it can't be decrypted (e.g. SECRET_KEY changed)."""
+    try:
+        return _mfa_fernet().decrypt(token.encode()).decode()
+    except Exception:
+        return None
+
+
+def mfa_record(uid=None):
+    node = db.reference(f'users/{uid or ADMIN_UID}/mfa').get()
+    return node if isinstance(node, dict) and node.get('totp_secret_enc') else None
+
+
+def mfa_enrolled_profile(profile):
+    return isinstance(profile, dict) and isinstance(profile.get('mfa'), dict) and bool(profile['mfa'].get('totp_secret_enc'))
+
+
+def backup_code_hash(code, uid):
+    """Slow salted hash, so the stored values can't be brute-forced back into codes."""
+    return hashlib.pbkdf2_hmac('sha256', code.encode(), f'{uid}:mfa-backup'.encode(), 120_000).hex()
+
+
+def normalize_backup_code(text):
+    return ''.join(ch for ch in str(text).upper() if ch in MFA_CODE_ALPHABET)
+
+
+def new_backup_codes(uid):
+    """(codes to show once, {hash: True} to store)."""
+    codes = [''.join(secrets.choice(MFA_CODE_ALPHABET) for _ in range(10)) for _ in range(MFA_BACKUP_COUNT)]
+    return [f'{c[:5]}-{c[5:]}' for c in codes], {backup_code_hash(c, uid): True for c in codes}
+
+
+def totp_step(secret, code, last_step=0):
+    """The 30-second step the code belongs to (now ±1 step for clock drift), or None. Steps at or
+    before last_step are rejected so a code can't be replayed."""
+    import pyotp
+    code = ''.join(ch for ch in str(code) if ch.isdigit())
+    if len(code) != 6 or not secret:
+        return None
+    totp = pyotp.TOTP(secret)
+    now = time.time()
+    for offset in (0, -1, 1):
+        when = now + offset * 30
+        if hmac.compare_digest(totp.at(when), code):
+            step = int(when // 30)
+            return step if step > (last_step or 0) else None
+    return None
+
+
+def mfa_check_code(uid, record, code):
+    """('totp' | 'backup' | None, detail). Consumes a backup code or records the TOTP step."""
+    text = str(code or '').strip()
+    if len(''.join(ch for ch in text if ch.isdigit())) == 6 and not any(ch.isalpha() for ch in text):
+        secret = mfa_decrypt(record.get('totp_secret_enc', ''))
+        if secret is None:
+            return None, 'Authenticator codes can\'t be checked because the server key changed. Use a backup code.'
+        step = totp_step(secret, text, record.get('last_step', 0))
+        if step is None:
+            return None, 'That code is wrong or has already been used.'
+        db.reference(f'users/{uid}/mfa/last_step').set(step)
+        return 'totp', ''
+    normalized = normalize_backup_code(text)
+    if len(normalized) != 10:
+        return None, 'Enter the 6-digit code from your authenticator app, or a 10-character backup code.'
+    digest = backup_code_hash(normalized, uid)
+    ref = db.reference(f'users/{uid}/mfa/backup_codes/{digest}')
+    if ref.get() is not True:
+        return None, 'That backup code is wrong or has already been used.'
+    ref.delete()   # one use only
+    return 'backup', ''
+
+
+def mfa_admin_only(view):
+    """The configured admin account only (not just any session with the admin role)."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        user = session.get('user') or {}
+        if user.get('role') != 'admin' or user.get('uid') != ADMIN_UID:
+            return redirect(url_for('login'))
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def mfa_qr_svg(uri):
+    import qrcode
+    import qrcode.image.svg
+    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage, box_size=10, border=2)
+    return img.to_string(encoding='unicode')
+
+
+def mfa_page(mode, **context):
+    users = admin_load_users()
+    record = context.pop('record', None) or mfa_record()
+    return admin_page('admin_mfa.html', 'security', users, mode=mode, record=record,
+                      backup_left=len((record or {}).get('backup_codes') or {}),
+                      enrolled_ago=time_ago((record or {}).get('enrolled_at')), key_from_env=SECRET_KEY_FROM_ENV, **context)
+
+
+@app.route('/admin/security/mfa-setup')
+@admin_required
+@mfa_admin_only
+def admin_mfa_setup():
+    import pyotp
+    if mfa_record():
+        return mfa_page('manage')
+    if not SECRET_KEY_FROM_ENV:
+        return mfa_page('nokey')
+    secret = session.get('_mfa_setup_secret') or pyotp.random_base32()
+    session['_mfa_setup_secret'] = secret   # kept until enrolment succeeds (signed cookie, admin's own browser)
+    email = session['user'].get('email') or 'admin'
+    uri = pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=MFA_ISSUER)
+    return mfa_page('setup', qr_svg=mfa_qr_svg(uri), manual=' '.join(secret[i:i + 4] for i in range(0, len(secret), 4)))
+
+
+@app.route('/admin/security/mfa-enroll', methods=['POST'])
+@limiter.limit(RATE_LIMITS['admin_mfa_enroll'])
+@admin_required
+@mfa_admin_only
+def admin_mfa_enroll():
+    import pyotp
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    if mfa_record():
+        return redirect(url_for('admin_mfa_setup'))
+    secret = session.get('_mfa_setup_secret')
+    if not secret or not SECRET_KEY_FROM_ENV:
+        return redirect(url_for('admin_mfa_setup'))
+    if totp_step(secret, request.form.get('code', '')) is None:
+        uri = pyotp.TOTP(secret).provisioning_uri(name=session['user'].get('email') or 'admin', issuer_name=MFA_ISSUER)
+        return mfa_page('setup', qr_svg=mfa_qr_svg(uri), manual=' '.join(secret[i:i + 4] for i in range(0, len(secret), 4)),
+                        error='That code didn\'t match. Check the time on your phone is set automatically, then try the newest code.'), 400
+    uid = session['user']['uid']
+    codes, hashed = new_backup_codes(uid)
+    record = {'totp_secret_enc': mfa_encrypt(secret), 'enrolled_at': {'.sv': 'timestamp'}, 'backup_codes': hashed,
+              'last_step': int(time.time() // 30)}
+    db.reference(f'users/{uid}/mfa').set(record)
+    session.pop('_mfa_setup_secret', None)
+    activity_log('mfa_enrolled', 'Enabled two-factor authentication', 'success', details={'method': 'TOTP authenticator', 'backup_codes': MFA_BACKUP_COUNT})
+    return mfa_page('codes', codes=codes, record=mfa_record(uid), first_time=True)
+
+
+@app.route('/admin/security/mfa-backup-codes', methods=['POST'])
+@limiter.limit(RATE_LIMITS['admin_mfa_manage'])
+@admin_required
+@mfa_admin_only
+def admin_mfa_regenerate():
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    uid = session['user']['uid']
+    record = mfa_record(uid)
+    if not record:
+        return redirect(url_for('admin_mfa_setup'))
+    method, error = mfa_check_code(uid, record, request.form.get('code', ''))
+    if not method:
+        activity_log('mfa_failed', 'Wrong 2FA code when regenerating backup codes', 'failed')
+        return mfa_page('manage', error=error, error_form='regenerate'), 400
+    codes, hashed = new_backup_codes(uid)
+    db.reference(f'users/{uid}/mfa/backup_codes').set(hashed)
+    activity_log('mfa_backup_codes_regenerated', 'Regenerated 2FA backup codes', 'success', details={'verified_with': method})
+    return mfa_page('codes', codes=codes)
+
+
+@app.route('/admin/security/mfa-disable', methods=['POST'])
+@limiter.limit(RATE_LIMITS['admin_mfa_manage'])
+@admin_required
+@mfa_admin_only
+def admin_mfa_disable():
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    uid = session['user']['uid']
+    record = mfa_record(uid)
+    if not record:
+        return redirect(url_for('admin_security'))
+    method, error = mfa_check_code(uid, record, request.form.get('code', ''))
+    if not method:
+        activity_log('mfa_failed', 'Wrong 2FA code when trying to disable 2FA', 'failed')
+        return mfa_page('manage', error=error, error_form='disable'), 400
+    db.reference(f'users/{uid}/mfa').delete()
+    activity_log('mfa_disabled', 'Disabled two-factor authentication', 'alert', details={'verified_with': method})
+    flash('Two-factor authentication is off. Your next sign-in needs only a password.', 'success')
+    return redirect(url_for('admin_security'))
+
+
+@app.route('/admin/mfa-verify', methods=['GET', 'POST'])
+@limiter.limit(RATE_LIMITS['admin_mfa_verify'], methods=['POST'])
+def admin_mfa_verify():
+    """Second sign-in step for the admin. session['user'] is only created once this passes."""
+    pending = session.get('_mfa_pending')
+    if not isinstance(pending, dict) or time.time() - pending.get('at', 0) > MFA_PENDING_SECONDS:
+        session.pop('_mfa_pending', None)
+        if pending:
+            flash('The sign-in took too long. Please sign in again.', 'error')
+        return redirect(url_for('login'))
+    user = pending['user']
+    csrf_token = session.setdefault('_mfa_csrf', secrets.token_urlsafe(32))
+    if request.method == 'GET':
+        return render_template('admin_mfa_verify.html', csrf_token=csrf_token, email=user.get('email', ''))
+
+    if not hmac.compare_digest(request.form.get('csrf_token', ''), csrf_token):
+        return 'Invalid or expired form token.', 400
+    record = mfa_record(user['uid'])
+    if not record:
+        # 2FA was removed meanwhile (e.g. in the Firebase console): fall back to the password sign-in
+        method, error = 'none', ''
+    else:
+        method, error = mfa_check_code(user['uid'], record, request.form.get('code', ''))
+    if not method:
+        activity_log('mfa_failed', 'Wrong 2FA code at sign-in', 'failed', details={'email': user.get('email', '')}, user=user)
+        return render_template('admin_mfa_verify.html', csrf_token=csrf_token, email=user.get('email', ''), error=error), 400
+
+    session.pop('_mfa_pending', None)
+    session.pop('_mfa_csrf', None)
+    session['user'] = user
+    session['_login_toast'] = True
+    try:
+        db.reference(f"login_counts/{time.strftime('%Y-%m-%d')}").set({'.sv': {'increment': 1}})
+    except Exception:
+        pass
+    left = len((mfa_record(user['uid']) or {}).get('backup_codes') or {}) if method == 'backup' else None
+    activity_log('mfa_success', '2FA code accepted' + (' (backup code)' if method == 'backup' else ''),
+                 details={'method': method, 'backup_codes_left': left})
+    activity_log('login', 'Logged in', details={'email': user.get('email', ''), 'second_factor': method})
+    if method == 'backup':
+        flash(f'Signed in with a backup code. {left} backup code{"s" if left != 1 else ""} left.'
+              + (' Generate new ones on the Security page.' if left <= 3 else ''), 'success' if left > 3 else 'error')
+    return redirect(url_for('admin_dashboard'))
+
+
 # ========== ADMIN DATABASE BROWSER (read-only) ==========
 # Only Firebase reads happen here: no route in this section writes or deletes anything.
 DB_CHILD_LIMIT = 100          # children shown per object
@@ -3767,6 +4101,7 @@ DB_PRIVATE_PATHS = (
     (('users', '*', 'clinical_notes', '*', 'body'), '***note hidden***'),   # older notes, stored under the patient
     (('users', '*', 'clinical_notes', '*', 'title'), '***note hidden***'),
     (('alerts', '*', '*', 'note'), '***note hidden***'),                   # doctor's note when acknowledging an alert
+    (('users', '*', 'mfa', 'backup_codes'), '***hidden***'),              # hashed 2FA backup codes (totp_secret_enc is masked by key)
     (('users', '*', 'assessments', '*', 'phq_answers'), '***answers hidden***'),
     (('users', '*', 'assessments', '*', 'gad_answers'), '***answers hidden***'),
     (('users', '*', 'assessments', '*', 'pss_answers'), '***answers hidden***'),
