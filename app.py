@@ -17,7 +17,15 @@ load_dotenv()  # local settings such as ADMIN_UID live in .env (not committed)
 
 # ========== INITIALIZE FLASK ==========
 app = Flask(__name__)
-app.secret_key = 'mental-disorder-detection-secret-key-change-in-production'
+# Session-signing key from .env (SECRET_KEY, generate with: python -c "import secrets; print(secrets.token_hex(32))").
+# Without it, a random key is made at each start: nobody can forge sessions, but everyone is signed out on restart.
+SECRET_KEY_FROM_ENV = bool(os.environ.get('SECRET_KEY', '').strip())
+if SECRET_KEY_FROM_ENV:
+    app.secret_key = os.environ['SECRET_KEY'].strip()
+else:
+    app.secret_key = secrets.token_hex(32)
+    print('WARNING: SECRET_KEY is not set in .env, so a temporary random key is being used. '
+          'Sessions will end whenever the server restarts. Add SECRET_KEY to .env.', flush=True)
 # Placeholder never matches a real Firebase UID, so no one is admin until .env sets it
 ADMIN_UID = os.environ.get('ADMIN_UID', 'SET_IN_ENV_FILE').strip()
 
@@ -3474,6 +3482,495 @@ def admin_save_settings():
     system_settings(refresh=True)
     flash('Settings saved successfully.', 'success')
     return redirect(url_for('admin_settings') + ('' if target == 'all' else f'#{target}'))
+
+
+# ========== ADMIN SECURITY ==========
+# Every check below is verified live where it can be (deployed rules, user records, app config);
+# features that don't exist score 0 and are listed as recommendations.
+DOCTOR_PATIENT_LIMIT = 25
+_rules_cache = {'at': 0.0, 'value': None}
+
+
+def deployed_firebase_rules():
+    """{'ok', 'rules', 'matches_local', 'error'} for the live database rules, read with the service
+    account (cached 5 minutes)."""
+    import json
+    import re
+    import urllib.request
+    if time.time() - _rules_cache['at'] < 300 and _rules_cache['value']:
+        return _rules_cache['value']
+    result = {'ok': False, 'rules': None, 'matches_local': False, 'error': ''}
+    try:
+        token = firebase_admin.get_app().credential.get_access_token().access_token
+        url = FIREBASE_WEB_CONFIG['databaseURL'].rstrip('/') + '/.settings/rules.json'
+        req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token})
+        body = urllib.request.urlopen(req, timeout=10).read().decode()
+        deployed = json.loads(re.sub(r'^\s*//.*$', '', body, flags=re.M))
+        with open(os.path.join(APP_DIR, 'database.rules.json'), encoding='utf-8') as f:
+            local = json.load(f)
+        result.update(ok=True, rules=deployed, matches_local=deployed == local)
+    except Exception as e:
+        result['error'] = type(e).__name__
+    _rules_cache.update(at=time.time(), value=result)
+    return result
+
+
+def count_rule_expressions(node):
+    """(rule expressions, paths that have one) in a rules tree."""
+    exprs, paths = 0, 0
+    if isinstance(node, dict):
+        here = [k for k in node if k.startswith('.')]
+        exprs += len(here)
+        paths += 1 if here else 0
+        for k, v in node.items():
+            if not k.startswith('.'):
+                e, p = count_rule_expressions(v)
+                exprs, paths = exprs + e, paths + p
+    return exprs, paths
+
+
+def csrf_coverage():
+    """How each state-changing (POST) route is protected, read from the view functions themselves."""
+    import inspect
+    import re
+    out = {'token': 0, 'json': 0, 'device': 0, 'none': []}
+    for rule in app.url_map.iter_rules():
+        if 'POST' not in rule.methods:
+            continue
+        src = inspect.getsource(inspect.unwrap(app.view_functions[rule.endpoint]))
+        if 'admin_csrf_valid' in src:
+            out['token'] += 1
+        elif rule.endpoint == 'wristband_data':
+            out['device'] += 1          # device API key, no browser session to forge
+        elif re.search(r'is_json|get_json\((?![^)]*force=True)', src):
+            # JSON-only: get_json() (even silent) only parses a JSON Content-Type, which a
+            # cross-site HTML form can't send, so a forged form post arrives with no data
+            out['json'] += 1
+        else:
+            out['none'].append(rule.rule)
+    return out
+
+
+def mask_uid(uid):
+    return f'{uid[:4]}••••••••{uid[-4:]}' if uid and len(uid) > 8 else '••••'
+
+
+def security_data():
+    users = admin_load_users()
+    now_ms = time.time() * 1000
+    host = (request.host or '').split(':')[0]
+    is_local = host in ('localhost', '127.0.0.1', '::1') or host.endswith('.local')
+    is_https = request.is_secure or request.headers.get('X-Forwarded-Proto', '') == 'https'
+
+    rules = deployed_firebase_rules()
+    root_rules = (rules['rules'] or {}).get('rules', {}) if rules['ok'] else {}
+    default_deny = root_rules.get('.read') is False and root_rules.get('.write') is False
+    admins = [uid for uid, u in users.items() if isinstance(u, dict) and u.get('role') == 'admin']
+    admin_configured = ADMIN_UID not in ('', 'SET_IN_ENV_FILE')
+    csrf = csrf_coverage()
+    # POST routes that change nothing (a redirect and a 501 placeholder) aren't CSRF risks
+    csrf['none'] = [r for r in csrf['none'] if r not in ('/admin/login', '/api/admin/assign-patient-to-doctor')]
+    secret_weak = not SECRET_KEY_FROM_ENV or len(app.secret_key) < 32   # temporary fallback key, or too short
+
+    def item(key, label, points, status, detail):
+        return {'key': key, 'label': label, 'points': points, 'status': status, 'detail': detail,
+                'earned': points if status == 'pass' else points // 2 if status == 'partial' else 0}
+
+    checks = [
+        item('rules', 'Firebase rules deployed', 20,
+             'pass' if rules['ok'] and default_deny and rules['matches_local'] else 'partial' if rules['ok'] and default_deny else 'fail',
+             ('Live rules match database.rules.json and deny by default.' if rules['matches_local'] else
+              'Rules are live and deny by default, but differ from database.rules.json: redeploy with firebase deploy --only database.')
+             if rules['ok'] and default_deny else
+             ("Couldn't read the deployed rules" + (f" ({rules['error']})" if rules['error'] else '') + '.' if not rules['ok'] else
+              'Deployed rules do not deny access by default.')),
+        item('https', 'HTTPS in production', 15, 'pass' if is_https else 'na' if is_local else 'fail',
+             'Served over HTTPS.' if is_https else
+             'Not applicable on the local development server. Scores once the app is served over HTTPS.' if is_local else
+             'This page was served over plain HTTP.'),
+        item('admin', 'Single admin account (by UID)', 15,
+             'pass' if admin_configured and admins in ([ADMIN_UID], []) and len(admins) <= 1 else 'fail',
+             (f'ADMIN_UID is set in .env and {len(admins)} account has the admin role.' if admin_configured and len(admins) <= 1 else
+              'ADMIN_UID is not set in .env.' if not admin_configured else
+              f'{len(admins)} accounts have the admin role; only ADMIN_UID should.')),
+        item('approval', 'Doctor approval workflow', 10, 'pass',
+             'New doctors start as pending with sign-in disabled; /api/verify-token blocks anyone not approved.'),
+        item('csrf', 'CSRF protection', 10, 'pass' if not csrf['none'] else 'partial',
+             f"{csrf['token']} admin form routes check a per-session token; {csrf['json']} API routes accept JSON only; "
+             f"the wristband endpoint uses a device key." + (f" Unprotected: {', '.join(csrf['none'])}." if csrf['none'] else '')),
+        item('password', 'Password minimum length', 5, 'pass',
+             'Firebase Auth requires at least 6 characters; admin account forms enforce the same.'),
+        item('ratelimit', 'Rate limiting on sign-in', 10, 'pass' if 'limiter' in app.extensions else 'fail',
+             'Not implemented: nothing limits repeated sign-in or API attempts.' if 'limiter' not in app.extensions else 'Flask-Limiter is active.'),
+        item('mfa', 'Two-factor authentication for admin', 15, 'fail',
+             'Not implemented: the sign-in flow has no second factor.'),
+    ]
+    score = sum(c['earned'] for c in checks)
+    na_points = sum(c['points'] for c in checks if c['status'] == 'na')
+
+    # Recent activity log (sessions + failed sign-ins)
+    raw = db.reference('activity_logs').order_by_key().limit_to_last(1000).get() or {}
+    logs = sorted((v for v in raw.values() if isinstance(v, dict) and isinstance(v.get('timestamp'), (int, float))),
+                  key=lambda v: v['timestamp'], reverse=True)
+    last_login = {}
+    for v in logs:
+        if v.get('action') == 'login' and v.get('user_uid') not in last_login:
+            last_login[v['user_uid']] = v
+
+    presence = db.reference('presence').get() or {}
+    sessions = []
+    for uid, seen in (presence.items() if isinstance(presence, dict) else []):
+        if not isinstance(seen, (int, float)) or now_ms - seen > ACTIVE_SESSION_MS:
+            continue
+        user = users.get(uid) if isinstance(users.get(uid), dict) else {}
+        login = last_login.get(uid)
+        sessions.append({'name': user.get('name') or 'Unknown user', 'role': user.get('role', '—'),
+                         'last_active': time_ago(seen), 'last_active_full': format_timestamp(seen, '%d %b %Y, %H:%M:%S'),
+                         'ip': display_ip(login.get('ip', '')) if login else '—', 'device': login.get('user_agent_summary') if login else '—',
+                         'duration': format_duration(now_ms - login['timestamp']) if login else '—',
+                         'since': format_timestamp(login['timestamp'], '%d %b, %H:%M') if login else ''})
+    sessions.sort(key=lambda s: s['name'].lower())
+
+    failed_all = [v for v in logs if v.get('action') == 'login_failed']
+    day_ago = now_ms - 86_400_000
+    ip_counts = {}
+    for v in failed_all:
+        if v['timestamp'] >= day_ago:
+            ip_counts[v.get('ip', '')] = ip_counts.get(v.get('ip', ''), 0) + 1
+    reasons = {'not_registered': 'No registered profile', 'doctor_pending': 'Doctor pending approval',
+               'doctor_rejected': 'Doctor rejected', 'doctor_suspended': 'Doctor suspended'}
+    def reason_label(v):
+        code = str((v.get('details') or {}).get('reason') or '')
+        return reasons.get(code) or ('Token rejected' if code.endswith('Error') or not code else code)
+    failed = [{'when': format_log_time(v['timestamp']), 'full': format_timestamp(v['timestamp'], '%d %b %Y, %H:%M:%S'),
+               'email': (v.get('details') or {}).get('email') or '—', 'reason': reason_label(v),
+               'ip': display_ip(v.get('ip', '')), 'device': v.get('user_agent_summary') or '—',
+               'suspicious': ip_counts.get(v.get('ip', ''), 0) >= 3 and v['timestamp'] >= day_ago}
+              for v in failed_all[:20]]
+    suspicious_ips = sorted(display_ip(ip) for ip, n in ip_counts.items() if n >= 3)
+
+    # Access control audit
+    patients = {uid: u for uid, u in users.items() if isinstance(u, dict) and u.get('role') == 'patient'}
+    doctors = {uid: u for uid, u in users.items() if isinstance(u, dict) and u.get('role') == 'doctor'}
+    doctor_status = {s: sum(1 for d in doctors.values() if d.get('status') == s) for s in ('approved', 'pending', 'rejected', 'suspended')}
+    load = {}
+    unassigned, bad_assignment = [], []
+    for uid, p in patients.items():
+        if p.get('status') != 'active':
+            continue
+        doc = p.get('assigned_doctor_uid')
+        if not doc:
+            unassigned.append(p.get('name') or uid)
+        elif not isinstance(doctors.get(doc), dict) or doctors[doc].get('status') != 'approved':
+            bad_assignment.append(p.get('name') or uid)
+        else:
+            load[doc] = load.get(doc, 0) + 1
+    overloaded = [{'name': strip_dr(doctors[d].get('name')) or d, 'count': n} for d, n in load.items() if n > DOCTOR_PATIENT_LIMIT]
+    access = {
+        'patients': len(patients), 'patients_active': sum(1 for p in patients.values() if p.get('status') == 'active'),
+        'patients_suspended': sum(1 for p in patients.values() if p.get('status') == 'suspended'),
+        'doctors': len(doctors), 'doctor_status': doctor_status, 'admins': len(admins),
+        'unassigned': unassigned, 'bad_assignment': bad_assignment, 'overloaded': overloaded,
+        'load': sorted(({'name': strip_dr(doctors[d].get('name')) or d, 'count': n} for d, n in load.items()), key=lambda x: -x['count']),
+    }
+
+    # Data-at-rest checks for the recommendations list
+    stored_passwords = sum(1 for u in users.values() if isinstance(u, dict) and any('password' in str(k).lower() for k in u))
+    devices = db.reference('wristband_devices').get() or {}
+    devices = devices if isinstance(devices, dict) else {}
+    hashed_ok = all(isinstance(d, dict) and len(str(d.get('api_key_hash', ''))) == 64 and 'api_key' not in d for d in devices.values())
+    exprs, rule_paths = count_rule_expressions(root_rules)
+    passed = {c['key']: c['status'] == 'pass' for c in checks}
+    recommendations = [
+        (rules['ok'] and default_deny, 'Firebase security rules deployed', 'Deny-by-default rules are live.' if rules['ok'] and default_deny else 'Deploy database.rules.json.'),
+        (stored_passwords == 0, 'Passwords never stored in plain text', 'Firebase Auth holds the password hashes; no user record has a password field.'
+         if stored_passwords == 0 else f'{stored_passwords} user record(s) contain a password field.'),
+        (hashed_ok, 'Wristband API keys stored as SHA-256 hashes', f'All {len(devices)} paired device(s) store only a 64-character hash.' if hashed_ok
+         else 'A device record holds something other than a SHA-256 hash.'),
+        (bool(logs), 'Activity audit logging enabled', f'{len(logs)} recent entries; latest {time_ago(logs[0]["timestamp"])}.' if logs else 'No entries logged yet.'),
+        (not secret_weak, 'Flask secret key kept out of the source code',
+         f'Loaded from .env (SECRET_KEY, {len(app.secret_key)} characters). The old hard-coded key is still in git history, '
+         'so it must never be reused.' if not secret_weak else
+         'SECRET_KEY is missing from .env (or shorter than 32 characters), so a temporary random key is in use and everyone '
+         'is signed out whenever the server restarts.'),
+        (not app.debug or is_local, 'Debug mode off in production', 'Debug mode is on (fine on this local machine; never enable it on a public server).'
+         if app.debug else 'Debug mode is off.'),
+        (passed['https'], 'Serve over HTTPS with Secure cookies', 'Set SESSION_COOKIE_SECURE once deployed on HTTPS.'),
+        (passed['ratelimit'], 'Implement rate limiting on login', 'e.g. Flask-Limiter on /api/verify-token and the device endpoint.'),
+        (passed['mfa'], 'Add 2FA for the admin account', 'Firebase Auth supports TOTP/SMS multi-factor; the sign-in page would need a second step.'),
+        (False, 'Enable Firebase App Check', 'Not configured: it lets Firebase reject requests that don\'t come from this app.'),
+        (False, 'Set up automated security scanning', 'e.g. pip-audit or GitHub Dependabot for dependency vulnerabilities.'),
+    ]
+    policies = {
+        'password_min': 6, 'admin_uid': mask_uid(ADMIN_UID) if admin_configured else 'Not set',
+        'cookie_httponly': app.config.get('SESSION_COOKIE_HTTPONLY'), 'cookie_secure': app.config.get('SESSION_COOKIE_SECURE'),
+        'cookie_samesite': app.config.get('SESSION_COOKIE_SAMESITE'), 'rules_exprs': exprs, 'rules_paths': rule_paths,
+        'rules_ok': rules['ok'], 'rules_match': rules['matches_local'],
+    }
+    return {'checks': checks, 'score': score, 'na_points': na_points, 'secret_weak': secret_weak,
+            'sessions': sessions, 'failed': failed, 'failed_total': len(failed_all), 'suspicious_ips': suspicious_ips,
+            'access': access, 'recommendations': recommendations, 'policies': policies, 'users': users,
+            'failed_all': failed_all, 'reason_label': reason_label}
+
+
+@app.route('/admin/security')
+@admin_required
+def admin_security():
+    data = security_data()
+    data.pop('failed_all'); data.pop('reason_label')
+    return admin_page('admin_security.html', 'security', data.pop('users'), **data, doctor_limit=DOCTOR_PATIENT_LIMIT)
+
+
+@app.route('/admin/security/failed-logins.csv')
+@admin_required
+def admin_failed_logins_csv():
+    import csv
+    import io
+    data = security_data()
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(['Time', 'Email', 'Reason', 'Action', 'IP', 'Device', 'User role'])
+    for v in data['failed_all']:
+        details = v.get('details') or {}
+        writer.writerow([format_timestamp(v['timestamp'], '%Y-%m-%d %H:%M:%S'), csv_cell(details.get('email', '')),
+                         csv_cell(data['reason_label'](v)), csv_cell(v.get('action_label', '')),
+                         csv_cell(display_ip(v.get('ip', ''))), csv_cell(v.get('user_agent_summary', '')), v.get('user_role', '')])
+    return app.response_class('﻿' + out.getvalue(), mimetype='text/csv', headers={
+        'Content-Disposition': f"attachment; filename=failed_logins_{time.strftime('%Y-%m-%d')}.csv"})
+
+
+# ========== ADMIN DATABASE BROWSER (read-only) ==========
+# Only Firebase reads happen here: no route in this section writes or deletes anything.
+DB_CHILD_LIMIT = 100          # children shown per object
+DB_RENDER_BUDGET = 2500       # total rows rendered in one view
+DB_RENDER_DEPTH = 6           # nested levels shown inline before "open" links
+DB_SEARCH_LIMIT = 50
+DB_VALUE_PREVIEW = 500
+DB_SECRET_KEY = None          # compiled lazily below
+
+
+def db_secret_key(key):
+    """Keys whose values are never shown: API key hashes, passwords, tokens, private keys, credentials."""
+    import re
+    global DB_SECRET_KEY
+    if DB_SECRET_KEY is None:
+        DB_SECRET_KEY = re.compile(r'api_?key|password|passwd|secret|token|private_?key|credential', re.I)
+    return bool(DB_SECRET_KEY.search(str(key)))
+
+
+# Patient clinical content, masked by path ('*' matches any one key). Scores and metadata stay visible.
+DB_PRIVATE_PATHS = (
+    (('chats', '*', 'messages', '*', 'text'), '***message hidden***'),
+    (('chats', '*', 'last_message', 'text'), '***message hidden***'),   # copy of the newest message
+    (('clinical_notes', '*', '*', 'body'), '***note hidden***'),        # the note text
+    (('clinical_notes', '*', '*', 'title'), '***note hidden***'),
+    (('users', '*', 'clinical_notes', '*', 'body'), '***note hidden***'),   # older notes, stored under the patient
+    (('users', '*', 'clinical_notes', '*', 'title'), '***note hidden***'),
+    (('alerts', '*', '*', 'note'), '***note hidden***'),                   # doctor's note when acknowledging an alert
+    (('users', '*', 'assessments', '*', 'phq_answers'), '***answers hidden***'),
+    (('users', '*', 'assessments', '*', 'gad_answers'), '***answers hidden***'),
+    (('users', '*', 'assessments', '*', 'pss_answers'), '***answers hidden***'),
+)
+
+
+def db_mask_label(path):
+    """The placeholder for a masked path ('a/b/c'), or None if it may be shown.
+    Secret-looking keys anywhere, plus the clinical-content paths above."""
+    parts = [p for p in str(path).split('/') if p]
+    if parts and db_secret_key(parts[-1]):
+        return '***hidden***'
+    for pattern, label in DB_PRIVATE_PATHS:
+        if len(parts) == len(pattern) and all(p == '*' or p == s for p, s in zip(pattern, parts)):
+            return label
+    return None
+
+
+def db_mask(value, path=''):
+    """Copy of `value` (stored at `path`) with every masked path replaced by its placeholder."""
+    label = db_mask_label(path) if path else None
+    if label:
+        return label
+    if isinstance(value, dict):
+        return {k: db_mask(v, f'{path}/{k}') for k, v in value.items()}
+    if isinstance(value, list):
+        return [db_mask(v, f'{path}/{i}') for i, v in enumerate(value)]
+    return value
+
+
+def db_clean_path(raw):
+    """('a/b/c' segments list, error). Firebase keys can't contain . $ # [ ] / or control characters."""
+    import re
+    text = (raw or '').strip().strip('/')
+    if not text:
+        return [], None
+    parts = [p for p in text.split('/') if p]
+    if len(parts) > 32 or any(not re.fullmatch(r'[^.$#\[\]/\x00-\x1f\x7f]{1,256}', p) for p in parts):
+        return [], 'That isn\'t a valid database path. Keys can\'t contain . $ # [ ] or /.'
+    return parts, None
+
+
+def db_view(value, path, key='', depth=0, budget=None):
+    """A render-ready tree for templates/admin_database.html, capped in size."""
+    budget = budget if budget is not None else {'left': DB_RENDER_BUDGET}
+    label = db_mask_label(path) if path else None
+    if label:
+        return {'type': 'masked', 'label': label}
+    if isinstance(value, (dict, list)):
+        items_src = list(value.items()) if isinstance(value, dict) else list(enumerate(value))
+        items_src = [(k, v) for k, v in items_src if v is not None]   # Firebase arrays can have holes
+        node = {'type': 'array' if isinstance(value, list) else 'object', 'count': len(items_src), 'path': path}
+        if depth >= DB_RENDER_DEPTH or budget['left'] <= 0:
+            node['stub'] = True
+            return node
+        node['items'] = []
+        for k, v in items_src[:DB_CHILD_LIMIT]:
+            if budget['left'] <= 0:
+                break
+            budget['left'] -= 1
+            node['items'].append((str(k), db_view(v, f'{path}/{k}'.strip('/'), str(k), depth + 1, budget)))
+        node['hidden'] = len(items_src) - len(node['items'])
+        return node
+    if isinstance(value, bool):
+        return {'type': 'boolean', 'value': 'true' if value else 'false'}
+    if isinstance(value, (int, float)):
+        return {'type': 'number', 'value': value}
+    if value is None:
+        return {'type': 'null'}
+    text = str(value)
+    return {'type': 'string', 'value': text, 'long': len(text) > DB_VALUE_PREVIEW, 'preview': text[:DB_VALUE_PREVIEW]}
+
+
+def db_search(value, pattern, path, results, key=''):
+    """Depth-first key search (substring, or * / ? wildcards), up to DB_SEARCH_LIMIT matches."""
+    import fnmatch
+    if len(results) >= DB_SEARCH_LIMIT or not isinstance(value, (dict, list)):
+        return
+    items = value.items() if isinstance(value, dict) else enumerate(value)
+    wildcard = any(ch in pattern for ch in '*?')
+    for k, v in items:
+        if len(results) >= DB_SEARCH_LIMIT:
+            return
+        if v is None:
+            continue
+        child = f'{path}/{k}'.strip('/')
+        name = str(k).lower()
+        label = db_mask_label(child)
+        if (fnmatch.fnmatch(name, pattern) if wildcard else pattern in name):
+            if label:
+                preview = label
+            elif isinstance(v, dict):
+                preview = f'{{{len(v)} keys}}'
+            elif isinstance(v, list):
+                preview = f'[{len(v)} items]'
+            else:
+                preview = str(v)[:120]
+            results.append({'path': child, 'key': str(k), 'preview': preview})
+        if not label:   # never look inside masked content
+            db_search(v, pattern, child, results)
+
+
+def firebase_console_url(path=''):
+    """Deep link to this path in the Firebase console's Realtime Database viewer."""
+    from urllib.parse import quote, urlparse
+    project = FIREBASE_WEB_CONFIG['projectId']
+    instance = urlparse(FIREBASE_WEB_CONFIG['databaseURL']).hostname.split('.')[0]
+    encoded = quote('/' + path, safe='').replace('%2F', '~2F')
+    return f'https://console.firebase.google.com/project/{project}/database/{instance}/data/{encoded}'
+
+
+@app.route('/admin/database')
+@admin_required
+def admin_database():
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+    parts, path_error = db_clean_path(request.args.get('path'))
+    path = '/'.join(parts)
+    query = (request.args.get('q') or '').strip()[:100]
+    context = {'path': path, 'parts': parts, 'path_error': path_error, 'query': query,
+               'project_id': FIREBASE_WEB_CONFIG['projectId'], 'console_url': firebase_console_url(path),
+               'child_limit': DB_CHILD_LIMIT, 'unreachable': False}
+    users = {}
+    try:
+        top = db.reference('/').get(shallow=True) or {}
+        top = top if isinstance(top, dict) else {}
+
+        def count(name):
+            children = db.reference(name).get(shallow=True)
+            return len(children) if isinstance(children, dict) else (0 if children is None else 1)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            counts = dict(zip(top, pool.map(count, top)))
+        presence = db.reference('presence').get() or {}
+        presence = presence if isinstance(presence, dict) else {}
+        now_ms = time.time() * 1000
+        context.update(
+            tree=[{'name': name, 'count': counts.get(name, 0)} for name in sorted(top)],
+            stats={'nodes': len(top), 'users': counts.get('users', 0), 'presence': len(presence),
+                   'active': sum(1 for v in presence.values() if isinstance(v, (int, float)) and now_ms - v <= ACTIVE_SESSION_MS)})
+
+        if not parts:
+            # Root: one level only (whole-database reads are left to export / size / search)
+            context['node'] = {'type': 'object', 'path': '', 'count': len(top), 'hidden': 0,
+                               'items': [(name, {'type': 'object', 'count': counts.get(name, 0), 'path': name, 'stub': True})
+                                         for name in sorted(top)]}
+            context['total_children'] = len(top)
+            data = None
+        else:
+            ref = db.reference(path)
+            shallow = ref.get(shallow=True)
+            total = len(shallow) if isinstance(shallow, dict) else None
+            if total is not None and total > DB_CHILD_LIMIT:
+                data = ref.order_by_key().limit_to_first(DB_CHILD_LIMIT).get()
+            else:
+                data = ref.get() if isinstance(shallow, dict) else shallow
+            context['total_children'] = total
+            context['exists'] = shallow is not None
+            context['node'] = db_view(data, path, parts[-1]) if shallow is not None else None
+            context['size_bytes'] = len(json.dumps(db_mask(data, path), ensure_ascii=False, default=str).encode()) if data is not None else 0
+            context['size_partial'] = total is not None and total > DB_CHILD_LIMIT
+        if query:
+            # Search covers the whole current node, not just the first 100 children
+            source = db.reference(path or '/').get() if (parts and context.get('size_partial')) or not parts else data
+            results = []
+            db_search(source, query.lower(), path, results)
+            context['results'] = results
+        users = admin_load_users()   # sidebar's pending-approvals count, like the other admin pages
+    except Exception:
+        context['unreachable'] = True
+    return admin_page('admin_database.html', 'database', users, **context)
+
+
+@app.route('/admin/database/export')
+@admin_required
+def admin_database_export():
+    import json
+    parts, error = db_clean_path(request.args.get('path'))
+    if error:
+        return error, 400
+    path = '/'.join(parts)
+    try:
+        data = db.reference(path or '/').get()
+    except Exception:
+        return 'Database unreachable. Try again in a moment.', 503
+    body = json.dumps(db_mask(data, path), indent=2, ensure_ascii=False, default=str)
+    name = '_'.join(parts) or 'root'
+    # Data leaving the system is audited (browsing isn't)
+    activity_log('database_export', f"Exported database node /{path}", 'info',
+                 details={'path': '/' + path, 'bytes': len(body.encode())})
+    return app.response_class(body, mimetype='application/json', headers={
+        'Content-Disposition': f'attachment; filename=db_{name}_{time.strftime("%Y-%m-%d")}.json'})
+
+
+@app.route('/admin/database/size')
+@admin_required
+def admin_database_size():
+    """Approximate size: the JSON length of the whole database (downloads everything, so on demand only)."""
+    import json
+    try:
+        data = db.reference('/').get()
+    except Exception:
+        return jsonify({'success': False, 'error': 'Database unreachable.'}), 503
+    size = len(json.dumps(data, ensure_ascii=False, default=str).encode())
+    return jsonify({'success': True, 'bytes': size})
 
 
 # ========== ADMIN ACTIVITY LOGS ==========

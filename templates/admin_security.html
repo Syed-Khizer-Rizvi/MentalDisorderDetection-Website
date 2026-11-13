@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+{% macro icon(name, size=18) -%}
+<svg class="ad-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'shield' %}<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+{%- elif name == 'check' %}<polyline points="20 6 9 17 4 12"/>
+{%- elif name == 'x' %}<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+{%- elif name == 'minus' %}<line x1="5" y1="12" x2="19" y2="12"/>
+{%- elif name == 'alert' %}<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+{%- elif name == 'users' %}<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+{%- elif name == 'lock' %}<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+{%- elif name == 'download' %}<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+{%- elif name == 'key' %}<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+{%- elif name == 'list' %}<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+{%- elif name == 'activity' %}<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+{%- endif %}</svg>
+{%- endmacro %}
+{% set band = 'good' if score >= 80 else 'fair' if score >= 50 else 'poor' %}
+{% set circ = 326.73 %}
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+
+  <main class="main-area">
+{% include '_admin_header.html' %}
+
+    <section class="ad-head">
+      <div class="sc-title">
+        <span class="sc-title-icon">{{ icon('shield', 24) }}</span>
+        <div><h1>Security</h1><p>Access control, sessions and the system's security posture: an honest assessment, checked live where possible</p></div>
+      </div>
+    </section>
+
+    {% if secret_weak %}
+    <div class="sc-critical" role="alert">
+      <span class="sc-critical-icon">{{ icon('alert', 20) }}</span>
+      <div>
+        <strong>SECRET_KEY isn't set in .env: a temporary random session key is in use.</strong>
+        <p>Sessions can't be forged, but everyone is signed out whenever the server restarts. Add a random <code>SECRET_KEY</code> (at least 32 characters) to <code>.env</code>.</p>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ===== Score ===== #}
+    <section class="chart-panel sc-score sc-{{ band }}" aria-labelledby="scoreTitle">
+      <div class="sc-ring">
+        <svg viewBox="0 0 120 120" role="img" aria-label="Security score {{ score }} out of 100">
+          <circle cx="60" cy="60" r="52" class="sc-ring-track"/>
+          <circle cx="60" cy="60" r="52" class="sc-ring-value" stroke-dasharray="{{ circ }}" stroke-dashoffset="{{ (circ * (1 - score / 100))|round(2) }}"/>
+        </svg>
+        <div class="sc-ring-text"><strong>{{ score }}</strong><span>/ 100</span></div>
+      </div>
+      <div class="sc-score-body">
+        <h2 id="scoreTitle">Security score <span class="sc-band">{{ 'Good' if band == 'good' else 'Needs work' if band == 'fair' else 'At risk' }}</span></h2>
+        <p class="sc-score-note">Points are only given for protections that exist and were verified. Missing features score 0.
+          {% if na_points %}{{ na_points }} points are not applicable on this development server and count as 0 until deployed.{% endif %}
+          {% if secret_weak %}<strong>The session-key warning above isn't part of the score.</strong>{% endif %}</p>
+        <ul class="sc-checks">
+          {% for c in checks %}
+          <li class="sc-check sc-check-{{ c.status }}">
+            <span class="sc-check-mark" aria-hidden="true">{{ icon('check' if c.status == 'pass' else 'minus' if c.status in ('na', 'partial') else 'x', 14) }}</span>
+            <span class="sc-check-text"><strong>{{ c.label }}</strong><small>{{ c.detail }}</small></span>
+            <span class="sc-check-points">{% if c.status == 'na' %}N/A{% else %}{{ c.earned }}/{{ c.points }}{% endif %}</span>
+            <span class="sr-only">{{ {'pass': 'Passed', 'fail': 'Missing', 'partial': 'Partly', 'na': 'Not applicable'}[c.status] }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
+
+    <section class="sc-grid">
+      {# ===== Active sessions ===== #}
+      <div class="chart-panel sc-panel sc-wide">
+        <div class="panel-head"><h3 class="ad-title-icon">{{ icon('activity') }}Active Sessions</h3><span class="panel-sub">Active in the last 5 minutes (presence/)</span></div>
+        {% if sessions %}
+        <div class="admin-table-wrap">
+          <table class="admin-table sc-table">
+            <thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Last active</th><th scope="col">IP</th><th scope="col">Device</th><th scope="col">Duration</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+            <tbody>
+              {% for s in sessions %}
+              <tr>
+                <td><strong>{{ s.name }}</strong></td>
+                <td><span class="lg-role lg-role-{{ s.role }}">{{ s.role|capitalize }}</span></td>
+                <td><time title="{{ s.last_active_full }}">{{ s.last_active }}</time></td>
+                <td class="lg-mono">{{ s.ip }}</td>
+                <td>{{ s.device }}</td>
+                <td title="{{ 'Signed in ' ~ s.since if s.since }}">{{ s.duration }}</td>
+                <td><button type="button" class="sc-revoke" disabled title="Future feature: sessions are signed cookies, so revoking one needs a server-side session store">Revoke session</button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}<p class="trend-empty">No one has been active in the last 5 minutes.</p>{% endif %}
+        <p class="admin-note">IP, device and duration come from each user's most recent sign-in in the activity log ("—" if they signed in before logging began). Revoking is a future feature: sessions are signed browser cookies, so cutting one off needs a server-side session store.</p>
+      </div>
+
+      {# ===== Failed logins ===== #}
+      <div class="chart-panel sc-panel sc-wide">
+        <div class="panel-head"><h3 class="ad-title-icon">{{ icon('lock') }}Failed Login Attempts</h3>
+          <a href="{{ url_for('admin_failed_logins_csv') }}" class="ad-btn sc-export" download>{{ icon('download', 15) }}Export</a></div>
+        {% if suspicious_ips %}
+        <p class="sc-suspicious" role="alert">{{ icon('alert', 16) }}Repeated failures in the last 24 hours from: <strong>{{ suspicious_ips|join(', ') }}</strong> (3 or more attempts each).</p>
+        {% endif %}
+        {% if failed %}
+        <p class="panel-sub al-count">Latest {{ failed|length }} of {{ failed_total }}</p>
+        <div class="admin-table-wrap">
+          <table class="admin-table sc-table">
+            <thead><tr><th scope="col">Time</th><th scope="col">Email</th><th scope="col">Reason</th><th scope="col">IP</th><th scope="col">Device</th></tr></thead>
+            <tbody>
+              {% for f in failed %}
+              <tr class="{{ 'is-suspicious' if f.suspicious }}">
+                <td class="lg-mono lg-nowrap"><time title="{{ f.full }}">{{ f.when }}</time></td>
+                <td>{{ f.email }}</td>
+                <td>{{ f.reason }}</td>
+                <td class="lg-mono">{{ f.ip }}{% if f.suspicious %} <span class="sc-flag">repeated</span>{% endif %}</td>
+                <td>{{ f.device }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}<p class="trend-empty">No failed sign-ins recorded.</p>{% endif %}
+        <p class="admin-note">Wrong passwords are rejected by Firebase in the browser and never reach this server, so they aren't counted. Listed: rejected tokens, unregistered accounts and doctors who aren't approved.</p>
+      </div>
+
+      {# ===== Policies ===== #}
+      {% set p = policies %}
+      <div class="chart-panel sc-panel">
+        <div class="panel-head"><h3 class="ad-title-icon">{{ icon('key') }}Security Policies</h3><span class="st-chip st-chip-ref">Read-only</span></div>
+        <dl class="sc-policies">
+          <div><dt>Password minimum length</dt><dd>{{ p.password_min }} characters <small>Firebase Auth + admin forms</small></dd></div>
+          <div><dt>Admin account</dt><dd><code>{{ p.admin_uid }}</code> <small>single UID from .env (ADMIN_UID)</small></dd></div>
+          <div><dt>Admin CSRF token</dt><dd>Per admin session <small>no time-based expiry; cleared at logout</small></dd></div>
+          <div><dt>Session storage</dt><dd>Signed browser cookie <small>Flask default (client-side, not server-side); ends when the browser closes</small></dd></div>
+          <div><dt>Session cookie flags</dt><dd>HttpOnly {{ 'on' if p.cookie_httponly else 'off' }} · Secure {{ 'on' if p.cookie_secure else 'off' }} · SameSite {{ p.cookie_samesite or 'not set (browsers treat it as Lax)' }}</dd></div>
+          <div><dt>Firebase rules deployed</dt><dd>{% if p.rules_ok %}{{ p.rules_exprs }} rule expressions on {{ p.rules_paths }} paths <small>{{ 'matches database.rules.json' if p.rules_match else 'differs from database.rules.json' }}</small>{% else %}Couldn't be read{% endif %}</dd></div>
+        </dl>
+      </div>
+
+      {# ===== Access control audit ===== #}
+      {% set a = access %}
+      <div class="chart-panel sc-panel">
+        <div class="panel-head"><h3 class="ad-title-icon">{{ icon('users') }}Access Control Audit</h3></div>
+        <div class="sc-roles">
+          <div><strong>{{ a.patients }}</strong><span>Patients</span><small>{{ a.patients_active }} active{% if a.patients_suspended %} · {{ a.patients_suspended }} suspended{% endif %}</small></div>
+          <div><strong>{{ a.doctors }}</strong><span>Doctors</span><small>{% for s, n in a.doctor_status.items() if n %}{{ n }} {{ s }}{{ ' · ' if not loop.last }}{% endfor %}</small></div>
+          <div><strong>{{ a.admins }}</strong><span>Admin{{ 's' if a.admins != 1 }}</span><small>{{ 'as configured' if a.admins == 1 else 'check ADMIN_UID' }}</small></div>
+        </div>
+        <ul class="sc-warnings">
+          {% if a.unassigned %}<li class="is-warn">{{ icon('alert', 15) }}<span><strong>{{ a.unassigned|length }} active patient{{ 's' if a.unassigned|length != 1 }} without an assigned doctor:</strong> {{ a.unassigned|join(', ') }}</span></li>{% endif %}
+          {% if a.bad_assignment %}<li class="is-warn">{{ icon('alert', 15) }}<span><strong>Assigned to a doctor who isn't approved (or no longer exists):</strong> {{ a.bad_assignment|join(', ') }}</span></li>{% endif %}
+          {% for d in a.overloaded %}<li class="is-bad">{{ icon('alert', 15) }}<span><strong>Dr. {{ d.name }}</strong> has {{ d.count }} patients (limit {{ doctor_limit }}).</span></li>{% endfor %}
+          {% if not a.unassigned and not a.bad_assignment and not a.overloaded %}<li class="is-ok">{{ icon('check', 15) }}<span>Every active patient has an approved doctor, and no doctor has more than {{ doctor_limit }} patients.</span></li>{% endif %}
+        </ul>
+        {% if a.load %}<p class="admin-note">Patients per doctor: {% for d in a.load %}Dr. {{ d.name }} {{ d.count }}{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+      </div>
+
+      {# ===== Recommendations ===== #}
+      <div class="chart-panel sc-panel sc-wide">
+        <div class="panel-head"><h3 class="ad-title-icon">{{ icon('list') }}Recommendations</h3>
+          <span class="panel-sub">{{ recommendations|selectattr(0)|list|length }} of {{ recommendations|length }} in place</span></div>
+        <ul class="sc-recs">
+          {% for ok, label, detail in recommendations %}
+          <li class="{{ 'is-done' if ok else 'is-todo' }}">
+            <span class="sc-rec-mark" aria-hidden="true">{{ icon('check' if ok else 'alert', 14) }}</span>
+            <span><strong>{{ label }}</strong><small>{{ detail }}</small></span>
+            <span class="sc-rec-tag">{{ 'In place' if ok else 'Recommended' }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+</body>
+</html>

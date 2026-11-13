@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Database Browser | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+{% macro icon(name, size=18) -%}
+<svg class="ad-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'database' %}<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+{%- elif name == 'external' %}<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+{%- elif name == 'users' %}<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+{%- elif name == 'activity' %}<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+{%- elif name == 'hdd' %}<line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/>
+{%- elif name == 'lock' %}<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+{%- elif name == 'search' %}<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+{%- elif name == 'download' %}<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+{%- elif name == 'up' %}<polyline points="15 18 9 12 15 6"/>
+{%- elif name == 'copy' %}<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+{%- elif name == 'folder' %}<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+{%- endif %}</svg>
+{%- endmacro %}
+
+{# One value: coloured by type; long strings get a "Show more" #}
+{% macro value(v) -%}
+{%- if v.type == 'string' -%}
+  {%- if v.long %}<span class="db-str">"{{ v.preview }}…"</span><details class="db-more"><summary>Show more ({{ v.value|length }} chars)</summary><span class="db-str">"{{ v.value }}"</span></details>
+  {%- else %}<span class="db-str">"{{ v.value }}"</span>{% endif -%}
+{%- elif v.type == 'number' %}<span class="db-num">{{ v.value }}</span>
+{%- elif v.type == 'boolean' %}<span class="db-bool">{{ v.value }}</span>
+{%- elif v.type == 'masked' %}<span class="db-masked" title="{{ 'Secret values are never shown' if v.label == '***hidden***' else 'Hidden to protect patient privacy' }}">{{ v.label or '***hidden***' }}</span>
+{%- else %}<span class="db-null">null</span>{% endif -%}
+{%- endmacro %}
+
+{% macro copy_value(v) -%}
+{%- if v.type == 'string' %}{{ v.value }}{% elif v.type in ('number', 'boolean') %}{{ v.value }}{% elif v.type == 'null' %}null{% endif -%}
+{%- endmacro %}
+
+{# Recursive JSON tree #}
+{% macro render_tree(node, depth=0) -%}
+{% if node['items'] %}
+<ul class="db-tree" role="{{ 'tree' if depth == 0 else 'group' }}">
+  {% for key, child in node['items'] %}
+  <li role="treeitem">
+    {% if child.type in ('object', 'array') and not child.stub and child['items'] %}
+    <details class="db-branch"{% if depth == 0 %} open{% endif %}>
+      <summary class="db-row"><span class="db-key">{{ key }}</span><span class="db-meta">{{ '{' if child.type == 'object' else '[' }}{{ child.count }} {{ 'key' if child.type == 'object' else 'item' }}{{ 's' if child.count != 1 }}{{ '}' if child.type == 'object' else ']' }}</span>
+        <a class="db-open" href="{{ url_for('admin_database', path=child.path) }}" title="Open {{ child.path }}">open</a>
+        <button type="button" class="db-copy" data-copy="{{ child.path }}" title="Copy path">{{ icon('copy', 13) }}</button></summary>
+      {{ render_tree(child, depth + 1) }}
+    </details>
+    {% elif child.type in ('object', 'array') %}
+    <div class="db-row"><span class="db-key">{{ key }}</span>
+      {% if child.count %}<a class="db-meta db-stub" href="{{ url_for('admin_database', path=child.path) }}">{{ '{' if child.type == 'object' else '[' }}{{ child.count }} {{ 'key' if child.type == 'object' else 'item' }}{{ 's' if child.count != 1 }}{{ '}' if child.type == 'object' else ']' }} → open</a>
+      {% else %}<span class="db-empty-val">(empty)</span>{% endif %}
+      <button type="button" class="db-copy" data-copy="{{ child.path }}" title="Copy path">{{ icon('copy', 13) }}</button></div>
+    {% else %}
+    <div class="db-row"><span class="db-key">{{ key }}</span><span class="db-colon">:</span><span class="db-val">{{ value(child) }}</span>
+      {% if child.type != 'masked' %}<button type="button" class="db-copy" data-copy="{{ copy_value(child) }}" title="Copy value">{{ icon('copy', 13) }}</button>{% endif %}</div>
+    {% endif %}
+  </li>
+  {% endfor %}
+  {% if node.hidden %}<li class="db-limit">Showing {{ node['items']|length }} of {{ node.count }}. <a href="{{ url_for('admin_database', path=node.path) }}">Open this path</a> or use the path input to go deeper.</li>{% endif %}
+</ul>
+{% else %}
+<p class="db-empty-val db-pad">(empty)</p>
+{% endif %}
+{%- endmacro %}
+
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+
+  <main class="main-area">
+{% include '_admin_header.html' %}
+
+    <section class="ad-head">
+      <div>
+        <h1>Database Browser</h1>
+        <p>Read-only view of the Firebase Realtime Database</p>
+      </div>
+      <div class="ad-head-actions db-head-actions">
+        <span class="db-project" title="Firebase project ID">{{ icon('database', 15) }}{{ project_id }}</span>
+        <a href="{{ console_url }}" class="ad-btn" target="_blank" rel="noopener noreferrer">{{ icon('external', 16) }}Open in Firebase Console</a>
+      </div>
+    </section>
+
+    <p class="db-banner" role="note">{{ icon('lock', 17) }}This is a read-only view. For editing, use the Firebase Console with proper permissions. Secret values (API key hashes, passwords, tokens) are always hidden.</p>
+    <p class="db-privacy" role="note">Clinical content (chats, notes, assessment answers) is masked to protect patient privacy. Scores and metadata remain visible for infrastructure monitoring.</p>
+
+    {% if unreachable %}
+    <section class="chart-panel db-unreachable" role="alert">
+      <span class="al-empty-icon">{{ icon('database', 26) }}</span>
+      <div><strong>Database unreachable.</strong> Firebase didn't respond, so nothing can be shown right now.
+        <a href="{{ request.full_path }}" class="ad-btn db-retry">Retry</a></div>
+    </section>
+    {% else %}
+
+    <section class="ad-stats al-stats" aria-label="Database totals">
+      <div class="ad-stat ad-stat-green">
+        <span class="ad-stat-label">Total Nodes</span><span class="ad-stat-value">{{ stats.nodes }}</span>
+        <span class="ad-stat-sub">Top-level nodes</span><span class="ad-stat-icon">{{ icon('folder') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-purple">
+        <span class="ad-stat-label">Total Users</span><span class="ad-stat-value">{{ stats.users }}</span>
+        <span class="ad-stat-sub">Entries under users/</span><span class="ad-stat-icon">{{ icon('users') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-blue">
+        <span class="ad-stat-label">Active Sessions</span><span class="ad-stat-value">{{ stats.presence }}</span>
+        <span class="ad-stat-sub">presence/ entries · {{ stats.active }} active in last 5 min</span><span class="ad-stat-icon">{{ icon('activity') }}</span>
+      </div>
+      <div class="ad-stat ad-stat-teal">
+        <span class="ad-stat-label">Database Size</span><span class="ad-stat-value" id="dbSize">—</span>
+        <span class="ad-stat-sub"><button type="button" class="db-link-btn" id="dbSizeBtn" data-url="{{ url_for('admin_database_size') }}">Calculate</button> (downloads the whole database once)</span>
+        <span class="ad-stat-icon">{{ icon('hdd') }}</span>
+      </div>
+    </section>
+
+    <section class="db-split">
+      <nav class="chart-panel db-nodes" aria-label="Top-level nodes">
+        <h3>Nodes</h3>
+        <a href="{{ url_for('admin_database') }}" class="db-node-link{{ ' is-active' if not parts }}"{% if not parts %} aria-current="page"{% endif %}>
+          <span>{{ icon('database', 15) }}/ (root)</span><span class="db-count">{{ stats.nodes }}</span></a>
+        {% for n in tree %}
+        <a href="{{ url_for('admin_database', path=n.name) }}" class="db-node-link{{ ' is-active' if parts and parts[0] == n.name }}"{% if parts and parts[0] == n.name %} aria-current="true"{% endif %}>
+          <span>{{ icon('folder', 15) }}{{ n.name }}</span><span class="db-count">{{ n.count }}</span></a>
+        {% endfor %}
+      </nav>
+
+      <div class="chart-panel db-main">
+        <div class="db-toolbar">
+          {% set parent = '/'.join(parts[:-1]) %}
+          <a href="{{ url_for('admin_database', path=parent) if parts else '#' }}" class="ad-btn db-back{{ ' is-disabled' if not parts }}"{% if not parts %} aria-disabled="true" tabindex="-1"{% endif %}>{{ icon('up', 16) }}Back</a>
+          <form method="get" action="{{ url_for('admin_database') }}" class="db-path-form">
+            <label class="sr-only" for="dbPath">Path</label>
+            <span class="db-path-prefix">/</span><input id="dbPath" name="path" value="{{ path }}" placeholder="users/uid/assessments" spellcheck="false" autocomplete="off">
+            <button type="submit" class="admin-filter-button">Go</button>
+          </form>
+          <a href="{{ url_for('admin_database_export', path=path) }}" class="ad-btn" download>{{ icon('download', 16) }}Export Current Node</a>
+        </div>
+        {% if path_error %}<p class="st-error" role="alert">{{ path_error }} Showing the root instead.</p>{% endif %}
+
+        <nav class="db-crumbs" aria-label="Path">
+          <a href="{{ url_for('admin_database') }}">root</a>
+          {% for p in parts %}<span aria-hidden="true">/</span>{% if loop.last %}<strong aria-current="location">{{ p }}</strong>{% else %}<a href="{{ url_for('admin_database', path='/'.join(parts[:loop.index])) }}">{{ p }}</a>{% endif %}{% endfor %}
+        </nav>
+
+        <form method="get" action="{{ url_for('admin_database') }}" class="db-search">
+          <input type="hidden" name="path" value="{{ path }}">
+          <span class="al-search-box">{{ icon('search', 16) }}<input type="search" name="q" value="{{ query }}" placeholder="Find keys in {{ ('/' ~ path) if path else 'the whole database' }} (wildcards * ? allowed)" maxlength="100"></span>
+          <button type="submit" class="admin-filter-button">Search</button>
+          {% if query %}<a href="{{ url_for('admin_database', path=path) }}" class="admin-clear">Clear</a>{% endif %}
+        </form>
+
+        {% if query %}
+        <section class="db-results" aria-label="Search results">
+          <h4>{{ results|length }}{{ '+' if results|length >= 50 }} key{{ 's' if results|length != 1 }} matching "{{ query }}"{% if results|length >= 50 %} (first 50){% endif %}</h4>
+          {% if results %}
+          <ul>{% for r in results %}<li><a href="{{ url_for('admin_database', path=r.path) }}" class="db-key">{{ r.path }}</a><span class="db-result-preview">{{ r.preview }}</span></li>{% endfor %}</ul>
+          {% else %}<p class="db-empty-val">No keys match.</p>{% endif %}
+        </section>
+        {% endif %}
+
+        {% if size_bytes and size_bytes > 1048576 %}
+        <p class="db-size-warning">This node is {{ '%.1f'|format(size_bytes / 1048576) }} MB{{ '+' if size_partial }}: exporting it produces a large file.</p>
+        {% endif %}
+        {% if total_children and total_children > child_limit %}
+        <p class="db-limit db-limit-top">Showing {{ child_limit }} of {{ total_children }}. Use the path input to navigate deeper.</p>
+        {% endif %}
+
+        <div class="db-view">
+          {% if parts and not exists %}
+          <p class="db-empty-val db-pad">(empty) Nothing is stored at /{{ path }}.</p>
+          {% elif node.type in ('object', 'array') %}
+          {{ render_tree(node) }}
+          {% else %}
+          <div class="db-row db-single"><span class="db-key">{{ parts[-1] }}</span><span class="db-colon">:</span><span class="db-val">{{ value(node) }}</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+    {% endif %}
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin_database.js') }}"></script>
+</body>
+</html>
