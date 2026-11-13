@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, has_request_context
 import firebase_admin
 from firebase_admin import credentials, auth, db
 import os
@@ -544,10 +544,15 @@ def verify_token():
 
         if not isinstance(profile, dict):
             # Signed in to Firebase (e.g. first Google sign-in) but never registered here
+            activity_log('login_failed', 'Sign-in failed: no registered profile', 'failed',
+                         {'email': email, 'reason': 'not_registered'}, user={'uid': uid, 'name': email or 'Unknown', 'role': 'guest'})
             return jsonify({'success': False, 'needs_registration': True,
                             'error': 'User profile not found. Please create your account first.'}), 404
 
         if profile.get('role') == 'doctor' and profile.get('status') != 'approved':
+            activity_log('login_failed', f"Sign-in blocked: doctor account {profile.get('status') or 'not approved'}", 'failed',
+                         {'email': email, 'reason': f"doctor_{profile.get('status') or 'unknown'}"},
+                         user={'uid': uid, 'name': profile.get('name') or email, 'role': 'doctor'})
             message = ('Your doctor account is pending approval by admin.'
                        if profile.get('status') == 'pending'
                        else 'Your doctor account was not approved. Please contact the administrator.')
@@ -566,10 +571,15 @@ def verify_token():
             db.reference(f"login_counts/{time.strftime('%Y-%m-%d')}").set({'.sv': {'increment': 1}})
         except Exception:
             pass   # analytics only; never block a login on it
+        activity_log('login', 'Logged in', details={'email': email})
 
         return jsonify({'success': True, 'role': profile.get('role'), 'redirect': url_for('dashboard')})
 
     except Exception as e:
+        # Usually an invalid or expired ID token. Wrong passwords never get here: Firebase
+        # rejects them in the browser before any token is sent.
+        activity_log('login_failed', 'Sign-in failed: token rejected', 'failed',
+                     {'reason': type(e).__name__}, user={'uid': 'anonymous', 'name': 'Unknown', 'role': 'guest'})
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
@@ -864,6 +874,15 @@ def submit_facial():
                 full_assessment.update(facial_emotions=emotions, facial_peak=peak, facial_readings=readings)
             db.reference(f'users/{uid}/assessments/{assessment_id}').set(full_assessment)
             db.reference(f'users/{uid}/latest_assessment_id').set(assessment_id)
+            score = compute_composite(full_assessment)
+            level, risk_label, _color = risk_band(score)
+            activity_log('assessment_completed', 'Completed an assessment',
+                         details={'composite': score, 'risk': risk_label, 'facial_scan': 'skipped' if skipped else 'completed'})
+            if level == 'critical':
+                patient_name = session['user'].get('name') or 'a patient'
+                activity_log('critical_alert', f'Critical alert raised for {patient_name} (composite {score}/100)', 'alert',
+                             details={'patient_uid': uid, 'alert_id': alert_display_id(uid, assessment_id), 'composite': score},
+                             user=SYSTEM_ACTOR)
 
         return jsonify({'success': True, 'redirect': url_for('patient_results')})
     except Exception as e:
@@ -1025,8 +1044,18 @@ def wristband_pair():
     if isinstance(old_device, str) and is_safe_key(old_device) and old_device != device_id:
         updates[f'wristband_devices/{old_device}'] = None   # the old key stops working immediately
     db.reference().update(updates)
+    if isinstance(old_device, str) and old_device:
+        activity_log('wristband_revoked', f'Revoked wristband {old_device} and paired {device_id}',
+                     details={'old_device_id': old_device, 'device_id': device_id})
+    else:
+        activity_log('wristband_paired', f'Paired wristband {device_id}', details={'device_id': device_id})
     return jsonify({'success': True, 'device_id': device_id, 'api_key': api_key,
                     'endpoint': url_for('wristband_data', _external=True)})
+
+
+def wristband_device_config():
+    """Sent back with every reading so the ESP32 can follow the admin's System Settings."""
+    return {'interval_s': setting('wristband', 'interval_s'), 'buffer_min': setting('wristband', 'buffer_min')}
 
 
 @app.route('/api/wristband/data', methods=['POST'])
@@ -1070,7 +1099,7 @@ def wristband_data():
     if 'device_ts' in reading:
         key = f"t{reading['device_ts']}"
         if db.reference(f'users/{uid}/wristband_readings/{key}').get(shallow=True) is not None:
-            return jsonify({'success': True, 'duplicate': True})
+            return jsonify({'success': True, 'duplicate': True, 'config': wristband_device_config()})
     else:
         key = f'r{now}{secrets.token_hex(3)}'
 
@@ -1086,7 +1115,7 @@ def wristband_data():
         f'{hour}/heart_rate_sum': increment(values['heart_rate']),
         f'{hour}/temperature_sum': increment(values['temperature']),
     })
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'config': wristband_device_config()})
 
 
 def build_wristband_trend(hourly, now_ms, days):
@@ -1583,6 +1612,62 @@ def track_presence():
         session['_presence_at'] = now
     except Exception:
         pass   # presence is best-effort; never block a page on it
+
+
+# ========== ACTIVITY LOG (admin audit trail) ==========
+# activity_logs/{push_id}: timestamp, user_uid, user_name, user_role, action, action_label, details,
+#   ip, user_agent_summary, status. Only state changes and security events are logged, never page
+#   views, and never passwords, API keys or tokens. Entries are kept indefinitely for now.
+LOG_STATUSES = ('success', 'failed', 'alert', 'info')
+LOG_ROLES = ('patient', 'doctor', 'admin', 'auto', 'guest')   # guest: not identified (e.g. failed sign-in)
+
+
+def user_agent_summary(ua):
+    """'Chrome, Windows' style summary from a User-Agent string (rough, regex-only)."""
+    import re
+    ua = ua or ''
+    if not ua:
+        return 'Unknown'
+    if re.search(r'python-requests|python-urllib|curl|wget|httpie|postman|werkzeug', ua, re.I):
+        return 'Script / API client'
+    browser = next((name for pattern, name in (
+        (r'Edg(e|A|iOS)?/', 'Edge'), (r'OPR/|Opera', 'Opera'), (r'SamsungBrowser/', 'Samsung Internet'),
+        (r'Firefox/|FxiOS/', 'Firefox'), (r'Chrome/|CriOS/', 'Chrome'), (r'Version/[\d.]+.*Safari/', 'Safari'))
+        if re.search(pattern, ua)), 'Other browser')
+    system = next((name for pattern, name in (
+        (r'iPhone|iPad|iPod', 'iOS'), (r'Android', 'Android'), (r'Windows', 'Windows'),
+        (r'Mac OS X|Macintosh', 'macOS'), (r'CrOS', 'ChromeOS'), (r'Linux', 'Linux'))
+        if re.search(pattern, ua)), 'Unknown OS')
+    return f'{browser}, {system}'
+
+
+def activity_log(action, label, status='success', details=None, user=None):
+    """Appends one audit entry. `user` defaults to the signed-in user; pass
+    {'uid': 'system', 'name': 'System', 'role': 'auto'} for automatic events. Never raises."""
+    try:
+        actor = user or (session.get('user') if has_request_context() else None) or {}
+        clean = {}
+        for key, value in (details or {}).items():
+            if value is None or value == '':
+                continue
+            clean[str(key)[:40]] = value if isinstance(value, (int, float, bool)) else str(value)[:300]
+        has_request = has_request_context()
+        db.reference('activity_logs').push({
+            'timestamp': {'.sv': 'timestamp'},
+            'user_uid': str(actor.get('uid') or 'anonymous'),
+            'user_name': str(actor.get('name') or 'Unknown user')[:100],
+            'user_role': actor.get('role') if actor.get('role') in LOG_ROLES else 'auto',
+            'action': action, 'action_label': str(label)[:200],
+            'details': clean or None,
+            'ip': (request.remote_addr or '') if has_request else '',
+            'user_agent_summary': user_agent_summary(request.headers.get('User-Agent', '')) if has_request else 'Server',
+            'status': status if status in LOG_STATUSES else 'info',
+        })
+    except Exception:
+        pass   # auditing must never break the action being audited
+
+
+SYSTEM_ACTOR = {'uid': 'system', 'name': 'System', 'role': 'auto'}
 
 
 def validate_note(data):
@@ -2154,6 +2239,9 @@ def acknowledge_alert(alert_id):
             'acknowledged_at': {'.sv': 'timestamp'}, 'acknowledged_by': me['uid'],
             'acknowledged_by_name': strip_dr(me.get('name')) or 'Doctor', 'note': note.strip(),
         })
+        activity_log('alert_acknowledged', f"Acknowledged {alert['severity']} alert for {alert['patient_name']}",
+                     details={'alert_id': alert_display_id(patient_uid, assessment_id), 'composite': alert['score'],
+                              'note': 'added' if note.strip() else None})
     return jsonify({'success': True, 'already': alert['acknowledged'],
                     'unread_total': alert_unread_total(session['user']['uid'])})
 
@@ -2171,6 +2259,8 @@ def unacknowledge_alert(alert_id):
     if not alert['acknowledged']:
         return chat_json_error('This alert is not acknowledged.', 409)
     db.reference(f'alerts/{patient_uid}/{assessment_id}').delete()
+    activity_log('alert_unacknowledged', f"Marked {alert['severity']} alert for {alert['patient_name']} as unread", 'info',
+                 details={'alert_id': alert_display_id(patient_uid, assessment_id)})
     return jsonify({'success': True, 'unread_total': alert_unread_total(session['user']['uid'])})
 
 
@@ -2860,8 +2950,11 @@ def admin_save_fusion_weights():
     if weights is None:
         flash('Fusion weights must each be between 0 and 1 and add up to exactly 1.00.', 'error')
         return redirect(url_for('admin_ml_models') + '#fusion')
+    old = fusion_weights()
     db.reference('system/fusion_weights').set({**weights, 'updated_at': {'.sv': 'timestamp'},
                                                 'updated_by': session['user']['uid']})
+    fmt = lambda w: ' / '.join(f'{k.upper()} {w[k]:.2f}' for k in FUSION_KEYS)
+    activity_log('fusion_weights_changed', 'Changed fusion weights', details={'from': fmt(old), 'to': fmt(weights)})
     scoring_settings(refresh=True)
     flash('Fusion weights saved. They apply to assessments completed from now on.', 'success')
     return redirect(url_for('admin_ml_models') + '#fusion')
@@ -2877,8 +2970,11 @@ def admin_save_risk_thresholds():
         flash('Thresholds are out of range: Low 10-40, Moderate at least Low + 5 (max 70), '
               'High at least Moderate + 5 (max 90).', 'error')
         return redirect(url_for('admin_ml_models') + '#thresholds')
+    old = risk_thresholds()
     db.reference('system/risk_thresholds').set({**thresholds, 'updated_at': {'.sv': 'timestamp'},
                                                  'updated_by': session['user']['uid']})
+    fmt = lambda t: f"Low ≤{t['low']}, Moderate ≤{t['moderate']}, High ≤{t['high']}"
+    activity_log('risk_thresholds_changed', 'Changed risk thresholds', details={'from': fmt(old), 'to': fmt(thresholds)})
     scoring_settings(refresh=True)
     flash('Risk thresholds saved. All assessments are now classified with the new bands.', 'success')
     return redirect(url_for('admin_ml_models') + '#thresholds')
@@ -3227,6 +3323,294 @@ def admin_analytics_pdf():
         'Content-Disposition': f"attachment; filename=analytics_report_{rng['from_iso']}_to_{rng['to_iso']}.pdf"})
 
 
+# ========== SYSTEM SETTINGS (admin) ==========
+# Stored at system/settings/{alerts,questionnaire,wristband}, plus system/settings/_meta/{section} for
+# "last saved" info. Risk thresholds are NOT here: they belong to the ML Models page.
+# field: (type, default, min, max, choices)
+SETTINGS_SCHEMA = {
+    'alerts': {
+        'hr_max': ('int', 120, 30, 220, None),
+        'gsr_max': ('float', 0.8, 0.1, 5.0, None),
+        'temp_max': ('float', 37.5, 35.0, 42.0, None),
+        'escalation_min': ('int', 30, 5, 180, None),
+    },
+    'questionnaire': {
+        'cooldown_hours': ('int', 24, 0, 168, None),
+        'mandatory_on_login': ('bool', False, None, None, None),
+    },
+    'wristband': {
+        'interval_s': ('choice', 5, None, None, (1, 5, 10, 30, 60)),
+        'buffer_min': ('int', 5, 1, 60, None),
+        'auto_pair': ('bool', False, None, None, None),
+    },
+}
+SETTINGS_SECTIONS = tuple(SETTINGS_SCHEMA)
+SETTINGS_DEFAULTS = {s: {k: spec[1] for k, spec in fields.items()} for s, fields in SETTINGS_SCHEMA.items()}
+_settings_cache = {'at': 0.0, 'values': SETTINGS_DEFAULTS, 'meta': {}, 'stale': False}
+
+
+def parse_setting(spec, raw):
+    """(value, error) for one submitted field; raw is a form string (or None for an unchecked checkbox)."""
+    kind, _default, lo, hi, choices = spec
+    if kind == 'bool':
+        return raw in ('1', 'on', 'true', True), None
+    text = '' if raw is None else str(raw).strip()
+    if not text:
+        return None, 'Required.'
+    try:
+        number = float(text)
+    except ValueError:
+        return None, 'Enter a number.'
+    if number != number or number in (float('inf'), float('-inf')):
+        return None, 'Enter a number.'
+    if kind == 'choice':
+        return (int(number), None) if number in choices else (None, 'Choose one of the listed options.')
+    if kind == 'int':
+        if number != int(number):
+            return None, 'Enter a whole number.'
+        number = int(number)
+    else:
+        number = round(number, 1)
+    if not lo <= number <= hi:
+        return None, f'Must be between {lo:g} and {hi:g}.'
+    return number, None
+
+
+def clean_settings_section(section, raw):
+    """Stored values for one section, falling back to defaults field by field."""
+    raw = raw if isinstance(raw, dict) else {}
+    out = {}
+    for key, spec in SETTINGS_SCHEMA[section].items():
+        value = raw.get(key)
+        if spec[0] == 'bool':
+            out[key] = value if isinstance(value, bool) else spec[1]
+            continue
+        parsed, error = parse_setting(spec, value if isinstance(value, (int, float)) and not isinstance(value, bool) else None)
+        out[key] = spec[1] if error else parsed
+    return out
+
+
+def system_settings(refresh=False):
+    """{'values', 'meta', 'stale'}: cached for SETTINGS_TTL seconds; keeps the last good copy if Firebase fails."""
+    if refresh or time.time() - _settings_cache['at'] > SETTINGS_TTL:
+        try:
+            raw = db.reference('system/settings').get() or {}
+            raw = raw if isinstance(raw, dict) else {}
+            _settings_cache['values'] = {s: clean_settings_section(s, raw.get(s)) for s in SETTINGS_SECTIONS}
+            meta = raw.get('_meta') if isinstance(raw.get('_meta'), dict) else {}
+            _settings_cache['meta'] = {s: m for s, m in meta.items() if s in SETTINGS_SECTIONS and isinstance(m, dict)}
+            _settings_cache['stale'] = False
+        except Exception:
+            _settings_cache['stale'] = True   # show the last known settings with a warning
+        _settings_cache['at'] = time.time()
+    return _settings_cache
+
+
+def setting(section, key):
+    return system_settings()['values'][section][key]
+
+
+def settings_page(values=None, errors=None, status=200):
+    settings = system_settings(refresh=values is None)
+    meta = {s: {'ago': time_ago(m.get('at')), 'full': format_timestamp(m.get('at'), '%d %b %Y, %H:%M'),
+                'by': m.get('by_name') or 'an admin'}
+            for s, m in settings['meta'].items() if isinstance(m.get('at'), (int, float))}
+    t = risk_thresholds()
+    page = admin_page('admin_settings.html', 'settings', admin_load_users(),
+                      values=values or settings['values'], errors=errors or {}, meta=meta,
+                      stale=settings['stale'], defaults=SETTINGS_DEFAULTS, schema=SETTINGS_SCHEMA,
+                      critical_min=t['high'] + 1, high_max=t['high'])
+    return page, status
+
+
+@app.route('/admin/settings')
+@admin_required
+def admin_settings():
+    return settings_page()
+
+
+@app.route('/admin/settings/save', methods=['POST'])
+@admin_required
+def admin_save_settings():
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    target = request.form.get('section', 'all')
+    sections = SETTINGS_SECTIONS if target == 'all' else (target,) if target in SETTINGS_SECTIONS else ()
+    if not sections:
+        flash('Unknown settings section.', 'error')
+        return redirect(url_for('admin_settings'))
+
+    current = system_settings(refresh=True)['values']
+    values = {s: dict(current[s]) for s in SETTINGS_SECTIONS}   # sections not being saved keep their stored values
+    errors = {}
+    for section in sections:
+        for key, spec in SETTINGS_SCHEMA[section].items():
+            value, error = parse_setting(spec, request.form.get(f'{section}.{key}'))
+            if error:
+                errors[f'{section}.{key}'] = error
+                # Re-show what the admin typed so they can correct it
+                values[section][key] = request.form.get(f'{section}.{key}', '')
+            else:
+                values[section][key] = value
+    if errors:
+        flash(f"Nothing was saved: {len(errors)} field{'s need' if len(errors) != 1 else ' needs'} correcting.", 'error')
+        return settings_page(values=values, errors=errors, status=400)
+
+    me = session['user']
+    updates = {}
+    for section in sections:
+        updates[f'system/settings/{section}'] = values[section]
+        updates[f'system/settings/_meta/{section}'] = {'at': {'.sv': 'timestamp'}, 'by_uid': me['uid'],
+                                                      'by_name': me.get('name') or 'Admin'}
+    try:
+        db.reference().update(updates)
+    except Exception:
+        flash('Settings could not be saved: Firebase is unreachable. Please try again.', 'error')
+        return settings_page(values=values, status=503)
+    changed = [f'{s}.{k}: {current[s][k]} → {values[s][k]}' for s in sections for k in SETTINGS_SCHEMA[s]
+               if current[s][k] != values[s][k]]
+    activity_log('settings_saved', 'Saved system settings' + ('' if target == 'all' else f' ({target})'),
+                 details={'sections': ', '.join(sections), 'changes': '; '.join(changed) or 'no changes'})
+    system_settings(refresh=True)
+    flash('Settings saved successfully.', 'success')
+    return redirect(url_for('admin_settings') + ('' if target == 'all' else f'#{target}'))
+
+
+# ========== ADMIN ACTIVITY LOGS ==========
+LOGS_PAGE_SIZE = 50
+LOG_PERIODS = (('all', 'All time'), ('today', 'Today'), ('week', 'This week'), ('month', 'This month'))
+PUSH_CHARS = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz'
+
+
+def push_key_prefix(ms):
+    """The 8-character time prefix of a Firebase push id created at `ms`, for key-range queries
+    (push ids sort by creation time, so no database index is needed)."""
+    ms, chars = int(max(ms, 0)), []
+    for _ in range(8):
+        ms, r = divmod(ms, 64)
+        chars.append(PUSH_CHARS[r])
+    return ''.join(reversed(chars))
+
+
+def format_log_time(ms):
+    """'10:00 AM' today, 'Yesterday 3:05 PM', otherwise '05 Nov 2026, 3:05 PM'."""
+    from datetime import datetime, timedelta
+    if not isinstance(ms, (int, float)):
+        return '—'
+    when, now = datetime.fromtimestamp(ms / 1000), datetime.now()
+    clock = when.strftime('%I:%M %p').lstrip('0')
+    if when.date() == now.date():
+        return clock
+    if when.date() == (now - timedelta(days=1)).date():
+        return f'Yesterday {clock}'
+    return f"{when:%d %b %Y}, {clock}"
+
+
+def display_ip(ip):
+    return 'localhost' if ip in ('127.0.0.1', '::1', 'localhost') else (ip or '—')
+
+
+def admin_activity_data(args):
+    from datetime import datetime, timedelta
+    query = (args.get('q') or '').strip()[:100]
+    role = (args.get('role') or 'all').lower()
+    role = role if role in ('all',) + LOG_ROLES else 'all'
+    status = (args.get('status') or 'all').lower()
+    status = status if status in ('all',) + LOG_STATUSES else 'all'
+    period = (args.get('period') or 'all').lower()
+    period = period if period in dict(LOG_PERIODS) else 'all'
+
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start = {'today': today, 'week': today - timedelta(days=today.weekday()), 'month': today.replace(day=1)}.get(period)
+    ref = db.reference('activity_logs')
+    if start:
+        # Read only from (start - 1h) by push-id time, then filter on the server timestamp exactly
+        raw = ref.order_by_key().start_at(push_key_prefix(start.timestamp() * 1000 - 3_600_000)).get() or {}
+    else:
+        raw = ref.get() or {}
+    raw = raw if isinstance(raw, dict) else {}
+    lo = start.timestamp() * 1000 if start else None
+
+    logs = []
+    for key, e in raw.items():
+        if not isinstance(e, dict) or not isinstance(e.get('timestamp'), (int, float)):
+            continue
+        if lo is not None and e['timestamp'] < lo:
+            continue
+        details = e.get('details') if isinstance(e.get('details'), dict) else {}
+        detail_text = '; '.join(f"{k.replace('_', ' ')}: {v}" for k, v in details.items())
+        logs.append({
+            'id': key, 'timestamp': e['timestamp'], 'when': format_log_time(e['timestamp']),
+            'full_time': format_timestamp(e['timestamp'], '%d %b %Y, %H:%M:%S'),
+            'user_uid': e.get('user_uid', ''), 'user_name': e.get('user_name') or 'Unknown user',
+            'role': e.get('user_role') if e.get('user_role') in LOG_ROLES else 'auto',
+            'action': e.get('action', ''), 'label': e.get('action_label') or e.get('action', ''),
+            'details': details, 'detail_text': detail_text,
+            'ip': e.get('ip', ''), 'ip_display': display_ip(e.get('ip', '')),
+            'device': e.get('user_agent_summary') or 'Unknown',
+            'status': e.get('status') if e.get('status') in LOG_STATUSES else 'info',
+        })
+    logs.sort(key=lambda x: x['timestamp'], reverse=True)
+
+    if query:
+        q = query.lower()
+        logs = [x for x in logs if q in x['user_name'].lower() or q in x['label'].lower() or q in x['action'].lower()
+                or q in x['ip'].lower() or q in x['ip_display'].lower()]
+    if role != 'all':
+        logs = [x for x in logs if x['role'] == role]
+    if status != 'all':
+        logs = [x for x in logs if x['status'] == status]
+    filters = {k: v for k, v in (('q', query), ('role', role), ('status', status), ('period', period)) if v and v != 'all'}
+    return {'logs': logs, 'filters': filters, 'query': query, 'role': role, 'status': status, 'period': period,
+            'period_label': dict(LOG_PERIODS)[period]}
+
+
+def page_window(page, total, edge=1, around=2):
+    """Page numbers to show, with None where a gap ('…') goes: 1 … 4 5 [6] 7 8 … 20."""
+    shown = sorted({n for n in range(1, total + 1)
+                    if n <= edge or n > total - edge or abs(n - page) <= around})
+    out = []
+    for n in shown:
+        if out and n - out[-1] > 1:
+            out.append(None)
+        out.append(n)
+    return out
+
+
+@app.route('/admin/activity-logs')
+@admin_required
+def admin_activity_logs():
+    data = admin_activity_data(request.args)
+    logs = data.pop('logs')
+    total_pages = max(1, -(-len(logs) // LOGS_PAGE_SIZE))
+    try:
+        page = min(max(int(request.args.get('page', 1)), 1), total_pages)
+    except ValueError:
+        page = 1
+    start = (page - 1) * LOGS_PAGE_SIZE
+    return admin_page('admin_activity_logs.html', 'activity', admin_load_users(), **data,
+                      page_logs=logs[start:start + LOGS_PAGE_SIZE], match_total=len(logs), first_index=start + 1,
+                      page=page, total_pages=total_pages, page_numbers=page_window(page, total_pages),
+                      roles=('all',) + LOG_ROLES, statuses=('all',) + LOG_STATUSES, periods=LOG_PERIODS)
+
+
+@app.route('/admin/activity-logs/export.csv')
+@admin_required
+def admin_activity_logs_csv():
+    import csv
+    import io
+    data = admin_activity_data(request.args)
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(['Timestamp', 'User', 'User ID', 'Role', 'Action code', 'Action', 'Details', 'IP', 'Device', 'Status'])
+    for x in data['logs']:
+        writer.writerow([format_timestamp(x['timestamp'], '%Y-%m-%d %H:%M:%S'), csv_cell(x['user_name']), csv_cell(x['user_uid']),
+                         x['role'], x['action'], csv_cell(x['label']), csv_cell(x['detail_text']), csv_cell(x['ip_display']),
+                         csv_cell(x['device']), x['status']])
+    return app.response_class('﻿' + out.getvalue(), mimetype='text/csv', headers={
+        'Content-Disposition': f"attachment; filename=activity_logs_{time.strftime('%Y-%m-%d')}.csv"})
+
+
 # ========== ADMIN ALERTS LOG ==========
 # Every patient's alerts (patient_alerts(), the same source as /doctor/risk-alerts), across all doctors.
 ADMIN_ALERTS_PAGE_SIZE = 25
@@ -3566,6 +3950,8 @@ def admin_create_user():
             'status': status,
             'created_at': {'.sv': 'timestamp'}
         })
+        activity_log('account_created', f'Created {role} account {name}',
+                     details={'account_uid': created_user.uid, 'email': email, 'role': role})
         flash(f'{role.capitalize()} account created. ' +
               ('It is pending approval.' if role == 'doctor' else 'They can now sign in.'), 'success')
     except Exception:
@@ -3574,6 +3960,8 @@ def admin_create_user():
                 auth.delete_user(created_user.uid)
             except Exception:
                 pass
+        activity_log('account_create_failed', f'Failed to create {role} account {name}', 'failed',
+                     details={'email': email, 'role': role})
         flash('The account could not be created. Check that the email is unused and Firebase is available.', 'error')
     return admin_back('admin_accounts')
 
@@ -3621,6 +4009,12 @@ def admin_update_user(user_uid):
             # Keeps the Approvals page's 'recently approved/rejected' lists accurate
             changes.update(reviewed_at={'.sv': 'timestamp'}, reviewed_by=session['user']['uid'])
         user_ref.update(changes)
+        changed = [f for f in ('name', 'email', 'phone', 'status') if changes[f] != profile.get(f, '')]
+        if password:
+            changed.append('password')   # that it changed, never the value
+        activity_log('account_updated', f"Updated {role} account {name}",
+                     details={'account_uid': user_uid, 'changed': ', '.join(changed) or 'no changes',
+                              'status': f"{profile.get('status')} → {status}" if 'status' in changed else None})
         flash('Account updated successfully.', 'success')
     except Exception:
         flash('The account could not be updated. Check that the email is unused and Firebase is available.', 'error')
@@ -3672,8 +4066,12 @@ def admin_delete_user(user_uid):
                     for field in ('assigned_doctor_uid', 'assigned_at', 'assigned_by'):
                         deletions[f'users/{patient_uid}/{field}'] = None
         db.reference().update(deletions)
+        activity_log('account_deleted', f"Deleted {profile.get('role')} account {profile.get('name') or user_uid}",
+                     details={'account_uid': user_uid, 'email': profile.get('email', ''), 'role': profile.get('role')})
         flash('Account and associated app data deleted.', 'success')
     except Exception:
+        activity_log('account_delete_failed', f"Failed to delete account {profile.get('name') or user_uid}", 'failed',
+                     details={'account_uid': user_uid})
         flash('The account could not be fully deleted. Check Firebase Auth and Realtime Database.', 'error')
     return admin_back('admin_accounts')
 
@@ -3798,6 +4196,8 @@ def admin_review_doctor(doctor_uid, decision):
     doctor_ref.update({'status': status, 'reviewed_at': {'.sv': 'timestamp'},
                        'reviewed_by': session['user']['uid']})
     action = 'approved' if decision == 'approve' else 'rejected'
+    activity_log(f'doctor_{action}', f"{action.capitalize()} doctor {strip_dr(doctor.get('name')) or doctor_uid}",
+                 details={'doctor_uid': doctor_uid, 'email': doctor.get('email', '')})
     flash(f"{doctor.get('name') or 'Doctor'} was {action}.", 'success')
     return admin_back('admin_approvals', 'admin_dashboard')
 
@@ -3816,6 +4216,8 @@ def admin_assign_patient_to_doctor():
 @app.route('/logout')
 def logout():
     uid = (session.get('user') or {}).get('uid')
+    if session.get('user'):
+        activity_log('logout', 'Logged out', 'info')
     if is_safe_key(uid):
         try:
             db.reference(f'presence/{uid}').delete()   # stop counting as an active session

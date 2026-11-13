@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Activity Logs | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+{% macro icon(name, size=18) -%}
+<svg class="ad-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'download' %}<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+{%- elif name == 'search' %}<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+{%- elif name == 'list' %}<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+{%- endif %}</svg>
+{%- endmacro %}
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+
+  <main class="main-area">
+{% include '_admin_header.html' %}
+
+    <section class="ad-head">
+      <div>
+        <h1>System Activity Logs</h1>
+        <p>Complete audit trail of all actions</p>
+      </div>
+      <div class="ad-head-actions lg-head-actions">
+        <label class="lg-period">
+          <span class="sr-only">Date range</span>
+          <select name="period" form="logFilters" aria-label="Date range">
+            {% for v, label in periods %}<option value="{{ v }}"{{ ' selected' if period == v }}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <a href="{{ url_for('admin_activity_logs_csv', **filters) }}" class="ad-btn" download>{{ icon('download', 16) }}Export Logs</a>
+        <button type="button" class="lg-live" id="liveToggle" role="switch" aria-checked="false"
+                title="Re-checks for new entries every 10 seconds (polling, not a live push)">
+          <span class="lg-live-dot" aria-hidden="true"></span><span class="lg-live-text">Live Mode</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="activity-panel admin-table-panel" id="logPanel">
+      <form method="get" action="{{ url_for('admin_activity_logs') }}" class="admin-filters lg-filters" id="logFilters">
+        <label class="al-search">Search
+          <span class="al-search-box">{{ icon('search', 16) }}<input type="search" name="q" value="{{ query }}" placeholder="User, action or IP" maxlength="100"></span>
+        </label>
+        <label>Role<select name="role">{% for v in roles %}<option value="{{ v }}"{{ ' selected' if role == v }}>{{ 'All roles' if v == 'all' else v|capitalize }}</option>{% endfor %}</select></label>
+        <label>Status<select name="status">{% for v in statuses %}<option value="{{ v }}"{{ ' selected' if status == v }}>{{ 'All statuses' if v == 'all' else v|capitalize }}</option>{% endfor %}</select></label>
+        <button type="submit" class="admin-filter-button">Apply</button>
+        {% if filters %}<a href="{{ url_for('admin_activity_logs') }}" class="admin-clear">Clear filters</a>{% endif %}
+      </form>
+
+      <div id="logResults" aria-live="polite">
+        {% if not page_logs %}
+        <div class="al-empty">
+          <span class="al-empty-icon">{{ icon('list', 26) }}</span>
+          <p><strong>No activity logs for this period.</strong>
+            {% if filters %}Try a wider date range or <a href="{{ url_for('admin_activity_logs') }}" class="admin-text-link">clear the filters</a>.{% else %}Entries appear here as people sign in, complete assessments and change settings.{% endif %}</p>
+        </div>
+        {% else %}
+        <p class="panel-sub al-count">Showing {{ first_index }}–{{ first_index + page_logs|length - 1 }} of {{ match_total }} entr{{ 'ies' if match_total != 1 else 'y' }} · {{ period_label }}<span class="lg-updated" id="liveUpdated"></span></p>
+        <div class="admin-table-wrap">
+          <table class="admin-table lg-table">
+            <thead>
+              <tr><th scope="col">Timestamp</th><th scope="col">User</th><th scope="col">Role</th><th scope="col">Action</th>
+                  <th scope="col">Details</th><th scope="col">IP</th><th scope="col">Device</th><th scope="col">Status</th></tr>
+            </thead>
+            <tbody>
+              {% for x in page_logs %}
+              <tr data-id="{{ x.id }}">
+                <td class="lg-mono lg-nowrap"><time datetime="{{ x.timestamp }}" title="{{ x.full_time }}">{{ x.when }}</time></td>
+                <td class="lg-user">{{ x.user_name }}</td>
+                <td><span class="lg-role lg-role-{{ x.role }}">{{ x.role|capitalize }}</span></td>
+                <td class="lg-action">{{ x.label }}</td>
+                <td class="lg-details">
+                  {% if x.details %}
+                  <details>
+                    <summary title="Show all details">{{ x.detail_text }}</summary>
+                    <dl>{% for k, v in x.details.items() %}<div><dt>{{ k.replace('_', ' ') }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>
+                  </details>
+                  {% else %}<span class="lg-none">—</span>{% endif %}
+                </td>
+                <td class="lg-mono lg-nowrap" title="{{ x.ip }}">{{ x.ip_display }}</td>
+                <td class="lg-nowrap">{{ x.device }}</td>
+                <td><span class="lg-status lg-status-{{ x.status }}">{{ x.status|capitalize }}</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if total_pages > 1 %}
+        <nav class="admin-pagination lg-pagination" aria-label="Log pages">
+          {% if page > 1 %}<a href="{{ url_for('admin_activity_logs', page=page - 1, **filters) }}" rel="prev">← Previous</a>{% else %}<span class="is-disabled">← Previous</span>{% endif %}
+          {% for n in page_numbers %}
+            {% if n is none %}<span class="lg-gap" aria-hidden="true">…</span>
+            {% elif n == page %}<span class="is-current" aria-current="page">{{ n }}</span>
+            {% else %}<a href="{{ url_for('admin_activity_logs', page=n, **filters) }}">{{ n }}</a>{% endif %}
+          {% endfor %}
+          {% if page < total_pages %}<a href="{{ url_for('admin_activity_logs', page=page + 1, **filters) }}" rel="next">Next →</a>{% else %}<span class="is-disabled">Next →</span>{% endif %}
+          <form method="get" action="{{ url_for('admin_activity_logs') }}" class="lg-jump">
+            {% for k, v in filters.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+            <label>Go to <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}" aria-label="Page number"></label>
+            <button type="submit">Go</button>
+          </form>
+        </nav>
+        {% endif %}
+        {% endif %}
+      </div>
+
+      <div class="lg-notes">
+        <p><strong>What's recorded:</strong> sign-ins and sign-outs, failed sign-ins the server sees, account and doctor approval changes, wristband pairing, completed assessments, critical alerts, alert acknowledgements, and settings / ML changes. Page views aren't logged, and passwords, API keys and tokens never are.</p>
+        <p><strong>Sign-in failures:</strong> a wrong password is rejected by Firebase in the browser before it reaches this server, so it isn't logged here. Logged failures are rejected tokens, unregistered accounts and doctors who aren't approved.</p>
+        <p><strong>IP addresses</strong> are the direct connection address (shown as "localhost" in development). Behind a proxy they'd be the proxy's address.</p>
+        <p><strong>Retention:</strong> logs are stored indefinitely. For production, consider periodic cleanup (e.g., retain 90 days).</p>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin_activity_logs.js') }}"></script>
+</body>
+</html>
