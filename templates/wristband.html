@@ -61,7 +61,7 @@
       </div>
       {% else %}
       <a href="{{ url_for('patient_order_wristband') }}" class="welcome-badge" style="text-decoration:none;">
-        <span class="badge-label">Action</span>
+        <span class="badge-label">{{ price|pkr }} · Cash on delivery</span>
         <span class="badge-value">🛒 Order Now</span>
       </a>
       {% endif %}
@@ -70,6 +70,33 @@
     {% if wb %}
     {% set wb_window = 'last 24 hours' %}
     {% include '_wristband_panel.html' %}
+    {% endif %}
+
+    {# Not ordered and not paired yet: the product and price come first #}
+    {% if not wb and not order %}
+    <section class="chart-panel wb-price-card" aria-labelledby="wbPriceTitle">
+      <div class="wb-price-main">
+        <div class="wb-device" aria-hidden="true">
+          <svg viewBox="0 0 120 120" width="120" height="120">
+            <rect x="44" y="4" width="32" height="30" rx="8" fill="#0A5A47"/><rect x="44" y="86" width="32" height="30" rx="8" fill="#0A5A47"/>
+            <rect x="26" y="26" width="68" height="68" rx="18" fill="#0F7A5F"/><rect x="34" y="34" width="52" height="52" rx="12" fill="#0B1736"/>
+            <polyline points="40,62 50,62 55,50 62,74 68,58 80,58" fill="none" stroke="#6EE7B7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="wb-price-text">
+          <span class="wb-price-label">PsyMonitor Band v2</span>
+          <h3 id="wbPriceTitle">{{ product }}</h3>
+          <p class="wb-price">{{ price|pkr }}</p>
+          <p class="wb-price-sub">One-time payment · Cash on delivery</p>
+          <a href="{{ url_for('patient_order_wristband') }}" class="wb-order-btn">🛒 Order Now</a>
+          <small class="wb-muted">Delivered in {{ delivery }}. You pay the courier when it arrives.</small>
+        </div>
+      </div>
+      <div class="wb-included">
+        <h4>What's included</h4>
+        <ul>{% for item in included %}<li>{{ item }}</li>{% endfor %}</ul>
+      </div>
+    </section>
     {% endif %}
 
     {# Pairing: credentials the ESP32 uses for POST /api/wristband/data. The API key is shown once. #}
@@ -133,34 +160,16 @@
       <div class="actions-panel">
         <div class="panel-head"><h3>Order Details</h3></div>
         <dl class="wb-details wb-details-single">
-          <div><dt>Product</dt><dd>PsyMonitor Band v2</dd></div>
-          <div><dt>Quantity</dt><dd>1</dd></div>
+          <div><dt>Order reference</dt><dd class="wb-ref">{{ order.ref }}</dd></div>
+          <div><dt>Product</dt><dd>{{ product }} × 1</dd></div>
+          <div><dt>Total</dt><dd class="wb-total">{{ order.price|pkr }}</dd></div>
+          <div><dt>Payment</dt><dd>{{ payment }}{% if order.status != 'delivered' %} <small class="wb-muted">(pay when it arrives)</small>{% endif %}</dd></div>
           <div><dt>Current status</dt><dd><span class="wb-status wb-status-{{ order.status }}">{{ order.status | capitalize }}</span></dd></div>
-          <div><dt>Estimated delivery</dt><dd>3-5 business days</dd></div>
-          <div><dt>Payment</dt><dd>To be confirmed by our team</dd></div>
+          <div><dt>Estimated delivery</dt><dd>{{ delivery }}</dd></div>
         </dl>
       </div>
     </section>
 
-    {% else %}
-    <section class="chart-panel">
-      <div class="panel-head"><h3>What's Inside</h3><span class="panel-sub">PsyMonitor Band v2</span></div>
-      <div class="wb-features">
-        <div class="wb-feature"><span class="wb-feature-icon">🔌</span><strong>ESP32 Core</strong><small>Low-power microcontroller with built-in Wi-Fi</small></div>
-        <div class="wb-feature"><span class="wb-feature-icon">❤</span><strong>Heart Rate Sensor</strong><small>Continuous 24/7 heart rate monitoring</small></div>
-        <div class="wb-feature"><span class="wb-feature-icon">⚡</span><strong>GSR Sensor</strong><small>Galvanic skin response to track stress levels</small></div>
-        <div class="wb-feature"><span class="wb-feature-icon">🌡</span><strong>Temperature Sensor</strong><small>Skin temperature tracking</small></div>
-        <div class="wb-feature"><span class="wb-feature-icon">☁</span><strong>Firebase Sync</strong><small>Real-time data sync with your doctor's dashboard</small></div>
-        <div class="wb-feature"><span class="wb-feature-icon">💧</span><strong>Waterproof</strong><small>Wear it all day, every day</small></div>
-      </div>
-      <div class="wb-cta">
-        <div>
-          <strong>Ready to start monitoring?</strong>
-          <span>Estimated delivery in 3-5 business days. Payment is confirmed by our team.</span>
-        </div>
-        <a href="{{ url_for('patient_order_wristband') }}" class="wb-order-btn">🛒 Order Now →</a>
-      </div>
-    </section>
     {% endif %}
     {% endif %}
   </main>

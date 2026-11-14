@@ -493,6 +493,35 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   background: #0F7A5F; color: #FFFFFF; font-size: 14px; font-weight: 700; transition: background 0.2s;
 }
 .wb-order-btn:hover { background: #0A5A47; }
+
+/* Price card (wristband page, no order yet) */
+.wb-price-card { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; border: 1px solid #A7F3D0; box-shadow: 0 10px 28px rgba(15, 122, 95, 0.08); }
+.wb-price-main { display: flex; align-items: center; gap: 22px; }
+.wb-device { display: flex; align-items: center; justify-content: center; flex: 0 0 150px; height: 150px; border-radius: 20px; background: linear-gradient(145deg, #ECFDF5, #D1FAE5); }
+.wb-price-text { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.wb-price-label { color: #64748B; font-size: 12px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; }
+.wb-price-text h3 { color: #0F172A; font-size: 20px; font-weight: 800; }
+.wb-price { margin: 4px 0 0; color: #0F7A5F; font-size: 36px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.wb-price-sub { margin-bottom: 10px; color: #475569; font-size: 13px; font-weight: 600; }
+.wb-muted { margin-top: 6px; color: #94A3B8; font-size: 12px; font-weight: 500; }
+.wb-included { padding: 16px 18px; border-radius: 12px; background: #F8FAFC; }
+.wb-included h4 { margin-bottom: 10px; color: #0F172A; font-size: 14px; font-weight: 800; }
+.wb-included ul { display: grid; gap: 7px; list-style: none; }
+.wb-included li { display: flex; align-items: flex-start; gap: 8px; color: #334155; font-size: 13.5px; line-height: 1.4; }
+.wb-included li::before {
+  content: '✓'; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; height: 18px; margin-top: 1px;
+  border-radius: 50%; background: #D1FAE5; color: #047857; font-size: 11px; font-weight: 800;
+}
+.wb-total { color: #0F7A5F !important; font-size: 16px !important; font-weight: 800 !important; }
+.wb-ref { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.5px; }
+@media (max-width: 900px) {
+  .wb-price-card { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .wb-price-main { flex-direction: column; align-items: flex-start; }
+  .wb-device { flex-basis: auto; width: 100%; height: 120px; }
+  .wb-order-btn { width: 100%; text-align: center; }
+}
 @media (max-width: 1100px) {
   .wb-features { grid-template-columns: repeat(2, 1fr); }
 }

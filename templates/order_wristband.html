@@ -57,21 +57,58 @@
     background: #FEE2E2; color: #B91C1C; padding: 12px; border-radius: 10px;
     text-align: center; border: 1px solid #FCA5A5; margin-bottom: 16px;
   }
+  .price-summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 22px; padding: 16px 18px; border: 1px solid #A7F3D0; border-radius: 12px; background: #F0FDF9;
+  }
+  .price-summary strong { display: block; color: #0F172A; font-size: 15px; }
+  .price-summary small { color: #475569; font-size: 12.5px; }
+  .price-big { color: #0F7A5F; font-size: 28px; font-weight: 800; white-space: nowrap; }
+  .total-row { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0 14px; padding-top: 12px; border-top: 1px dashed #CBD5E1; }
+  .total-row span { color: #475569; font-size: 14px; font-weight: 600; }
+  .total-row strong { color: #0F7A5F; font-size: 20px; font-weight: 800; }
+  .confirm { display: flex; flex-direction: column; gap: 14px; }
+  .confirm[hidden] { display: none; }
+  .confirm-head { text-align: center; }
+  .confirm-icon { display: inline-flex; align-items: center; justify-content: center; width: 58px; height: 58px; margin-bottom: 8px; border-radius: 50%; background: #D1FAE5; color: #047857; font-size: 28px; font-weight: 800; }
+  .confirm-head h1 { font-size: 22px; font-weight: 800; }
+  .confirm-head h1:focus { outline: none; }   /* focused by script so screen readers announce it */
+  .confirm-head p { color: #64748B; font-size: 14px; }
+  .confirm dl { display: grid; gap: 10px; padding: 16px; border-radius: 12px; background: #F8FAFC; }
+  .confirm dl div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px; font-size: 14px; }
+  .confirm dt { color: #64748B; font-weight: 600; }
+  .confirm dd { color: #0F172A; font-weight: 700; overflow-wrap: anywhere; }
+  .confirm .ref { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.5px; }
+  .confirm .total { color: #0F7A5F; font-size: 17px; }
+  .btn-secondary { display: block; padding: 12px; border: 1px solid #CBD5E1; border-radius: 10px; color: #0F172A; font-weight: 700; text-align: center; text-decoration: none; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; padding: 12px 18px; border-radius: 12px;
+    background: #065F46; color: #FFFFFF; font-size: 14px; font-weight: 700; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
+  }
+  @media (max-width: 520px) {
+    .form-row { grid-template-columns: 1fr; gap: 0; }
+    .confirm dl div { grid-template-columns: 1fr; gap: 2px; }
+  }
 </style>
 </head>
 <body>
 <div class="order-wrap">
   <div class="order-head">
     <h2>⌚ Order Your Wristband</h2>
-    <p>PsyMonitor Band v2 · ESP32 + HR + GSR + Temp + Real-time sync</p>
+    <p>{{ product }} · PsyMonitor Band v2 · ESP32 + HR + GSR + Temp + Real-time sync</p>
   </div>
   <div class="order-body">
+    <div id="orderSection">
+    <div class="price-summary">
+      <div><strong>{{ product }}</strong><small>One-time payment · {{ payment }}</small></div>
+      <span class="price-big">{{ price|pkr }}</span>
+    </div>
     <div class="order-title-row">
       <h1>Delivery Details</h1>
-      <a href="{{ url_for('patient_dashboard') }}" class="close-link">✕</a>
+      <a href="{{ url_for('patient_wristband') }}" class="close-link" aria-label="Cancel and go back">✕</a>
     </div>
 
-    <div id="alertBox" style="display:none;"></div>
+    <div id="alertBox" style="display:none;" role="alert"></div>
 
     <form id="orderForm">
       <div class="form-row">
@@ -112,14 +149,36 @@
 
       <div class="delivery-box">
         <span>Estimated delivery</span>
-        <strong>3-5 business days</strong>
+        <strong>{{ delivery }}</strong>
       </div>
+      <div class="total-row"><span>Total (pay on delivery)</span><strong>{{ price|pkr }}</strong></div>
 
-      <button type="submit" class="btn-submit" id="submitBtn">🛒 Submit Order</button>
-      <p class="confirm-note">Payment &amp; price will be confirmed by our team — [To be confirmed]</p>
+      <button type="submit" class="btn-submit" id="submitBtn">🛒 Place Order · {{ price|pkr }}</button>
+      <p class="confirm-note">No online payment: you pay {{ price|pkr }} in cash when the wristband is delivered.</p>
     </form>
+    </div>
+
+    <section class="confirm" id="confirmSection" hidden aria-live="polite">
+      <div class="confirm-head">
+        <span class="confirm-icon" aria-hidden="true">✓</span>
+        <h1 id="confirmTitle" tabindex="-1">Order placed successfully!</h1>
+        <p>We'll call you to confirm before dispatch. Keep your order reference handy.</p>
+      </div>
+      <dl>
+        <div><dt>Order reference</dt><dd class="ref" id="cRef"></dd></div>
+        <div><dt>Item</dt><dd id="cItem"></dd></div>
+        <div><dt>Total</dt><dd class="total" id="cTotal"></dd></div>
+        <div><dt>Payment method</dt><dd id="cPayment"></dd></div>
+        <div><dt>Deliver to</dt><dd id="cAddress"></dd></div>
+        <div><dt>Phone</dt><dd id="cPhone"></dd></div>
+        <div><dt>Estimated delivery</dt><dd id="cDelivery"></dd></div>
+      </dl>
+      <a href="{{ url_for('patient_wristband') }}" class="btn-submit" style="text-decoration:none;">View my order</a>
+      <a href="{{ url_for('patient_dashboard') }}" class="btn-secondary">Back to dashboard</a>
+    </section>
   </div>
 </div>
+<div class="toast" id="toast" role="status" hidden></div>
 
 <script>
   let selectedSize = 'M';
@@ -133,6 +192,7 @@
 
   const form = document.getElementById('orderForm');
   const submitBtn = document.getElementById('submitBtn');
+  const submitLabel = submitBtn.textContent;
   const alertBox = document.getElementById('alertBox');
 
   function showAlert(msg, success) {
@@ -163,9 +223,23 @@
       });
       const data = await res.json();
       if (data.success) {
-        showAlert('✓ Order placed! Our team will contact you shortly to confirm.', true);
-        submitBtn.textContent = 'Order Placed';
-        setTimeout(() => { window.location.href = data.redirect || '/patient/wristband'; }, 2500);
+        const o = data.order;
+        const set = (id, text) => { document.getElementById(id).textContent = text; };
+        set('cRef', o.ref);
+        set('cItem', `${o.product} × 1 (size ${o.size})`);
+        set('cTotal', o.total);
+        set('cPayment', o.payment);
+        set('cAddress', `${o.fullname}, ${o.address}, ${o.city}`);
+        set('cPhone', o.phone);
+        set('cDelivery', o.delivery);
+        document.getElementById('orderSection').hidden = true;
+        document.getElementById('confirmSection').hidden = false;
+        document.getElementById('confirmTitle').focus();
+        const toast = document.getElementById('toast');
+        toast.textContent = `✓ Order ${o.ref} placed · ${o.total} cash on delivery`;
+        toast.hidden = false;
+        setTimeout(() => { toast.hidden = true; }, 4500);
+        window.scrollTo({ top: 0 });
       } else if (res.status === 409) {
         showAlert(data.error || 'You already have an active order.', false);
         submitBtn.textContent = 'Redirecting...';
@@ -173,12 +247,12 @@
       } else {
         showAlert(data.error || 'Order failed', false);
         submitBtn.disabled = false;
-        submitBtn.textContent = '🛒 Submit Order';
+        submitBtn.textContent = submitLabel;
       }
     } catch (err) {
       showAlert(err.message || 'Error placing order', false);
       submitBtn.disabled = false;
-      submitBtn.textContent = '🛒 Submit Order';
+      submitBtn.textContent = submitLabel;
     }
   });
 </script>

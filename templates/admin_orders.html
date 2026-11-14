@@ -23,6 +23,24 @@
       </div>
     </section>
 
+    <section class="ad-stats or-stats" aria-label="Order revenue">
+      <div class="ad-stat ad-stat-green">
+        <span class="ad-stat-label">Total Revenue</span>
+        <span class="ad-stat-value">{{ revenue|pkr }}</span>
+        <span class="ad-stat-sub">{{ delivered_count }} delivered order{{ 's' if delivered_count != 1 }} × {{ unit_price|pkr }}</span>
+      </div>
+      <div class="ad-stat ad-stat-orange">
+        <span class="ad-stat-label">Awaiting Payment</span>
+        <span class="ad-stat-value">{{ pipeline|pkr }}</span>
+        <span class="ad-stat-sub">{{ open_count }} order{{ 's' if open_count != 1 }} not yet delivered (cash on delivery)</span>
+      </div>
+      <div class="ad-stat ad-stat-blue">
+        <span class="ad-stat-label">Unit Price</span>
+        <span class="ad-stat-value">{{ unit_price|pkr }}</span>
+        <span class="ad-stat-sub">Fixed price, set in the app code</span>
+      </div>
+    </section>
+
     <section class="activity-panel admin-table-panel">
       <details class="admin-create" id="create-order"{{ ' open' if open_create }}>
         <summary class="admin-create-toggle">+ Create wristband order</summary>
@@ -36,6 +54,7 @@
           <label>City<input name="city" maxlength="100" required></label>
           <label>Wrist size<select name="size"><option value="S">S</option><option value="M" selected>M</option><option value="L">L</option></select></label>
           <label>Delivery notes<input name="notes" maxlength="500"></label>
+          <p class="admin-note or-create-note">Price: {{ unit_price|pkr }}, cash on delivery (fixed).</p>
           <button type="submit" class="admin-approve">Create order</button>
         </form>
         {% else %}
@@ -59,7 +78,7 @@
             <tr>
               <td><strong>{{ order.name }}</strong><span class="admin-secondary">{{ order.email }}</span><span class="admin-secondary">{{ order.phone }}</span></td>
               <td>{{ order.address }}{% if order.city %}, {{ order.city }}{% endif %}{% if order.notes %}<span class="admin-secondary">Note: {{ order.notes }}</span>{% endif %}</td>
-              <td>{{ order.size or '—' }}<span class="admin-secondary">{{ order.created_date }}</span></td>
+              <td><strong class="or-price">{{ order.price|pkr }}</strong><span class="admin-secondary">{{ order.ref }} · Size {{ order.size or '—' }}</span><span class="admin-secondary">{{ order.created_date }} · COD</span></td>
               <td><span class="admin-status admin-status-{{ order.status }}">{{ order.status }}</span></td>
               <td class="admin-order-actions">
                 <form method="post" action="{{ url_for('admin_update_order_status', user_uid=order.uid) }}">

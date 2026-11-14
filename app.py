@@ -1004,10 +1004,67 @@ def patient_order_wristband():
     if db.reference(f"wristband_orders/{session['user']['uid']}").get():
         return redirect(url_for('patient_wristband'))
     user_name = session['user'].get('name', '')
-    return render_template('order_wristband.html', user_name=user_name)
+    return render_template('order_wristband.html', user_name=user_name, price=WRISTBAND_PRICE_PKR,
+                           product=WRISTBAND_PRODUCT, delivery=WRISTBAND_DELIVERY, payment=WRISTBAND_PAYMENT)
 
 
 WRISTBAND_STATUSES = ['pending', 'confirmed', 'shipped', 'delivered']
+
+# ========== WRISTBAND PRICING ==========
+# Fixed price, cash on delivery. Set only here: neither patients nor admins can change it,
+# and the server never trusts a price sent by the browser.
+WRISTBAND_PRICE_PKR = 25_000
+WRISTBAND_PRODUCT = 'Mental Wellness Wristband'
+WRISTBAND_DELIVERY = '7-10 business days'
+WRISTBAND_PAYMENT = 'Cash on Delivery'
+WRISTBAND_INCLUDED = ['ESP32-based smart wristband', 'Heart rate monitoring (MAX30102)', 'GSR stress sensor',
+                      'Body temperature sensor (MLX90614)', 'OLED display', '3D printed comfortable strap',
+                      'Companion web app access', '6 months warranty']
+
+
+def format_pkr(amount):
+    """25000 -> 'Rs. 25,000'."""
+    try:
+        return f'Rs. {int(amount):,}'
+    except (TypeError, ValueError):
+        return 'Rs. —'
+
+
+app.jinja_env.filters['pkr'] = format_pkr
+
+
+def order_price(order):
+    """The stored price; orders placed before pricing existed are the standard price."""
+    price = order.get('price') if isinstance(order, dict) else None
+    return price if isinstance(price, int) and not isinstance(price, bool) and price > 0 else WRISTBAND_PRICE_PKR
+
+
+def _base36(n):
+    digits = ''
+    n = int(n)
+    while True:
+        n, r = divmod(n, 36)
+        digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[r] + digits
+        if not n:
+            return digits
+
+
+def new_order_reference():
+    return f'MW-{_base36(int(time.time() * 1000))[-6:]}-{secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ")}{secrets.randbelow(10)}'
+
+
+def order_reference(uid, order):
+    """The stored reference, or a stable one for orders placed before references existed."""
+    if isinstance(order, dict) and order.get('ref'):
+        return order['ref']
+    created = order.get('created_at') if isinstance(order, dict) else None
+    return f"MW-{_base36(created)[-6:] if isinstance(created, (int, float)) else uid[:6].upper()}"
+
+
+def new_order_record(uid, fields):
+    """Order fields plus the server-set price, reference and payment method."""
+    return {**fields, 'uid': uid, 'price': WRISTBAND_PRICE_PKR, 'currency': 'PKR', 'payment_method': 'cod',
+            'ref': new_order_reference(), 'status': 'pending', 'created_at': {'.sv': 'timestamp'}}
 
 
 @app.route('/patient/wristband')
@@ -1024,10 +1081,13 @@ def patient_wristband():
         order = dict(order,
                      status=status,
                      status_index=WRISTBAND_STATUSES.index(status) if status in WRISTBAND_STATUSES else 0,
-                     order_date=format_timestamp(order.get('created_at'), '%d %b %Y, %I:%M %p'))
+                     order_date=format_timestamp(order.get('created_at'), '%d %b %Y, %I:%M %p'),
+                     price=order_price(order), ref=order_reference(uid, order))
 
     return render_template('wristband.html', user_name=user_name, user_initials=user_initials,
-                           order=order, statuses=WRISTBAND_STATUSES, wb=load_wristband_view(uid, 1))
+                           order=order, statuses=WRISTBAND_STATUSES, wb=load_wristband_view(uid, 1),
+                           price=WRISTBAND_PRICE_PKR, product=WRISTBAND_PRODUCT, included=WRISTBAND_INCLUDED,
+                           delivery=WRISTBAND_DELIVERY, payment=WRISTBAND_PAYMENT)
 
 
 # ========== WRISTBAND DEVICE (ESP32) ==========
@@ -1538,22 +1598,25 @@ def submit_wristband_order():
                             'error': 'You already have an active order. View it on the Wristband page.',
                             'redirect': url_for('patient_wristband')}), 409
 
-        order = {
-            'uid': uid,
-            'fullname': data.get('fullname', ''),
-            'phone': data.get('phone', ''),
-            'address': data.get('address', ''),
-            'city': data.get('city', ''),
-            'size': data.get('size', 'M'),
-            'notes': data.get('notes', ''),
-            'status': 'pending',
-            'created_at': {'.sv': 'timestamp'}
-        }
+        data = data if isinstance(data, dict) else {}
+        fields = {k: str(data.get(k) or '').strip() for k in ('fullname', 'phone', 'address', 'city', 'notes')}
+        fields['size'] = str(data.get('size') or 'M').strip().upper()
+        if (not fields['fullname'] or len(fields['fullname']) > 100 or not fields['phone'] or len(fields['phone']) > 30
+                or not fields['address'] or len(fields['address']) > 300 or not fields['city'] or len(fields['city']) > 100
+                or fields['size'] not in ('S', 'M', 'L') or len(fields['notes']) > 500):
+            return jsonify({'success': False, 'error': 'Please fill in your name, phone, address and city, and choose a wrist size.'}), 400
 
-        order_ref = db.reference(f'wristband_orders/{uid}')
-        order_ref.set(order)
+        # Price, reference and payment are set here; anything the browser sends for them is ignored
+        order = new_order_record(uid, fields)
+        db.reference(f'wristband_orders/{uid}').set(order)
+        activity_log('wristband_ordered', f"Ordered a wristband ({format_pkr(order['price'])}, cash on delivery)",
+                     details={'ref': order['ref'], 'price': order['price'], 'city': fields['city']})
 
-        return jsonify({'success': True, 'message': 'Order placed successfully', 'redirect': url_for('patient_wristband')})
+        return jsonify({'success': True, 'message': 'Order placed successfully', 'redirect': url_for('patient_wristband'),
+                        'order': {'ref': order['ref'], 'product': WRISTBAND_PRODUCT, 'total': format_pkr(order['price']),
+                                  'fullname': fields['fullname'], 'phone': fields['phone'], 'address': fields['address'],
+                                  'city': fields['city'], 'size': fields['size'], 'payment': WRISTBAND_PAYMENT,
+                                  'delivery': WRISTBAND_DELIVERY}})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -2851,7 +2914,9 @@ def admin_order_rows(users):
                 'notes': order.get('notes', ''),
                 'status': status if status in WRISTBAND_STATUSES else 'pending',
                 'created_at': created_at if isinstance(created_at, (int, float)) else 0,
-                'created_date': admin_date(created_at)
+                'created_date': admin_date(created_at),
+                'price': order_price(order), 'ref': order_reference(uid, order),
+                'price_assumed': not isinstance(order.get('price'), int),   # placed before prices were stored
             })
     orders.sort(key=lambda order: order['created_at'], reverse=True)
     return orders
@@ -4877,9 +4942,14 @@ def admin_orders_page():
          and uid not in ordered_uids),
         key=lambda p: p['name'].lower())
 
+    delivered = [o for o in orders if o['status'] == 'delivered']
+    open_orders = [o for o in orders if o['status'] != 'delivered']
     return admin_page('admin_orders.html', 'orders', users,
                       orders=[o for o in orders if status_filter == 'all' or o['status'] == status_filter],
                       order_total=len(orders),
+                      revenue=sum(o['price'] for o in delivered), delivered_count=len(delivered),
+                      pipeline=sum(o['price'] for o in open_orders), open_count=len(open_orders),
+                      unit_price=WRISTBAND_PRICE_PKR,
                       status_counts=status_counts,
                       status_filter=status_filter,
                       wristband_statuses=WRISTBAND_STATUSES,
@@ -5106,18 +5176,9 @@ def admin_create_order():
         flash('Complete the delivery details and choose a valid wrist size.', 'error')
         return admin_back('admin_orders')
 
-    order_ref.set({
-        'uid': user_uid,
-        'fullname': fullname,
-        'phone': phone,
-        'address': address,
-        'city': city,
-        'size': size,
-        'notes': notes,
-        'status': 'pending',
-        'created_at': {'.sv': 'timestamp'}
-    })
-    flash('Wristband order created.', 'success')
+    order_ref.set(new_order_record(user_uid, {'fullname': fullname, 'phone': phone, 'address': address,
+                                              'city': city, 'size': size, 'notes': notes}))
+    flash(f'Wristband order created ({format_pkr(WRISTBAND_PRICE_PKR)}, cash on delivery).', 'success')
     return admin_back('admin_orders')
 
 

@@ -150,6 +150,12 @@
   .admin-filters .admin-filter-button, .admin-filters .admin-clear { flex: 1 1 0; justify-content: center; }
 }
 
+/* ===== Wristband orders: revenue + price (templates/admin_orders.html) ===== */
+.ad-stats.or-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.or-price { color: #0F7A5F !important; font-size: 14px !important; }
+.or-create-note { grid-column: 1 / -1; margin-top: 0; }
+@media (max-width: 900px) { .ad-stats.or-stats { grid-template-columns: 1fr; } }
+
 /* ===== Admin 2FA (templates/admin_mfa.html, admin_mfa_verify.html) ===== */
 .mf-card { display: flex; flex-direction: column; gap: 16px; max-width: 760px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05); }
 .mf-steps { display: grid; gap: 6px; padding-left: 20px; color: #334155; font-size: 14px; line-height: 1.55; }
