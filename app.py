@@ -1330,6 +1330,140 @@ JOURNAL_MOODS = ['Great', 'Good', 'Okay', 'Low', 'Struggling']
 JOURNAL_MAX_LENGTH = 2000
 
 
+# ========== WELLNESS GAMES (patient) ==========
+# users/{uid}/game_stats/{game}: plays, last_played, best_score (or best_<level>), total_seconds
+# users/{uid}/gratitude/{push_id}: text, created_at (private: doctors never see it; masked in the admin browser)
+# 'better' says whether a lower or higher score is the best one; None = no score (relaxation only).
+GAMES = {
+    'breathing': {'title': 'Breathing Exercise', 'icon': '🫁', 'color': '#D1FAE5', 'better': None,
+                  'blurb': 'Follow the circle through 4-7-8 breathing to settle your body.'},
+    'memory': {'title': 'Memory Match', 'icon': '🧠', 'color': '#DBEAFE', 'better': 'low',
+               'blurb': 'Flip cards and find matching pairs to sharpen focus.'},
+    'color': {'title': 'Color Focus', 'icon': '🎨', 'color': '#EDE9FE', 'better': 'high',
+              'blurb': 'Tap the colour the word names, not the colour it\'s written in.'},
+    'zen': {'title': 'Zen Garden', 'icon': '🪨', 'color': '#FEF3C7', 'better': None,
+            'blurb': 'Rake sand and place stones in a peaceful garden.'},
+    'bubbles': {'title': 'Bubble Pop', 'icon': '🫧', 'color': '#E0F2FE', 'better': 'high',
+                'blurb': 'Pop slowly rising bubbles: simple, soothing, no pressure.'},
+    'mandala': {'title': 'Mandala Draw', 'icon': '🌸', 'color': '#FCE7F3', 'better': None,
+                'blurb': 'Draw and watch your strokes mirror into a mandala.'},
+    'gratitude': {'title': 'Gratitude Jar', 'icon': '🫙', 'color': '#FFEDD5', 'better': None,
+                  'blurb': 'Drop a note about something good into your jar.'},
+}
+GRATITUDE_MAX = 280
+
+
+def record_game_play(uid, game, duration=None, score=None, level=None):
+    """Updates users/{uid}/game_stats/{game} and returns (stats, is_new_best)."""
+    ref = db.reference(f'users/{uid}/game_stats/{game}')
+    current = ref.get() or {}
+    current = current if isinstance(current, dict) else {}
+    updates = {'plays': {'.sv': {'increment': 1}}, 'last_played': {'.sv': 'timestamp'}}
+    if isinstance(duration, (int, float)):
+        updates['total_seconds'] = {'.sv': {'increment': int(duration)}}
+    new_best = False
+    better = GAMES[game]['better']
+    if better and isinstance(score, (int, float)):
+        key = f'best_{level}' if level else 'best_score'
+        old = current.get(key)
+        if not isinstance(old, (int, float)) or (score < old if better == 'low' else score > old):
+            updates[key] = score
+            new_best = old is not None
+    ref.update(updates)
+    return ref.get() or {}, new_best
+
+
+def gratitude_stats(entries):
+    """Count, current day streak (ending today or yesterday) and an encouraging message."""
+    from datetime import date, timedelta
+    days = {date.fromtimestamp(e['created_at'] / 1000) for e in entries if isinstance(e.get('created_at'), (int, float))}
+    streak, day = 0, date.today()
+    if day not in days:
+        day -= timedelta(days=1)    # a streak still counts until the end of today
+    while day in days:
+        streak += 1
+        day -= timedelta(days=1)
+    n = len(entries)
+    milestones = {1: 'Your first gratitude note. A lovely start.', 10: '10 gratitudes!', 25: '25 gratitudes. Look how full your jar is getting!',
+                  50: '50 gratitudes!', 100: '100 gratitudes! That\'s a lot of good things.'}
+    message = milestones.get(n) or (f'{streak} days streak!' if streak >= 2 else
+                                    'Every small good thing counts.' if n else 'Your jar is waiting for its first note.')
+    return {'count': n, 'streak': streak, 'message': message}
+
+
+def load_gratitude(uid, limit=500):
+    raw = db.reference(f'users/{uid}/gratitude').order_by_key().limit_to_last(limit).get() or {}
+    entries = [{'id': k, 'text': v.get('text', ''), 'created_at': v.get('created_at'),
+                'date': format_timestamp(v.get('created_at'), '%d %b %Y, %I:%M %p')}
+               for k, v in raw.items() if isinstance(v, dict) and isinstance(v.get('text'), str)]
+    entries.sort(key=lambda e: e['created_at'] or 0)
+    return entries
+
+
+@app.route('/patient/games/<game>')
+@login_required
+@role_required('patient')
+def patient_game(game):
+    if game not in GAMES:
+        return redirect(url_for('patient_activities'))
+    stats = db.reference(f"users/{session['user']['uid']}/game_stats/{game}").get() or {}
+    return render_template(f'games/{game}.html', game=game, meta=GAMES[game], stats=stats if isinstance(stats, dict) else {})
+
+
+@app.route('/api/games/complete', methods=['POST'])
+@login_required
+@role_required('patient')
+def game_complete():
+    if not request.is_json:   # JSON only, so a cross-site form can't post it
+        return chat_json_error('Expected a JSON request.', 415)
+    data = request.get_json(silent=True) or {}
+    game = data.get('game')
+    if game not in GAMES or game == 'gratitude':   # gratitude plays are recorded by /api/gratitude/add
+        return chat_json_error('Unknown game.', 400)
+    def number(value, hi):
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= hi else None
+    duration = number(data.get('duration'), 86_400)
+    score = number(data.get('score'), 100_000)
+    level = data.get('level') if data.get('level') in ('easy', 'medium', 'hard') else None
+    stats, new_best = record_game_play(session['user']['uid'], game, duration, score, level)
+    activity_log('game_completed', f"Completed {GAMES[game]['title']}",
+                 details={'game': game, 'duration_s': int(duration) if duration is not None else None,
+                          'score': score, 'level': level})
+    return jsonify({'success': True, 'plays': stats.get('plays', 1), 'new_best': new_best,
+                    'best': stats.get(f'best_{level}' if level else 'best_score')})
+
+
+@app.route('/api/gratitude/add', methods=['POST'])
+@login_required
+@role_required('patient')
+def gratitude_add():
+    if not request.is_json:
+        return chat_json_error('Expected a JSON request.', 415)
+    text = str((request.get_json(silent=True) or {}).get('text') or '').strip()
+    if not text:
+        return chat_json_error('Write something you\'re grateful for first.', 400)
+    if len(text) > GRATITUDE_MAX:
+        return chat_json_error(f'Keep it to {GRATITUDE_MAX} characters or fewer.', 400)
+    uid = session['user']['uid']
+    ref = db.reference(f'users/{uid}/gratitude').push({'text': text, 'created_at': {'.sv': 'timestamp'}})
+    saved = ref.get() or {}
+    record_game_play(uid, 'gratitude')
+    # The note itself stays private: only that one was added is logged
+    activity_log('game_completed', 'Added a note to the Gratitude Jar', details={'game': 'gratitude'})
+    entries = load_gratitude(uid)
+    return jsonify({'success': True, 'entry': {'id': ref.key, 'text': text, 'created_at': saved.get('created_at'),
+                                               'date': format_timestamp(saved.get('created_at'), '%d %b %Y, %I:%M %p')},
+                    'stats': gratitude_stats(entries)})
+
+
+@app.route('/api/gratitude/list')
+@login_required
+@role_required('patient')
+def gratitude_list():
+    entries = load_gratitude(session['user']['uid'])
+    return jsonify({'success': True, 'entries': entries, 'stats': gratitude_stats(entries)})
+
+
 @app.route('/patient/activities')
 @login_required
 @role_required('patient')
@@ -1347,8 +1481,13 @@ def patient_activities():
         'share_with_doctor': entry.get('share_with_doctor') is True
     } for _, entry in sorted(recent.items(), reverse=True)]
 
+    game_stats = db.reference(f'users/{uid}/game_stats').get() or {}
+    game_stats = game_stats if isinstance(game_stats, dict) else {}
+    games = [{'key': key, **meta, 'plays': (game_stats.get(key) or {}).get('plays', 0),
+              'last_played': time_ago((game_stats.get(key) or {}).get('last_played')) if (game_stats.get(key) or {}).get('last_played') else ''}
+             for key, meta in GAMES.items()]
     return render_template('activities.html', user_name=user_name, user_initials=user_initials,
-                           journal=journal, moods=JOURNAL_MOODS, journal_max=JOURNAL_MAX_LENGTH)
+                           journal=journal, moods=JOURNAL_MOODS, journal_max=JOURNAL_MAX_LENGTH, games=games)
 
 
 @app.route('/api/save-journal', methods=['POST'])
@@ -4102,6 +4241,8 @@ DB_PRIVATE_PATHS = (
     (('users', '*', 'clinical_notes', '*', 'title'), '***note hidden***'),
     (('alerts', '*', '*', 'note'), '***note hidden***'),                   # doctor's note when acknowledging an alert
     (('users', '*', 'mfa', 'backup_codes'), '***hidden***'),              # hashed 2FA backup codes (totp_secret_enc is masked by key)
+    (('users', '*', 'gratitude', '*', 'text'), '***gratitude hidden***'),   # Gratitude Jar notes (patient private)
+    (('users', '*', 'journal', '*', 'text'), '***journal hidden***'),       # journal entries (private unless shared)
     (('users', '*', 'assessments', '*', 'phq_answers'), '***answers hidden***'),
     (('users', '*', 'assessments', '*', 'gad_answers'), '***answers hidden***'),
     (('users', '*', 'assessments', '*', 'pss_answers'), '***answers hidden***'),

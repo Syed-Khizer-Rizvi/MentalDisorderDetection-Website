@@ -1,0 +1,16 @@
+{% extends 'games/_layout.html' %}
+{% block game %}
+<p class="gm-lead" style="text-align: center; max-width: 640px;">Drag across the sand to rake slow, curving lines. Switch to <strong>Add Stone</strong> and tap to place stones. There's no score: just take your time.</p>
+<div class="cv-toolbar" role="toolbar" aria-label="Garden tools">
+  <button type="button" class="gm-btn" id="zgRake" aria-pressed="true">〰 Rake Mode</button>
+  <button type="button" class="gm-btn" id="zgStone" aria-pressed="false">🪨 Add Stone</button>
+  <button type="button" class="gm-btn" id="zgSmooth">Smooth Sand</button>
+  <button type="button" class="gm-btn" id="zgClear">Clear All</button>
+  <button type="button" class="gm-btn gm-btn-primary" id="zgDone">I'm done</button>
+</div>
+<div class="cv-wrap zg-wrap" id="zgWrap">
+  <canvas id="zgCanvas" width="1200" height="720" role="img" aria-label="Zen garden sand. Drag to rake lines; in stone mode, tap to place a stone."></canvas>
+</div>
+<p class="gm-note">Works with a mouse, finger or stylus.</p>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/games/zen.js') }}"></script>{% endblock %}

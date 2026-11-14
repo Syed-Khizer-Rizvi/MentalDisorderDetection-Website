@@ -583,6 +583,12 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   background: #0F7A5F; color: #FFFFFF; font-size: 13px; font-weight: 700; transition: background 0.2s;
 }
 .act-play:hover { background: #0A5A47; }
+a.act-play { display: block; text-align: center; }
+.act-play:focus-visible { outline: 2px solid #0F7A5F; outline-offset: 2px; }
+.act-game { transition: transform 0.15s, box-shadow 0.15s; }
+.act-game:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08); }
+.act-game-stat { color: #94A3B8; font-size: 11.5px; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .act-game, .act-game:hover { transition: none; transform: none; } }
 
 .act-sessions { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 .act-session {

@@ -1,0 +1,37 @@
+{% extends 'games/_layout.html' %}
+{% block game %}
+<section class="gm-card br-card" aria-labelledby="brTitle">
+  <h2 id="brTitle" class="sr-only">4-7-8 breathing</h2>
+  <div class="br-setup" id="brSetup">
+    <p class="gm-lead">Breathe <strong>in for 4 seconds</strong>, <strong>hold for 7</strong>, then <strong>breathe out slowly for 8</strong>. This 4-7-8 rhythm slows your heart rate and can ease anxiety. Sit comfortably and follow the circle.</p>
+    <fieldset class="gm-seg">
+      <legend>Session length</legend>
+      {% for n, label in [(3, '3 cycles · 1 min'), (5, '5 cycles · 1.5 min'), (10, '10 cycles · 3 min')] %}
+      <label><input type="radio" name="cycles" value="{{ n }}"{{ ' checked' if n == 5 }}><span>{{ label }}</span></label>
+      {% endfor %}
+    </fieldset>
+    <button type="button" class="gm-btn gm-btn-primary" id="brStart">Start</button>
+  </div>
+
+  <div class="br-stage" aria-hidden="true">
+    <span class="br-ring"></span>
+    <div class="br-circle" id="brCircle"><span class="br-phase" id="brPhaseText">Ready</span><span class="br-count" id="brCount"></span></div>
+  </div>
+  <p class="sr-only" id="brAnnounce" aria-live="assertive"></p>
+  <p class="br-cycle" id="brCycle"></p>
+  <div class="br-progress" aria-hidden="true"><span id="brBar"></span></div>
+  <button type="button" class="gm-btn" id="brStop" hidden>Stop</button>
+
+  <div class="gm-result" id="brDone" hidden>
+    <span class="gm-result-icon" aria-hidden="true">🌿</span>
+    <h2>Session complete</h2>
+    <p id="brDoneText"></p>
+    <div class="gm-row gm-row-center">
+      <button type="button" class="gm-btn gm-btn-primary" id="brAgain">Breathe again</button>
+      <a href="{{ url_for('patient_activities') }}#games" class="gm-btn">Back to Activities</a>
+    </div>
+  </div>
+  <p class="gm-note">If you feel light-headed, stop and breathe normally.</p>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/games/breathing.js') }}"></script>{% endblock %}

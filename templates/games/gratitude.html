@@ -1,0 +1,51 @@
+{% extends 'games/_layout.html' %}
+{% block game %}
+<div class="gj-layout">
+  <section class="gm-card gj-jar-card" aria-labelledby="gjJarTitle">
+    <h2 id="gjJarTitle" class="sr-only">Your gratitude jar</h2>
+    <div class="gj-jar">
+      <svg viewBox="0 0 260 340" aria-hidden="true">
+        <defs>
+          <linearGradient id="gjGlass" x1="0" x2="1"><stop offset="0" stop-color="#E0F2FE" stop-opacity="0.55"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.15"/><stop offset="1" stop-color="#BAE6FD" stop-opacity="0.5"/></linearGradient>
+        </defs>
+        <rect x="70" y="18" width="120" height="26" rx="8" fill="#C08457"/>
+        <rect x="64" y="38" width="132" height="12" rx="6" fill="#A16207"/>
+        <path d="M78 50 Q78 72 50 86 Q22 100 22 140 L22 300 Q22 330 52 330 L208 330 Q238 330 238 300 L238 140 Q238 100 210 86 Q182 72 182 50 Z"
+              fill="url(#gjGlass)" stroke="#7DD3FC" stroke-width="3"/>
+        <path d="M44 150 L44 290" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" opacity="0.6"/>
+      </svg>
+      <div class="gj-notes" id="gjNotes"></div>
+    </div>
+    <p class="gj-more" id="gjMore"></p>
+    <p class="gj-message" id="gjMessage" aria-live="polite">Loading your jar…</p>
+    <button type="button" class="gm-btn" id="gjViewAll">View all</button>
+  </section>
+
+  <section class="gm-card" aria-labelledby="gjFormTitle">
+    <form class="gj-form" id="gjForm">
+      <label for="gjText" id="gjFormTitle">Something I'm grateful for today…</label>
+      <textarea id="gjText" maxlength="{{ 280 }}" placeholder="A kind word, a good meal, a quiet moment…" required></textarea>
+      <span class="gj-count"><span id="gjCount">0</span>/280</span>
+      <p class="gj-error" id="gjError" role="alert" hidden></p>
+      <button type="submit" class="gm-btn gm-btn-primary" id="gjAdd">Drop it in the jar</button>
+    </form>
+    <p class="gm-note" style="margin-top: 14px;">Your notes are private: your doctor can't see them. Tap a note in the jar to read it again.</p>
+  </section>
+</div>
+
+<dialog class="gm-dialog" id="gjNoteDialog" aria-labelledby="gjNoteTitle">
+  <h2 id="gjNoteTitle">A good thing</h2>
+  <time id="gjNoteDate"></time>
+  <p class="gj-note-text" id="gjNoteText"></p>
+  <button type="button" class="gm-btn gm-btn-primary" data-close>Close</button>
+</dialog>
+<dialog class="gm-dialog" id="gjAllDialog" aria-labelledby="gjAllTitle">
+  <h2 id="gjAllTitle">All your gratitudes</h2>
+  <ul class="gj-list" id="gjList"></ul>
+  <button type="button" class="gm-btn gm-btn-primary" data-close>Close</button>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>window.GRATITUDE_URLS = {{ {'list': url_for('gratitude_list'), 'add': url_for('gratitude_add')}|tojson }};</script>
+<script src="{{ url_for('static', filename='js/games/gratitude.js') }}"></script>
+{% endblock %}

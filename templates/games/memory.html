@@ -1,0 +1,32 @@
+{% extends 'games/_layout.html' %}
+{% block game %}
+<section class="gm-card" aria-labelledby="mmTitle">
+  <h2 id="mmTitle" class="sr-only">Memory Match</h2>
+  <div class="gm-row gm-row-center" style="margin-bottom: 14px;">
+    <fieldset class="gm-seg">
+      <legend>Difficulty</legend>
+      {% for v, label in [('easy', 'Easy · 6 pairs'), ('medium', 'Medium · 8 pairs'), ('hard', 'Hard · 10 pairs')] %}
+      <label><input type="radio" name="level" value="{{ v }}"{{ ' checked' if v == 'medium' }}><span>{{ label }}</span></label>
+      {% endfor %}
+    </fieldset>
+    <button type="button" class="gm-btn" id="mmRestart">↻ Shuffle &amp; Restart</button>
+  </div>
+  <div class="gm-stats" style="margin-bottom: 16px;">
+    <div class="gm-stat"><span>Moves</span><strong id="mmMoves">0</strong></div>
+    <div class="gm-stat"><span>Time</span><strong id="mmTime">0:00</strong></div>
+    <div class="gm-stat"><span>Pairs</span><strong id="mmPairs">0/8</strong></div>
+  </div>
+  <div class="mm-grid" id="mmGrid" role="group" aria-label="Cards"></div>
+  <p class="sr-only" id="mmAnnounce" aria-live="polite"></p>
+
+  <div class="gm-result" id="mmDone" hidden>
+    <span class="gm-result-icon" aria-hidden="true">✨</span>
+    <h2>All pairs found!</h2>
+    <p id="mmDoneText"></p>
+    <span class="gm-best" id="mmBest" hidden>New personal best</span>
+    <button type="button" class="gm-btn gm-btn-primary" id="mmAgain">Play again</button>
+  </div>
+  <p class="gm-note" style="text-align: center; margin-top: 14px;">Tip: Tab to a card and press Enter or Space to flip it.</p>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/games/memory.js') }}"></script>{% endblock %}

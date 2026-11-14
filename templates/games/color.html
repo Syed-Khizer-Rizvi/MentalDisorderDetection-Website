@@ -1,0 +1,28 @@
+{% extends 'games/_layout.html' %}
+{% block game %}
+<section class="gm-card cf-card" aria-labelledby="cfTitle">
+  <h2 id="cfTitle" class="sr-only">Color Focus</h2>
+  <p class="gm-lead cf-instructions">A colour word appears in a <em>different</em> colour of ink. Tap the circle for <strong>what the word says</strong>, not the ink colour. Take your time: calm attention matters more than speed.</p>
+  <div class="gm-stats">
+    <div class="gm-stat"><span>Round</span><strong id="cfRound">0/10</strong></div>
+    <div class="gm-stat"><span>Score</span><strong id="cfScore">0</strong></div>
+    <div class="gm-stat"><span>Time</span><strong id="cfTime">0:00</strong></div>
+  </div>
+  <div class="cf-stage" id="cfStage" aria-live="polite">
+    <span class="cf-word" id="cfWord" aria-describedby="cfInk">READY?</span>
+    <span class="sr-only" id="cfInk"></span>
+  </div>
+  <div class="cf-choices" id="cfChoices" role="group" aria-label="Choose the colour the word names"></div>
+  <button type="button" class="gm-btn gm-btn-primary" id="cfStart">Start · 10 rounds</button>
+
+  <div class="gm-result" id="cfDone" hidden>
+    <span class="gm-result-icon" aria-hidden="true">🎯</span>
+    <h2>Nicely focused</h2>
+    <p id="cfDoneText"></p>
+    <span class="gm-best" id="cfBest" hidden>New personal best</span>
+    <button type="button" class="gm-btn gm-btn-primary" id="cfAgain">Play again</button>
+  </div>
+  <p class="gm-note">Keyboard: press 1–4 to choose.</p>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/games/color.js') }}"></script>{% endblock %}

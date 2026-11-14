@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ meta.title }} | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/games.css') }}">
+</head>
+<body class="gm-page gm-{{ game }}">
+  <header class="gm-top">
+    <a href="{{ url_for('patient_activities') }}#games" class="gm-back" aria-label="Back to Activities">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+      <span>Activities</span>
+    </a>
+    <h1><span class="gm-title-icon" style="background: {{ meta.color }};" aria-hidden="true">{{ meta.icon }}</span>{{ meta.title }}</h1>
+    <span class="gm-played">{% if stats.plays %}Played {{ stats.plays }}×{% endif %}</span>
+  </header>
+
+  <main class="gm-main">
+    {% block game %}{% endblock %}
+  </main>
+
+  <div class="gm-toast" id="gmToast" role="status" aria-live="polite" hidden></div>
+
+  <script>window.GAME_CONFIG = {{ {'key': game, 'completeUrl': url_for('game_complete')}|tojson }};</script>
+  <script src="{{ url_for('static', filename='js/games/common.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

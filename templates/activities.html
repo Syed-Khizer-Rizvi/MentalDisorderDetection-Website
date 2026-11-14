@@ -48,30 +48,15 @@
     <section class="chart-panel" id="games">
       <div class="panel-head"><h3>Mindfulness Games</h3><span class="panel-sub">Gentle games to relax and refocus</span></div>
       <div class="act-games">
+        {% for g in games %}
         <div class="act-game">
-          <span class="act-game-icon" style="background:#D1FAE5;">🫁</span>
-          <strong>Breathing Exercise</strong>
-          <small>Follow the expanding circle to slow your breathing.</small>
-          <button type="button" class="act-play" data-coming-soon="Breathing Exercise">▶ Play</button>
+          <span class="act-game-icon" style="background:{{ g.color }};" aria-hidden="true">{{ g.icon }}</span>
+          <strong>{{ g.title }}</strong>
+          <small>{{ g.blurb }}</small>
+          <span class="act-game-stat">{% if g.plays %}{{ 'Notes added' if g.key == 'gratitude' else 'Played' }} {{ g.plays }}× · last {{ g.last_played }}{% else %}Not played yet{% endif %}</span>
+          <a href="{{ url_for('patient_game', game=g.key) }}" class="act-play" aria-label="Play {{ g.title }}">▶ {{ 'Open' if g.key == 'gratitude' else 'Play' }}</a>
         </div>
-        <div class="act-game">
-          <span class="act-game-icon" style="background:#DBEAFE;">🧠</span>
-          <strong>Memory Match</strong>
-          <small>Flip cards and find matching pairs to sharpen focus.</small>
-          <button type="button" class="act-play" data-coming-soon="Memory Match">▶ Play</button>
-        </div>
-        <div class="act-game">
-          <span class="act-game-icon" style="background:#EDE9FE;">🎨</span>
-          <strong>Color Focus</strong>
-          <small>Tap the matching colour to practise calm attention.</small>
-          <button type="button" class="act-play" data-coming-soon="Color Focus">▶ Play</button>
-        </div>
-        <div class="act-game">
-          <span class="act-game-icon" style="background:#FEF3C7;">🪨</span>
-          <strong>Zen Garden</strong>
-          <small>Rake sand and place stones in a peaceful garden.</small>
-          <button type="button" class="act-play" data-coming-soon="Zen Garden">▶ Play</button>
-        </div>
+        {% endfor %}
       </div>
     </section>
 

@@ -1,0 +1,29 @@
+{% extends 'games/_layout.html' %}
+{% block game %}
+<div class="gm-row gm-row-center">
+  <fieldset class="gm-seg">
+    <legend>Mode</legend>
+    <label><input type="radio" name="mode" value="timed" checked><span>60 seconds</span></label>
+    <label><input type="radio" name="mode" value="endless"><span>Endless</span></label>
+  </fieldset>
+  <button type="button" class="gm-btn gm-btn-primary" id="bbStart">Start</button>
+  <button type="button" class="gm-btn" id="bbFinish" hidden>Finish</button>
+</div>
+<div class="gm-stats">
+  <div class="gm-stat"><span>Bubbles popped</span><strong id="bbCount">0</strong></div>
+  <div class="gm-stat"><span id="bbClockLabel">Time left</span><strong id="bbClock">1:00</strong></div>
+</div>
+<div class="bb-stage" id="bbStage" aria-label="Bubble area: bubbles float up from the bottom; tap or press Enter on one to pop it">
+  <p class="bb-hint" id="bbHint">Press Start, then pop the bubbles as they drift up.</p>
+</div>
+<p class="sr-only" id="bbAnnounce" aria-live="polite"></p>
+
+<section class="gm-card gm-result" id="bbDone" hidden>
+  <span class="gm-result-icon" aria-hidden="true">🫧</span>
+  <h2>Nice and calm</h2>
+  <p id="bbDoneText"></p>
+  <span class="gm-best" id="bbBest" hidden>New personal best (60 seconds)</span>
+  <button type="button" class="gm-btn gm-btn-primary" id="bbAgain">Play again</button>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/games/bubbles.js') }}"></script>{% endblock %}

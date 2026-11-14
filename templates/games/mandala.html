@@ -1,0 +1,32 @@
+{% extends 'games/_layout.html' %}
+{% block game %}
+<div class="gm-card" style="display: flex; flex-direction: column; gap: 12px;">
+  <div class="gm-row gm-row-center">
+    <div class="md-swatches" role="radiogroup" aria-label="Colour">
+      {% for name, hex in [('Mint', '#6EE7B7'), ('Sky', '#7DD3FC'), ('Lavender', '#C4B5FD'), ('Rose', '#F9A8D4'), ('Peach', '#FDBA74'), ('Butter', '#FDE68A'), ('Coral', '#FCA5A5'), ('Pearl', '#F1F5F9')] %}
+      <label class="md-swatch" title="{{ name }}"><input type="radio" name="color" value="{{ hex }}" aria-label="{{ name }}"{{ ' checked' if loop.first }}><span style="background: {{ hex }};"></span></label>
+      {% endfor %}
+    </div>
+    <label class="md-size">Brush <input type="range" id="mdSize" min="1" max="24" value="5" aria-label="Brush size"><output id="mdSizeOut">5</output></label>
+  </div>
+  <div class="gm-row gm-row-center">
+    <fieldset class="gm-seg">
+      <legend>Symmetry</legend>
+      {% for n in [4, 6, 8, 12] %}<label><input type="radio" name="axes" value="{{ n }}"{{ ' checked' if n == 8 }}><span>{{ n }} axes</span></label>{% endfor %}
+    </fieldset>
+    <button type="button" class="gm-btn" id="mdMirror" aria-pressed="true">Mirror</button>
+    <button type="button" class="gm-btn" id="mdGuides" aria-pressed="true">Guides</button>
+  </div>
+</div>
+<div class="cv-wrap md-wrap">
+  <canvas id="mdCanvas" width="1000" height="1000" role="img" aria-label="Mandala canvas. Drag to draw; each stroke is repeated around the centre."></canvas>
+  <canvas id="mdGuideCanvas" class="md-guides" width="1000" height="1000" aria-hidden="true"></canvas>
+</div>
+<div class="cv-toolbar">
+  <button type="button" class="gm-btn" id="mdUndo">↶ Undo</button>
+  <button type="button" class="gm-btn" id="mdClear">Clear</button>
+  <button type="button" class="gm-btn" id="mdDownload">⬇ Download</button>
+  <button type="button" class="gm-btn gm-btn-primary" id="mdDone">I'm done</button>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/games/mandala.js') }}"></script>{% endblock %}
