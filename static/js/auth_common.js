@@ -53,7 +53,9 @@ export async function verifyToken(user) {
 
 // Shows a compact success pill above the Sign in / Create account tabs, fades the form
 // (still visible, but no longer clickable) and redirects after a short pause.
-export function showAuthSuccess(message, href, delay = 1500) {
+// The page (and this message) stays on screen until the next page arrives, so a short pause is enough
+// for the message to be seen; a long one only made sign-in feel slow.
+export function showAuthSuccess(message, href, delay = 150) {
   const pill = document.createElement('div');
   pill.className = 'auth-success';
   pill.setAttribute('role', 'status');

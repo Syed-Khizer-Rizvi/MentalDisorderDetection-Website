@@ -150,6 +150,22 @@
   .admin-filters .admin-filter-button, .admin-filters .admin-clear { flex: 1 1 0; justify-content: center; }
 }
 
+/* ===== Consultations (dashboard strip + templates/admin_consultations.html) ===== */
+.ad-consult {
+  display: flex; align-items: center; gap: 10px 22px; flex-wrap: wrap; padding: 14px 18px; border: 1px solid #E2E8F0;
+  border-left: 4px solid #0F7A5F; border-radius: 12px; background: #FFFFFF; color: #475569; font-size: 13.5px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+.ad-consult:hover { border-color: #0F7A5F; }
+.ad-consult.is-alert { border-left-color: #DC2626; background: #FFFBFB; }
+.ad-consult strong { color: #0F172A; font-size: 18px; font-weight: 800; }
+.ad-consult-title { color: #0F172A; font-size: 14px; font-weight: 800; }
+.ad-consult-red strong { color: #DC2626; }
+.ad-consult-link { margin-left: auto; color: #0F7A5F; font-weight: 700; }
+.ac-overdue td:first-child { box-shadow: inset 3px 0 0 #DC2626; }
+.ac-flag { display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px; background: #DC2626; color: #FFFFFF; font-size: 10.5px; font-weight: 800; }
+.ac-hidden { color: #94A3B8; font-style: italic; }
+
 /* ===== Wristband orders: revenue + price (templates/admin_orders.html) ===== */
 .ad-stats.or-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .or-price { color: #0F7A5F !important; font-size: 14px !important; }

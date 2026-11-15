@@ -99,6 +99,15 @@
       </div>
     </section>
 
+    {% set cs = consult_stats %}
+    <a href="{{ url_for('admin_consultations') }}" class="ad-consult {{ 'is-alert' if cs.overdue else '' }}">
+      <span class="ad-consult-title">Consultations</span>
+      <span><strong>{{ cs.pending }}</strong> pending</span>
+      <span class="{{ 'ad-consult-red' if cs.emergency }}"><strong>{{ cs.emergency }}</strong> emergency</span>
+      <span class="{{ 'ad-consult-red' if cs.overdue }}"><strong>{{ cs.overdue }}</strong> emergency unanswered &gt; 30 min</span>
+      <span class="ad-consult-link">View all →</span>
+    </a>
+
     <section class="ad-row">
       <div class="chart-panel ad-risk">
         <div class="panel-head">

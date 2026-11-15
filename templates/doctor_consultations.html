@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consultations | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/consultations.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="{{ url_for('doctor_messages') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('doctor_risk_alerts') }}" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span><span class="nav-badge nav-badge-alert" data-alert-badge{% if not alert_unread_total %} hidden{% endif %}>{{ alert_unread_total if alert_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('doctor_reports') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="{{ url_for('doctor_consultations_page') }}" class="nav-item active" aria-current="page"><span class="nav-icon">📅</span><span class="nav-label">Consultations</span><span class="nav-badge nav-badge-consult{{ ' is-emergency' if consult_emergency_total }}" data-consult-badge{% if not consult_pending_total %} hidden{% endif %}>{{ consult_pending_total }}</span></a>
+      <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="welcome-banner">
+      <div class="welcome-text">
+        <h1>Consultation Requests</h1>
+        <p>Requests from your assigned patients. Accepting or declining also sends your reply to the patient in chat.</p>
+      </div>
+    </section>
+
+    <section class="stats-grid">
+      <div class="stat-card {{ 'stat-orange' if stats.pending else 'stat-low' }}"><div class="stat-icon">⏳</div><div class="stat-content"><span class="stat-label">Pending Requests</span><span class="stat-value">{{ stats.pending }}</span><span class="stat-sub">Waiting for your reply</span></div></div>
+      <div class="stat-card {{ 'stat-critical' if stats.emergency else 'stat-low' }}"><div class="stat-icon">🚨</div><div class="stat-content"><span class="stat-label">Emergency</span><span class="stat-value">{{ stats.emergency }}</span><span class="stat-sub">{{ 'Not answered yet' if stats.emergency else 'None waiting' }}</span></div></div>
+      <div class="stat-card stat-blue"><div class="stat-icon">📅</div><div class="stat-content"><span class="stat-label">Today's Requests</span><span class="stat-value">{{ stats.today }}</span><span class="stat-sub">Received today</span></div></div>
+      <div class="stat-card stat-purple"><div class="stat-icon">✓</div><div class="stat-content"><span class="stat-label">Response Rate</span><span class="stat-value">{{ stats.response_rate if stats.response_rate is not none else '—' }}{% if stats.response_rate is not none %}%{% endif %}</span><span class="stat-sub">Answered {{ stats.answered }} of {{ stats.total }} request{{ 's' if stats.total != 1 }}</span></div></div>
+    </section>
+
+    <section class="chart-panel">
+      <nav class="cs-actions" aria-label="Filter requests" style="margin-bottom: 14px;">
+        {% for t in tabs %}
+        <a href="{{ url_for('doctor_consultations_page', tab=t) }}" class="cs-btn {{ 'cs-btn-primary' if tab == t }}{{ ' cs-btn-danger' if t == 'emergency' and tab != t and tab_counts[t] }}"{% if tab == t %} aria-current="page"{% endif %}>{{ t|capitalize }} · {{ tab_counts[t] }}</a>
+        {% endfor %}
+      </nav>
+
+      {% if rows %}
+      <div class="cs-list">
+        {% for r in rows %}
+        <article class="cs-row u-{{ r.urgency }}">
+          <div class="cs-row-head">
+            <a href="{{ url_for('doctor_patient_detail', patient_uid=r.patient_uid) }}" style="color:#0F172A; font-weight:800;">{{ r.patient_name }}</a>
+            <span class="cs-badge {{ 'cs-type-emergency' if r.type == 'emergency_appointment' else 'cs-type' }}">{{ r.type_label }}</span>
+            <span class="cs-badge cs-u-{{ r.urgency }}">{{ r.urgency_label }}</span>
+            <span class="cs-badge cs-s-{{ r.status }}">{{ r.status_label }}</span>
+          </div>
+          <strong style="color:#0F172A; font-size:15px;">{{ r.subject }}</strong>
+          <div class="cs-meta">
+            <span>Received <b title="{{ r.created_full }}">{{ r.created_ago }}</b> ({{ r.created_full }})</span>
+            {% if r.preferred %}<span>Preferred: <b>{{ r.preferred }}</b></span>{% endif %}
+            {% if r.scheduled %}<span>Scheduled: <b>{{ r.scheduled }}</b></span>{% endif %}
+          </div>
+          <div class="cs-actions">
+            <button type="button" class="cs-btn" data-view>View</button>
+            {% if r.status == 'pending' %}
+            <button type="button" class="cs-btn cs-btn-primary" data-view data-focus="accept">Accept</button>
+            <button type="button" class="cs-btn cs-btn-danger" data-view data-focus="decline">Decline</button>
+            {% endif %}
+          </div>
+          <script type="application/json" class="cs-data">{{ {'id': r.id, 'patient_uid': r.patient_uid, 'patient_name': r.patient_name, 'type_label': r.type_label,
+            'urgency': r.urgency, 'urgency_label': r.urgency_label, 'status': r.status, 'status_label': r.status_label, 'subject': r.subject,
+            'message': r.message, 'created_full': r.created_full, 'preferred': r.preferred, 'scheduled': r.scheduled, 'response': r.response,
+            'responded': r.responded, 'score': r.score, 'score_label': r.score_label if r.score is not none else '', 'score_color': r.score_color if r.score is not none else '',
+            'respond_url': url_for('consultation_respond', cid=r.id), 'chat_url': url_for('doctor_messages', patient_uid=r.patient_uid),
+            'patient_url': url_for('doctor_patient_detail', patient_uid=r.patient_uid)}|tojson }}</script>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="cs-empty">{{ 'No consultation requests yet. When a patient asks for one, it appears here.' if tab == 'all' else 'No ' ~ tab ~ ' requests.' }}</p>
+      {% endif %}
+    </section>
+  </main>
+</div>
+
+<dialog class="cs-dialog" id="csDetail" aria-labelledby="csdTitle" data-min="{{ min_schedule }}">
+  <div class="cs-dialog-head" id="csdHead">
+    <div><h2 id="csdTitle"></h2><p id="csdSub"></p></div>
+    <button type="button" class="cs-close" data-close aria-label="Close">×</button>
+  </div>
+  <div class="cs-dialog-body">
+    <div class="cs-row-head" id="csdBadges"></div>
+    <div class="cs-meta" id="csdMeta"></div>
+    <p class="cs-text" id="csdMessage"></p>
+    <div class="cs-response" id="csdResponse" hidden></div>
+    <form id="csdForm" class="cs-dialog-body" style="padding: 0;" novalidate>
+      <div class="cs-field">
+        <label for="csdReply">Your response <small>(required, sent to the patient and posted in chat)</small></label>
+        <textarea id="csdReply" maxlength="1000" placeholder="e.g. Let's talk on Thursday. Please have your recent sleep times handy."></textarea>
+      </div>
+      <div class="cs-field" id="csdWhenField">
+        <label for="csdWhen">Scheduled time <small>(required to accept)</small></label>
+        <input type="datetime-local" id="csdWhen">
+      </div>
+      <p class="cs-form-error" id="csdError" role="alert" hidden></p>
+      <div class="cs-submit-row">
+        <a class="cs-btn" id="csdChat" href="#">💬 Open chat</a>
+        <button type="button" class="cs-btn cs-btn-danger" data-action="decline">Decline</button>
+        <button type="button" class="cs-btn cs-btn-primary" data-action="accept">Accept + Schedule</button>
+      </div>
+    </form>
+    <div class="cs-submit-row" id="csdDoneRow" hidden>
+      <a class="cs-btn" id="csdChat2" href="#">💬 Open chat</a>
+      <button type="button" class="cs-btn cs-btn-primary" data-action="complete" id="csdComplete">Mark completed</button>
+    </div>
+  </div>
+</dialog>
+<div class="cs-toast" id="csToast" role="status" aria-live="polite" hidden></div>
+
+<script src="{{ url_for('static', filename='js/doctor_consultations.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% include '_chat_badge.html' %}
+</body>
+</html>

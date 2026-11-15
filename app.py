@@ -39,11 +39,11 @@ from flask_limiter.util import get_remote_address
 
 # Endpoints that poll or stream frames: the default 50/hour would break them in normal use
 # (the alert badge polls every minute, Live Mode every 10 s); they're still behind login.
-RATE_LIMIT_EXEMPT = {'static', 'alerts_unread', 'chat_unread', 'chat_token', 'admin_activity_logs'}
+RATE_LIMIT_EXEMPT = {'static', 'alerts_unread', 'chat_unread', 'chat_token', 'admin_activity_logs', 'consultations_badge'}
 RATE_LIMITS = {   # shown on the Security page; applied with @limiter.limit on each route
     'verify_token': '10 per minute', 'register_profile': '5 per hour', 'wristband_pair': '10 per hour',
     'wristband_data': '120 per minute', 'admin_login': '10 per minute', 'admin_mfa_verify': '5 per 15 minutes',
-    'analyze_emotion': '60 per minute',
+    'analyze_emotion': '60 per minute', 'consultation_request': '3 per hour',
 }
 limiter = Limiter(
     get_remote_address, app=app,
@@ -57,6 +57,76 @@ cred = credentials.Certificate('firebase_key.json')
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://mentaldisorderdetection-31d60-default-rtdb.firebaseio.com/'
 })
+
+# ========== FIREBASE CALL HELPERS (speed) ==========
+# Every Realtime Database call is a ~300 ms round trip from here, so pages that made 5-8 calls in a row
+# took 2-3 s. Independent reads now run in parallel, a request never reads the same path twice, and
+# writes that the response doesn't depend on (activity log, counters, presence) run in the background.
+from concurrent.futures import ThreadPoolExecutor
+_READ_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix='fb-read')
+_WRITE_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='fb-write')
+
+
+def run_in_background(fn, *args, **kwargs):
+    """Fire-and-forget (logging, counters, presence). Failures are swallowed: they never affect a response."""
+    def safe():
+        try:
+            fn(*args, **kwargs)
+        except Exception:
+            pass
+    _WRITE_POOL.submit(safe)
+
+
+def fetch_parallel(**calls):
+    """Runs zero-argument callables at the same time: fetch_parallel(a=lambda: ..., b=...) -> {'a': ..., 'b': ...}."""
+    futures = {name: _READ_POOL.submit(fn) for name, fn in calls.items()}
+    return {name: future.result() for name, future in futures.items()}
+
+
+def prefetch(*paths):
+    """Reads several database paths in parallel into this request's cache (see cached_read)."""
+    from flask import g
+    cache = g.setdefault('_db_reads', {})
+    missing = [p for p in dict.fromkeys(paths) if p not in cache]
+    if missing:
+        results = fetch_parallel(**{f'p{i}': (lambda p=p: db.reference(p).get()) for i, p in enumerate(missing)})
+        for i, p in enumerate(missing):
+            cache[p] = results[f'p{i}']
+
+
+def cached_read(path):
+    """db.reference(path).get(), read at most once per request (only for data the request doesn't write)."""
+    from flask import g
+    if not has_request_context():
+        return db.reference(path).get()
+    cache = g.setdefault('_db_reads', {})
+    if path not in cache:
+        cache[path] = db.reference(path).get()
+    return cache[path]
+
+
+def _warm_token_verifier():
+    """Fetches Google's ID-token signing keys at startup, so the first sign-in after a restart doesn't
+    wait ~1 s for them. Uses firebase_admin internals, so any failure is ignored (they're then fetched at sign-in)."""
+    try:
+        from firebase_admin import _token_gen
+        verifier = auth._get_client(None)._token_verifier
+        verifier.request(url=_token_gen.ID_TOKEN_CERT_URI, method='GET')
+    except Exception:
+        pass
+
+
+def _warm_database_connections():
+    """Opens the HTTPS connections that parallel reads use, so the first page after a restart doesn't
+    pay several TLS handshakes. Reads a path that doesn't exist (tiny response)."""
+    try:
+        fetch_parallel(**{f'w{i}': (lambda: db.reference('_connection_warmup').get()) for i in range(8)})
+    except Exception:
+        pass
+
+
+run_in_background(_warm_token_verifier)
+run_in_background(_warm_database_connections)
 
 # ========== FIREBASE WEB CONFIG (for frontend) ==========
 FIREBASE_WEB_CONFIG = {
@@ -550,6 +620,7 @@ def admin_login():
 @app.route('/api/verify-token', methods=['POST'])
 @limiter.limit(RATE_LIMITS['verify_token'])
 def verify_token():
+    started = time.perf_counter()
     try:
         data = request.get_json()
         id_token = data.get('idToken')
@@ -559,7 +630,13 @@ def verify_token():
         email = decoded.get('email', '')
 
         user_ref = db.reference(f'users/{uid}')
-        profile = user_ref.get()
+        # Only the fields sign-in needs, read in parallel: one ~300 ms round instead of downloading
+        # the whole user node (which for a patient includes assessments, wristband readings, journal...)
+        fields = ['role', 'status', 'name', 'email', 'uid', 'created_at'] + (['mfa/totp_secret_enc'] if uid == ADMIN_UID else [])
+        values = fetch_parallel(**{f'f{i}': (lambda f=f: db.reference(f'users/{uid}/{f}').get()) for i, f in enumerate(fields)})
+        found = {f: values[f'f{i}'] for i, f in enumerate(fields) if values[f'f{i}'] is not None}
+        mfa_enrolled = bool(found.pop('mfa/totp_secret_enc', None))
+        profile = found or None   # nothing at all = signed in to Firebase but never registered here
 
         if uid == ADMIN_UID:
             profile = profile if isinstance(profile, dict) else {}
@@ -572,7 +649,8 @@ def verify_token():
             }
             if not profile.get('created_at'):
                 admin_profile['created_at'] = {'.sv': 'timestamp'}
-            user_ref.update(admin_profile)
+            if any(profile.get(k) != v for k, v in admin_profile.items()):
+                user_ref.update(admin_profile)   # only when something changed (normally just the first sign-in)
             profile = {**profile, **admin_profile}
 
         if not isinstance(profile, dict):
@@ -598,7 +676,7 @@ def verify_token():
             'role': profile.get('role', 'patient'),
             'status': profile.get('status', 'active')
         }
-        if uid == ADMIN_UID and mfa_enrolled_profile(profile):
+        if uid == ADMIN_UID and mfa_enrolled:
             # Password accepted, but no session yet: /admin/mfa-verify creates it after the second factor
             session.pop('user', None)
             session['_mfa_pending'] = {'user': user_record, 'at': time.time()}
@@ -607,14 +685,18 @@ def verify_token():
 
         session['user'] = user_record
         session['_login_toast'] = True   # one-time: popped by the next dashboard load
-        try:
-            # Daily login total for the admin analytics "Activities Completed" figure (server-local day)
-            db.reference(f"login_counts/{time.strftime('%Y-%m-%d')}").set({'.sv': {'increment': 1}})
-        except Exception:
-            pass   # analytics only; never block a login on it
-        activity_log('login', 'Logged in', details={'email': email})
+        # Daily login total for the admin analytics "Activities Completed" figure (server-local day);
+        # analytics only, so it's written in the background and never delays the sign-in
+        run_in_background(db.reference(f"login_counts/{time.strftime('%Y-%m-%d')}").set, {'.sv': {'increment': 1}})
+        activity_log('login', 'Logged in', details={'email': email})   # written in the background too
 
-        return jsonify({'success': True, 'role': profile.get('role'), 'redirect': url_for('dashboard')})
+        # Straight to the role's dashboard (skips the /dashboard redirect hop)
+        target = {'patient': 'patient_dashboard', 'doctor': 'doctor_dashboard', 'admin': 'admin_dashboard'}.get(user_record['role'], 'dashboard')
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        app.logger.info('Sign-in for %s took %.0f ms on the server', user_record['role'], elapsed_ms)
+        response = jsonify({'success': True, 'role': user_record['role'], 'redirect': url_for(target)})
+        response.headers['X-Login-Time'] = f'{elapsed_ms:.0f}ms'
+        return response
 
     except Exception as e:
         # Usually an invalid or expired ID token. Wrong passwords never get here: Firebase
@@ -725,17 +807,30 @@ def patient_dashboard():
     user_initials = ''.join([word[0].upper() for word in user_name.split()[:2]]) or 'P'
     uid = session['user']['uid']
 
+    # Round 1, in parallel: everything that only needs the patient's uid (incl. the chat badge count).
+    # Assessment keys are millisecond timestamps, so key order is chronological.
+    recent_future = _READ_POOL.submit(lambda: db.reference(f'users/{uid}/assessments').order_by_key().limit_to_last(7).get())
+    prefetch(f'users/{uid}/assigned_doctor_uid', f'users/{uid}/latest_assessment_id', f'wristband_orders/{uid}',
+             f'users/{uid}/wristband', f'chat_unread/{uid}', 'consultations')
+    recent = recent_future.result() or {}
+
     # Patients without a doctor (registered before assignment existed, or when no doctor
     # was approved yet) are given the least-loaded approved doctor on their next visit
-    doctor_uid = db.reference(f'users/{uid}/assigned_doctor_uid').get()
+    doctor_uid = cached_read(f'users/{uid}/assigned_doctor_uid')
     if not doctor_uid:
         doctor_uid = auto_assign_doctor(uid)
         if doctor_uid:
             assign_doctor(uid, doctor_uid, 'auto')
-    assigned_doctor = load_doctor_summary(doctor_uid)
+    latest_id = cached_read(f'users/{uid}/latest_assessment_id')
 
-    latest_id = db.reference(f'users/{uid}/latest_assessment_id').get()
-    latest = db.reference(f'users/{uid}/assessments/{latest_id}').get() if latest_id else None
+    # Round 2, in parallel: the doctor's card, the wristband chart, and the latest assessment if it
+    # isn't among the 7 recent ones already read
+    wristband_node = cached_read(f'users/{uid}/wristband')
+    round2 = fetch_parallel(
+        doctor=lambda: load_doctor_summary(doctor_uid),
+        wb=lambda: load_wristband_view(uid, 1, node=wristband_node),
+        latest=lambda: (recent.get(str(latest_id)) or db.reference(f'users/{uid}/assessments/{latest_id}').get()) if latest_id else None)
+    assigned_doctor, latest = round2['doctor'], round2['latest']
 
     data = {
         'has_assessment': False, 'phq_score': 0, 'gad_score': 0, 'pss_score': 0,
@@ -767,15 +862,14 @@ def patient_dashboard():
             'assessment_date': date_str
         })
 
-    # Assessment keys are millisecond timestamps, so key order is chronological
-    recent = db.reference(f'users/{uid}/assessments').order_by_key().limit_to_last(7).get() or {}
     risk_trend = build_risk_trend(recent, 7, lambda aid: url_for('patient_history_detail', assessment_id=aid))
-
-    wristband_order = db.reference(f'wristband_orders/{uid}').get()
+    wristband_order = cached_read(f'wristband_orders/{uid}')
 
     return render_template('patient_dashboard.html',
                            user_name=user_name, user_initials=user_initials,
-                           wristband_order=wristband_order, risk_trend=risk_trend, wb=load_wristband_view(uid, 1),
+                           wristband_order=wristband_order, risk_trend=risk_trend, wb=round2['wb'],
+                           consult_rows=[r for r in patient_consultations_light(uid)   # active ones + answers not seen yet
+                                         if r['status'] in ('pending', 'accepted') or r['patient_unread']][:4],
                            assigned_doctor=assigned_doctor,
                            login_just_happened=session.pop('_login_toast', False), **data)
 
@@ -1014,7 +1108,7 @@ WRISTBAND_STATUSES = ['pending', 'confirmed', 'shipped', 'delivered']
 # Fixed price, cash on delivery. Set only here: neither patients nor admins can change it,
 # and the server never trusts a price sent by the browser.
 WRISTBAND_PRICE_PKR = 25_000
-WRISTBAND_PRODUCT = 'Mental Wellness Wristband'
+WRISTBAND_PRODUCT = 'PsyMonitor Band v2'
 WRISTBAND_DELIVERY = '7-10 business days'
 WRISTBAND_PAYMENT = 'Cash on Delivery'
 WRISTBAND_INCLUDED = ['ESP32-based smart wristband', 'Heart rate monitoring (MAX30102)', 'GSR stress sensor',
@@ -1278,10 +1372,11 @@ def build_wristband_trend(hourly, now_ms, days):
     return {'points': points, 'segments': [s for s in segments if ' ' in s], 'labels': labels}
 
 
-def load_wristband_view(uid, days):
-    """Template data for _wristband_panel.html, or None when no wristband is paired."""
+def load_wristband_view(uid, days, node=False):
+    """Template data for _wristband_panel.html, or None when no wristband is paired.
+    `node` is users/{uid}/wristband when the caller already read it."""
     import time
-    wristband = db.reference(f'users/{uid}/wristband').get()
+    wristband = db.reference(f'users/{uid}/wristband').get() if node is False else node
     if not isinstance(wristband, dict) or not wristband.get('device_id'):
         return None
     now = int(time.time() * 1000)
@@ -1633,7 +1728,7 @@ def doctor_identity():
 def load_active_patients(doctor_uid):
     """Summaries of the active patients assigned to doctor_uid (scored on their latest
     assessment) plus every timestamped assessment across them, from one read of users."""
-    users = db.reference('users').get() or {}
+    users = cached_read('users') or {}
 
     patients, recent = [], []
     for uid, u in users.items():
@@ -1872,6 +1967,21 @@ ACTIVE_SESSION_MS = 5 * 60 * 1000  # "active now" window
 
 
 @app.before_request
+def start_timer():
+    from flask import g
+    g._started = time.perf_counter()
+
+
+@app.after_request
+def add_server_timing(response):
+    """Server-Timing header (visible in the browser's DevTools > Network > Timing)."""
+    from flask import g
+    if hasattr(g, '_started'):
+        response.headers['Server-Timing'] = f'app;dur={(time.perf_counter() - g._started) * 1000:.0f}'
+    return response
+
+
+@app.before_request
 def track_presence():
     user = session.get('user')
     if not user or request.endpoint in (None, 'static'):
@@ -1879,11 +1989,9 @@ def track_presence():
     now = time.time()
     if now - session.get('_presence_at', 0) < PRESENCE_WRITE_EVERY or not is_safe_key(user.get('uid')):
         return
-    try:
-        db.reference(f"presence/{user['uid']}").set({'.sv': 'timestamp'})
-        session['_presence_at'] = now
-    except Exception:
-        pass   # presence is best-effort; never block a page on it
+    # Best-effort and written in the background, so it never adds a round trip to a page load
+    session['_presence_at'] = now
+    run_in_background(db.reference(f"presence/{user['uid']}").set, {'.sv': 'timestamp'})
 
 
 # ========== ACTIVITY LOG (admin audit trail) ==========
@@ -1924,7 +2032,9 @@ def activity_log(action, label, status='success', details=None, user=None):
                 continue
             clean[str(key)[:40]] = value if isinstance(value, (int, float, bool)) else str(value)[:300]
         has_request = has_request_context()
-        db.reference('activity_logs').push({
+        # The entry is built now (it needs the request), but written in the background so a
+        # ~300 ms Firebase write never delays the response. The server timestamp is set on write.
+        run_in_background(db.reference('activity_logs').push, {
             'timestamp': {'.sv': 'timestamp'},
             'user_uid': str(actor.get('uid') or 'anonymous'),
             'user_name': str(actor.get('name') or 'Unknown user')[:100],
@@ -2229,7 +2339,10 @@ def update_doctor_profile():
 @role_required('doctor')
 def doctor_dashboard():
     user_name, user_initials = doctor_identity()
+    # One parallel round for the page and both sidebar badges (alerts + chat)
+    prefetch('users', 'alerts', f"chat_unread/{session['user']['uid']}", 'consultations')
     patients, recent = load_active_patients(session['user']['uid'])
+    consult_counts = doctor_consult_counts(session['user']['uid'])
 
     assessed = [p for p in patients if p['composite_score'] is not None]
     distribution = risk_distribution(patients)
@@ -2252,7 +2365,7 @@ def doctor_dashboard():
                            distribution=distribution,
                            distribution_total=len(assessed),
                            top_patients=sorted(assessed, key=lambda p: p['composite_score'], reverse=True)[:3],
-                           recent_assessments=recent,
+                           recent_assessments=recent, consult_counts=consult_counts,
                            login_just_happened=session.pop('_login_toast', False))
 
 
@@ -2387,12 +2500,14 @@ def patient_alerts(patient_uid, patient, acks=None):
 
 def load_doctor_alerts(doctor_uid):
     """Alerts for the doctor's currently assigned, active patients (reassignment removes them)."""
-    users = db.reference('users').get() or {}
+    users = cached_read('users') or {}
+    acks = cached_read('alerts') or {}   # one read for every patient's acknowledgements, not one per patient
+    acks = acks if isinstance(acks, dict) else {}
     alerts = []
     for uid, u in users.items():
         if isinstance(u, dict) and u.get('role') == 'patient' and u.get('status') == 'active' \
                 and patient_assigned_to(u, doctor_uid) and u.get('assessments'):
-            alerts.extend(patient_alerts(uid, u))
+            alerts.extend(patient_alerts(uid, u, acks.get(uid) if isinstance(acks.get(uid), dict) else {}))
     alerts.sort(key=lambda x: x['created_at'], reverse=True)
     return alerts
 
@@ -2625,7 +2740,7 @@ def mark_chat_read(user_uid, chat_id, message_ids=None):
 
 
 def chat_unread_total(user_uid):
-    counts = db.reference(f'chat_unread/{user_uid}').get() or {}
+    counts = cached_read(f'chat_unread/{user_uid}') or {}
     return sum(v for v in counts.values() if isinstance(v, int)) if isinstance(counts, dict) else 0
 
 
@@ -2798,23 +2913,29 @@ def chat_send():
     if not pair:
         return chat_json_error("You don't have access to this conversation.", 403)
     doctor_uid, patient_uid = pair
-    ensure_chat(doctor_uid, patient_uid)
-    recipient = patient_uid if me['uid'] == doctor_uid else doctor_uid
+    msg_key, saved = post_chat_message(doctor_uid, patient_uid, me, text)
+    return jsonify({'success': True, 'message': chat_message_json(msg_key, saved)})
 
-    sender_name = strip_dr(me.get('name')) if me['role'] == 'doctor' else (me.get('name') or 'Patient')
+
+def post_chat_message(doctor_uid, patient_uid, sender, text):
+    """Stores one chat message from `sender` (a session user dict) and bumps the other side's unread count.
+    Used by the chat page and by consultation responses. Returns (message key, saved message)."""
+    chat_id = ensure_chat(doctor_uid, patient_uid)
+    recipient = patient_uid if sender['uid'] == doctor_uid else doctor_uid
+    sender_name = strip_dr(sender.get('name')) if sender.get('role') == 'doctor' else (sender.get('name') or 'Patient')
     msg_ref = db.reference(f'chats/{chat_id}/messages').push({
         'text': text,
-        'sender_uid': me['uid'],
+        'sender_uid': sender['uid'],
         'sender_name': sender_name,
-        'sender_role': me['role'],
+        'sender_role': sender.get('role'),
         'timestamp': {'.sv': 'timestamp'},
-        'read_by': {me['uid']: {'.sv': 'timestamp'}},
+        'read_by': {sender['uid']: {'.sv': 'timestamp'}},
     })
     saved = msg_ref.get() or {}
     db.reference(f'chats/{chat_id}/last_message').set({
-        'text': text[:CHAT_PREVIEW_MAX], 'sender_uid': me['uid'], 'timestamp': saved.get('timestamp') or {'.sv': 'timestamp'}})
+        'text': text[:CHAT_PREVIEW_MAX], 'sender_uid': sender['uid'], 'timestamp': saved.get('timestamp') or {'.sv': 'timestamp'}})
     db.reference(f'chat_unread/{recipient}/{chat_id}').transaction(lambda current: (current or 0) + 1)
-    return jsonify({'success': True, 'message': chat_message_json(msg_ref.key, saved)})
+    return msg_ref.key, saved
 
 
 @app.route('/api/chat/mark-read', methods=['POST'])
@@ -2864,6 +2985,358 @@ def admin_chats():
     return jsonify({'success': False, 'error': 'Chat oversight for administrators is not available yet.'}), 501
 
 
+# ========== CONSULTATION REQUESTS (patient <-> assigned doctor) ==========
+# consultations/{push_id}: patient_uid, patient_name, doctor_uid, type, urgency, subject, message,
+#   preferred_time ('YYYY-MM-DDTHH:MM', local), status, created_at, responded_at, doctor_response,
+#   scheduled_at (ms), patient_unread (true until the patient sees the doctor's response), cancelled_at.
+# Server-side only (database rules deny clients); separate from chat, which stays as it is.
+CONSULT_TYPES = ('consultation', 'emergency_appointment')
+CONSULT_URGENCIES = ('routine', 'urgent', 'emergency')
+CONSULT_STATUSES = ('pending', 'accepted', 'declined', 'completed', 'cancelled')
+CONSULT_SUBJECT_MAX, CONSULT_MESSAGE_MIN, CONSULT_MESSAGE_MAX = 100, 10, 1000
+CONSULT_EMERGENCY_SLA_MS = 30 * 60 * 1000   # admin flags emergencies left unanswered longer than this
+CONSULT_COLORS = {'routine': '#059669', 'urgent': '#EA580C', 'emergency': '#DC2626'}
+
+
+def parse_local_datetime(text):
+    """'YYYY-MM-DDTHH:MM' (an <input type=datetime-local> value, server-local time) -> ms, or None."""
+    from datetime import datetime
+    try:
+        return datetime.strptime(str(text or '').strip()[:16], '%Y-%m-%dT%H:%M').timestamp() * 1000
+    except ValueError:
+        return None
+
+
+def consult_row(cid, c, users=None):
+    """Display-ready consultation for templates (adds labels, colours and formatted times)."""
+    users = users or {}
+    urgency = c.get('urgency') if c.get('urgency') in CONSULT_URGENCIES else 'routine'
+    status = c.get('status') if c.get('status') in CONSULT_STATUSES else 'pending'
+    created = c.get('created_at') if isinstance(c.get('created_at'), (int, float)) else 0
+    preferred_ms = parse_local_datetime(c.get('preferred_time')) if c.get('preferred_time') else None
+    scheduled = c.get('scheduled_at') if isinstance(c.get('scheduled_at'), (int, float)) else None
+    doctor = users.get(c.get('doctor_uid')) if isinstance(users.get(c.get('doctor_uid')), dict) else {}
+    return {
+        'id': cid, 'patient_uid': c.get('patient_uid', ''), 'patient_name': c.get('patient_name') or 'Patient',
+        'patient_initials': ''.join(w[0].upper() for w in (c.get('patient_name') or 'P').split()[:2]),
+        'doctor_uid': c.get('doctor_uid', ''), 'doctor_name': strip_dr(doctor.get('name')) or 'your doctor',
+        'type': c.get('type') if c.get('type') in CONSULT_TYPES else 'consultation',
+        'type_label': 'Emergency appointment' if c.get('type') == 'emergency_appointment' else 'Consultation',
+        'urgency': urgency, 'urgency_label': urgency.capitalize(), 'color': CONSULT_COLORS[urgency],
+        'subject': c.get('subject', ''), 'message': c.get('message', ''),
+        'status': status, 'status_label': status.capitalize(),
+        'created_at': created, 'created_ago': time_ago(created) if created else '—',
+        'created_full': format_timestamp(created, '%d %b %Y, %I:%M %p') if created else '—',
+        'preferred': format_timestamp(preferred_ms, '%a %d %b %Y, %I:%M %p') if preferred_ms else '',
+        'scheduled_at': scheduled, 'scheduled': format_timestamp(scheduled, '%a %d %b %Y, %I:%M %p') if scheduled else '',
+        'responded': format_timestamp(c.get('responded_at'), '%d %b %Y, %I:%M %p') if isinstance(c.get('responded_at'), (int, float)) else '',
+        'response': c.get('doctor_response', ''),
+        'patient_unread': c.get('patient_unread') is True,
+        'is_today': bool(created) and format_timestamp(created, '%Y-%m-%d') == time.strftime('%Y-%m-%d'),
+    }
+
+
+def patient_consultations_light(patient_uid):
+    """Patient's requests without needing the whole users tree (doctor names from one small read each)."""
+    rows = [consult_row(cid, c) for cid, c in all_consultations().items() if c.get('patient_uid') == patient_uid]
+    return sorted(rows, key=lambda r: r['created_at'], reverse=True)
+
+
+def admin_consult_stats():
+    now_ms = time.time() * 1000
+    pending = [c for c in all_consultations().values() if c.get('status') == 'pending']
+    emergencies = [c for c in pending if c.get('urgency') == 'emergency']
+    return {'pending': len(pending), 'emergency': len(emergencies),
+            'overdue': sum(1 for c in emergencies if isinstance(c.get('created_at'), (int, float))
+                           and now_ms - c['created_at'] > CONSULT_EMERGENCY_SLA_MS)}
+
+
+def all_consultations():
+    raw = cached_read('consultations') or {}
+    return {cid: c for cid, c in raw.items() if isinstance(c, dict)} if isinstance(raw, dict) else {}
+
+
+def patient_consultations(patient_uid):
+    users = cached_read('users') or {}
+    rows = [consult_row(cid, c, users) for cid, c in all_consultations().items() if c.get('patient_uid') == patient_uid]
+    return sorted(rows, key=lambda r: r['created_at'], reverse=True)
+
+
+def doctor_consultations(doctor_uid):
+    """Requests addressed to this doctor from patients who are still assigned to them."""
+    users = cached_read('users') or {}
+    rows = [consult_row(cid, c, users) for cid, c in all_consultations().items()
+            if c.get('doctor_uid') == doctor_uid and patient_assigned_to(users.get(c.get('patient_uid')) or {}, doctor_uid)]
+    return sorted(rows, key=lambda r: r['created_at'], reverse=True)
+
+
+def doctor_consult_counts(doctor_uid):
+    rows = doctor_consultations(doctor_uid)
+    pending = [r for r in rows if r['status'] == 'pending']
+    return {'pending': len(pending), 'emergency': sum(1 for r in pending if r['urgency'] == 'emergency'),
+            'today': sum(1 for r in rows if r['is_today'])}
+
+
+@app.context_processor
+def inject_consultation_badges():
+    """Doctor: pending / emergency counts for the sidebar. Patient: responses not seen yet."""
+    user = session.get('user') or {}
+    try:
+        if user.get('role') == 'doctor':
+            counts = doctor_consult_counts(user['uid'])
+            return {'consult_pending_total': counts['pending'], 'consult_emergency_total': counts['emergency']}
+        if user.get('role') == 'patient':
+            return {'consult_unread_total': sum(1 for c in all_consultations().values()
+                                                if c.get('patient_uid') == user['uid'] and c.get('patient_unread') is True)}
+    except Exception:
+        pass
+    return {}
+
+
+@app.route('/api/consultations/badge')
+@login_required
+@role_required('doctor')
+def consultations_badge():
+    """Sidebar badge refresh (static/js/consult_badge.js polls this)."""
+    counts = doctor_consult_counts(session['user']['uid'])
+    return jsonify({'success': True, **counts})
+
+
+# ---------- patient ----------
+@app.route('/api/consultation/request', methods=['POST'])
+@limiter.limit(RATE_LIMITS['consultation_request'],
+               key_func=lambda: (session.get('user') or {}).get('uid') or get_remote_address(),   # per patient
+               deduct_when=lambda response: response.status_code == 200)   # only sent requests count
+@login_required
+@role_required('patient')
+def consultation_request():
+    if not request.is_json:   # JSON only, so a cross-site form can't post it
+        return chat_json_error('Expected a JSON request.', 415)
+    data = request.get_json(silent=True) or {}
+    kind = data.get('type') if data.get('type') in CONSULT_TYPES else 'consultation'
+    # Emergency only comes from the emergency button; a normal consultation can be routine or urgent
+    urgency = 'emergency' if kind == 'emergency_appointment' else (data.get('urgency') if data.get('urgency') in ('routine', 'urgent') else None)
+    subject = str(data.get('subject') or '').strip()
+    message = str(data.get('message') or '').strip()
+    preferred = str(data.get('preferred_time') or '').strip()
+    errors = {}
+    if not urgency:
+        errors['urgency'] = 'Choose routine or urgent.'
+    if not subject:
+        errors['subject'] = 'Add a short subject.'
+    elif len(subject) > CONSULT_SUBJECT_MAX:
+        errors['subject'] = f'Keep the subject to {CONSULT_SUBJECT_MAX} characters.'
+    if len(message) < CONSULT_MESSAGE_MIN:
+        errors['message'] = f'Describe what you need in at least {CONSULT_MESSAGE_MIN} characters.'
+    elif len(message) > CONSULT_MESSAGE_MAX:
+        errors['message'] = f'Keep the message to {CONSULT_MESSAGE_MAX} characters.'
+    if preferred and urgency == 'routine':
+        when = parse_local_datetime(preferred)
+        if when is None or when < time.time() * 1000 or when > time.time() * 1000 + 90 * 86_400_000:
+            errors['preferred_time'] = 'Pick a time in the next 90 days.'
+    elif urgency != 'routine':
+        preferred = ''   # preferred times are only for routine requests
+    if errors:
+        return jsonify({'success': False, 'error': next(iter(errors.values())), 'errors': errors}), 400
+
+    me = session['user']
+    doctor_uid = db.reference(f"users/{me['uid']}/assigned_doctor_uid").get()
+    doctor = db.reference(f'users/{doctor_uid}').get() if isinstance(doctor_uid, str) and is_safe_key(doctor_uid) else None
+    if not isinstance(doctor, dict) or doctor.get('role') != 'doctor' or doctor.get('status') != 'approved':
+        return chat_json_error('You don\'t have an assigned doctor yet, so the request can\'t be sent. '
+                               'If you need help now, please call a helpline.', 409)
+    record = {'patient_uid': me['uid'], 'patient_name': me.get('name') or 'Patient', 'doctor_uid': doctor_uid,
+              'type': kind, 'urgency': urgency, 'subject': subject, 'message': message, 'status': 'pending',
+              'created_at': {'.sv': 'timestamp'}}
+    if preferred:
+        record['preferred_time'] = preferred[:16]
+    ref = db.reference('consultations').push(record)
+    doctor_name = strip_dr(doctor.get('name')) or 'your doctor'
+    activity_log('consultation_requested', f"Requested a {'consultation' if kind == 'consultation' else 'emergency appointment'} ({urgency})",
+                 details={'consultation_id': ref.key, 'urgency': urgency, 'type': kind})
+    if urgency == 'emergency':
+        activity_log('consultation_emergency', f"Emergency appointment requested by {me.get('name') or 'a patient'}", 'alert',
+                     details={'consultation_id': ref.key, 'patient_uid': me['uid'], 'doctor_uid': doctor_uid}, user=SYSTEM_ACTOR)
+    return jsonify({'success': True, 'id': ref.key, 'doctor_name': doctor_name,
+                    'message': f'Request sent to Dr. {doctor_name}'})
+
+
+@app.route('/api/consultation/<cid>/cancel', methods=['POST'])
+@login_required
+@role_required('patient')
+def consultation_cancel(cid):
+    if not request.is_json:
+        return chat_json_error('Expected a JSON request.', 415)
+    if not is_safe_key(cid):
+        return chat_json_error('Request not found.', 404)
+    ref = db.reference(f'consultations/{cid}')
+    c = ref.get()
+    if not isinstance(c, dict) or c.get('patient_uid') != session['user']['uid']:
+        return chat_json_error('Request not found.', 404)
+    if c.get('status') != 'pending':
+        return chat_json_error('Only requests still waiting for your doctor can be cancelled.', 409)
+    ref.update({'status': 'cancelled', 'cancelled_at': {'.sv': 'timestamp'}})
+    activity_log('consultation_cancelled', 'Cancelled a consultation request', 'info', details={'consultation_id': cid})
+    return jsonify({'success': True})
+
+
+@app.route('/patient/consultations')
+@login_required
+@role_required('patient')
+def patient_consultations_page():
+    uid = session['user']['uid']
+    prefetch('consultations', 'users', f'chat_unread/{uid}')
+    rows = patient_consultations(uid)
+    unread = [r['id'] for r in rows if r['patient_unread']]
+    if unread:
+        # Opening the page counts as seeing the responses (clears the sidebar badge); highlight them this once
+        run_in_background(db.reference().update, {f'consultations/{cid}/patient_unread': None for cid in unread})
+    status = request.args.get('status', 'all')
+    status = status if status in ('all',) + CONSULT_STATUSES else 'all'
+    user_name = session['user'].get('name', 'Patient')
+    users = cached_read('users') or {}
+    doctor = users.get((users.get(uid) or {}).get('assigned_doctor_uid')) if isinstance(users.get(uid), dict) else None
+    return render_template('patient_consultations.html', user_name=user_name,
+                           user_initials=''.join(w[0].upper() for w in user_name.split()[:2]) or 'P',
+                           rows=[r for r in rows if status == 'all' or r['status'] == status], all_count=len(rows),
+                           counts={s: sum(1 for r in rows if r['status'] == s) for s in CONSULT_STATUSES},
+                           status=status, statuses=CONSULT_STATUSES, newly_answered=set(unread),
+                           consult_doctor_name=strip_dr(doctor.get('name')) if isinstance(doctor, dict) else None,
+                           consult_unread_total=0)
+
+
+# ---------- doctor ----------
+CONSULT_TABS = ('all', 'pending', 'emergency', 'accepted', 'declined', 'completed')
+
+
+@app.route('/doctor/consultations')
+@login_required
+@role_required('doctor')
+def doctor_consultations_page():
+    me = session['user']
+    prefetch('consultations', 'users', 'alerts', f"chat_unread/{me['uid']}")
+    rows = doctor_consultations(me['uid'])
+    users = cached_read('users') or {}
+    for r in rows:   # the patient's latest composite score, for the detail view
+        p = users.get(r['patient_uid']) if isinstance(users.get(r['patient_uid']), dict) else {}
+        latest = (p.get('assessments') or {}).get(p.get('latest_assessment_id')) if isinstance(p.get('assessments'), dict) else None
+        if isinstance(latest, dict):
+            score = compute_composite(latest)
+            r['score'], r['score_label'], r['score_color'] = score, risk_band(score)[1], risk_band(score)[2]
+        else:
+            r['score'] = None
+    tab = request.args.get('tab', 'all')
+    tab = tab if tab in CONSULT_TABS else 'all'
+    in_tab = {'all': lambda r: r['status'] != 'cancelled', 'pending': lambda r: r['status'] == 'pending',
+              'emergency': lambda r: r['urgency'] == 'emergency' and r['status'] != 'cancelled',
+              'accepted': lambda r: r['status'] == 'accepted', 'declined': lambda r: r['status'] == 'declined',
+              'completed': lambda r: r['status'] == 'completed'}
+    answered = [r for r in rows if r['status'] in ('accepted', 'declined', 'completed')]
+    decided = [r for r in rows if r['status'] != 'cancelled']
+    stats = {
+        'pending': sum(1 for r in rows if r['status'] == 'pending'),
+        'emergency': sum(1 for r in rows if r['status'] == 'pending' and r['urgency'] == 'emergency'),
+        'today': sum(1 for r in rows if r['is_today']),
+        'response_rate': round(len(answered) / len(decided) * 100) if decided else None,   # answered (accepted / declined / completed)
+        'answered': len(answered), 'total': len(decided),
+    }
+    user_name, user_initials = doctor_identity()
+    return render_template('doctor_consultations.html', user_name=user_name, user_initials=user_initials,
+                           rows=[r for r in rows if in_tab[tab](r)], tab=tab, tabs=CONSULT_TABS,
+                           tab_counts={t: sum(1 for r in rows if in_tab[t](r)) for t in CONSULT_TABS}, stats=stats,
+                           min_schedule=time.strftime('%Y-%m-%dT%H:%M'))
+
+
+@app.route('/api/consultation/<cid>/respond', methods=['POST'])
+@login_required
+@role_required('doctor')
+def consultation_respond(cid):
+    if not request.is_json:
+        return chat_json_error('Expected a JSON request.', 415)
+    if not is_safe_key(cid):
+        return chat_json_error('Request not found.', 404)
+    me = session['user']
+    ref = db.reference(f'consultations/{cid}')
+    c = ref.get()
+    patient = db.reference(f"users/{c.get('patient_uid')}").get() if isinstance(c, dict) and is_safe_key(c.get('patient_uid')) else None
+    if not isinstance(c, dict) or c.get('doctor_uid') != me['uid'] or not patient_assigned_to(patient or {}, me['uid']):
+        return chat_json_error('Request not found.', 404)
+    data = request.get_json(silent=True) or {}
+    action = data.get('action')
+    response = str(data.get('response') or '').strip()
+    allowed = {'accept': ('pending',), 'decline': ('pending',), 'complete': ('accepted',)}
+    if action not in allowed:
+        return chat_json_error('Unknown action.', 400)
+    if c.get('status') not in allowed[action]:
+        return chat_json_error(f"This request is already {c.get('status')}.", 409)
+    updates = {}
+    if action in ('accept', 'decline'):
+        if not response:
+            return chat_json_error('Write a short response for the patient.', 400)
+        if len(response) > CONSULT_MESSAGE_MAX:
+            return chat_json_error(f'Keep the response to {CONSULT_MESSAGE_MAX} characters.', 400)
+        updates.update(doctor_response=response, responded_at={'.sv': 'timestamp'}, patient_unread=True)
+    if action == 'accept':
+        when = parse_local_datetime(data.get('scheduled_at'))
+        if when is None or when < time.time() * 1000 - 5 * 60_000:
+            return chat_json_error('Choose a date and time for the consultation (not in the past).', 400)
+        updates.update(status='accepted', scheduled_at=int(when))
+    elif action == 'decline':
+        updates['status'] = 'declined'
+    else:
+        updates.update(status='completed', completed_at={'.sv': 'timestamp'})
+    ref.update(updates)
+
+    subject = c.get('subject', '')
+    if action == 'accept':
+        chat_text = (f"Your consultation request \"{subject}\" is accepted. Scheduled for "
+                     f"{format_timestamp(updates['scheduled_at'], '%a %d %b %Y, %I:%M %p')}.\n\n{response}")
+        activity_log('consultation_accepted', f"Accepted a consultation with {c.get('patient_name') or 'a patient'}",
+                     details={'consultation_id': cid, 'urgency': c.get('urgency')})
+    elif action == 'decline':
+        chat_text = f"About your consultation request \"{subject}\": I can't take it as requested.\n\n{response}"
+        activity_log('consultation_declined', f"Declined a consultation from {c.get('patient_name') or 'a patient'}", 'info',
+                     details={'consultation_id': cid, 'urgency': c.get('urgency')})
+    else:
+        chat_text = None
+        activity_log('consultation_completed', f"Completed a consultation with {c.get('patient_name') or 'a patient'}",
+                     details={'consultation_id': cid})
+    chat_sent = False
+    if chat_text:
+        try:   # the patient also gets the response in chat; the request itself is already saved
+            post_chat_message(me['uid'], c['patient_uid'], me, chat_text[:CHAT_MESSAGE_MAX])
+            chat_sent = True
+        except Exception:
+            pass
+    return jsonify({'success': True, 'status': updates['status'], 'chat_sent': chat_sent})
+
+
+# ---------- admin (content hidden) ----------
+@app.route('/admin/consultations')
+@admin_required
+def admin_consultations():
+    prefetch('consultations', 'users')
+    users = cached_read('users') or {}
+    now_ms = time.time() * 1000
+    rows = []
+    for cid, c in all_consultations().items():
+        r = consult_row(cid, c, users)
+        r['overdue'] = r['status'] == 'pending' and r['urgency'] == 'emergency' and now_ms - r['created_at'] > CONSULT_EMERGENCY_SLA_MS
+        r['waiting'] = format_duration(now_ms - r['created_at']) if r['status'] == 'pending' and r['created_at'] else ''
+        rows.append(r)
+    rows.sort(key=lambda r: (not r['overdue'], -r['created_at']))
+    doctors = sorted({(r['doctor_uid'], r['doctor_name']) for r in rows}, key=lambda d: d[1].lower())
+    doctor = request.args.get('doctor', '')
+    status = request.args.get('status', 'all')
+    status = status if status in ('all',) + CONSULT_STATUSES else 'all'
+    shown = [r for r in rows if (not doctor or r['doctor_uid'] == doctor) and (status == 'all' or r['status'] == status)]
+    stats = {'pending': sum(1 for r in rows if r['status'] == 'pending'),
+             'emergency': sum(1 for r in rows if r['status'] == 'pending' and r['urgency'] == 'emergency'),
+             'overdue': sum(1 for r in rows if r['overdue']), 'total': len(rows)}
+    return admin_page('admin_consultations.html', 'consultations', users, rows=shown, stats=stats, doctors=doctors,
+                      doctor=doctor, status=status, statuses=CONSULT_STATUSES, sla_minutes=CONSULT_EMERGENCY_SLA_MS // 60000)
+
+
 # ========== ADMIN ==========
 # Admins see every account and patient; doctor-patient assignment filtering doesn't apply here
 ADMIN_PAGE_SIZE = 20
@@ -2871,7 +3344,7 @@ ADMIN_ACCOUNT_STATUSES = ['active', 'pending', 'approved', 'rejected', 'suspende
 
 
 def admin_load_users():
-    users = db.reference('users').get() or {}
+    users = cached_read('users') or {}
     return users if isinstance(users, dict) else {}
 
 
@@ -2894,7 +3367,7 @@ def admin_account_row(uid, user):
 
 
 def admin_order_rows(users):
-    raw_orders = db.reference('wristband_orders').get() or {}
+    raw_orders = cached_read('wristband_orders') or {}
     orders = []
     if isinstance(raw_orders, dict):
         for uid, order in raw_orders.items():
@@ -2960,9 +3433,9 @@ def admin_dashboard_data(users):
     month_ms = today.replace(day=1).timestamp() * 1000
     now_ms = time.time() * 1000
 
-    acks = db.reference('alerts').get() or {}
+    acks = cached_read('alerts') or {}
     acks = acks if isinstance(acks, dict) else {}
-    presence = db.reference('presence').get() or {}
+    presence = cached_read('presence') or {}
     presence = presence if isinstance(presence, dict) else {}
 
     stats = dict.fromkeys(('patients', 'patients_this_month', 'doctors_active', 'doctors_pending',
@@ -3035,6 +3508,7 @@ def admin_dashboard_data(users):
 @app.route('/admin')
 @admin_required
 def admin_dashboard():
+    prefetch('users', 'wristband_orders', 'alerts', 'presence', 'consultations')   # one parallel round instead of five in a row
     users = admin_load_users()
     accounts = [admin_account_row(uid, u) for uid, u in users.items() if isinstance(u, dict)]
     accounts.sort(key=lambda account: account['created_at'], reverse=True)
@@ -3046,6 +3520,7 @@ def admin_dashboard():
         **data,
         critical_dismissed=session.get('_critical_dismissed') == data['critical_count'],
         pending_orders=[o for o in orders if o['status'] == 'pending'],
+        consult_stats=admin_consult_stats(),
         recent_users=accounts[:5],
         recent_orders=orders[:3],
         login_just_happened=session.pop('_login_toast', False)
@@ -4308,6 +4783,9 @@ DB_PRIVATE_PATHS = (
     (('users', '*', 'mfa', 'backup_codes'), '***hidden***'),              # hashed 2FA backup codes (totp_secret_enc is masked by key)
     (('users', '*', 'gratitude', '*', 'text'), '***gratitude hidden***'),   # Gratitude Jar notes (patient private)
     (('users', '*', 'journal', '*', 'text'), '***journal hidden***'),       # journal entries (private unless shared)
+    (('consultations', '*', 'message'), '***message hidden***'),            # consultation requests: patient's description
+    (('consultations', '*', 'doctor_response'), '***message hidden***'),    # ... and the doctor's reply
+    (('consultations', '*', 'subject'), '***message hidden***'),            # the subject can be just as personal
     (('users', '*', 'assessments', '*', 'phq_answers'), '***answers hidden***'),
     (('users', '*', 'assessments', '*', 'gad_answers'), '***answers hidden***'),
     (('users', '*', 'assessments', '*', 'pss_answers'), '***answers hidden***'),

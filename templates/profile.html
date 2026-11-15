@@ -21,6 +21,7 @@
       <a href="{{ url_for('patient_history') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">History</span></a>
       <a href="{{ url_for('patient_activities') }}" class="nav-item"><span class="nav-icon">🧩</span><span class="nav-label">Activities</span></a>
       <a href="{{ url_for('patient_chat') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Chat</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('patient_consultations_page') }}" class="nav-item"><span class="nav-icon">🩺</span><span class="nav-label">Consultations</span><span class="nav-badge nav-badge-consult" data-consult-unread{% if not consult_unread_total %} hidden{% endif %} title="New responses from your doctor">{{ consult_unread_total }}</span></a>
       <a href="{{ url_for('patient_wristband') }}" class="nav-item"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
       <a href="{{ url_for('patient_profile') }}" class="nav-item active"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
       <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>

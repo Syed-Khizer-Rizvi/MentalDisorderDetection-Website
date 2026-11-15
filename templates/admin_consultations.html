@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Consultations | Mental Disorder Detection</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/consultations.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+{% include '_admin_sidebar.html' %}
+  <main class="main-area">
+{% include '_admin_header.html' %}
+    <section class="ad-head">
+      <div>
+        <h1>Consultations</h1>
+        <p>Every consultation request across all doctors. Messages, replies and subjects are hidden to protect patient privacy.</p>
+      </div>
+    </section>
+
+    <section class="ad-stats al-stats" aria-label="Consultation totals">
+      <div class="ad-stat ad-stat-orange"><span class="ad-stat-label">Pending</span><span class="ad-stat-value">{{ stats.pending }}</span><span class="ad-stat-sub">Waiting for a doctor</span></div>
+      <div class="ad-stat ad-stat-red"><span class="ad-stat-label">Emergency pending</span><span class="ad-stat-value{{ ' is-alert' if stats.emergency }}">{{ stats.emergency }}</span><span class="ad-stat-sub">Not answered yet</span></div>
+      <div class="ad-stat ad-stat-red"><span class="ad-stat-label">Overdue emergencies</span><span class="ad-stat-value{{ ' is-alert' if stats.overdue }}">{{ stats.overdue }}</span><span class="ad-stat-sub{{ ' is-bad' if stats.overdue }}">Unanswered for more than {{ sla_minutes }} min</span></div>
+      <div class="ad-stat ad-stat-blue"><span class="ad-stat-label">All requests</span><span class="ad-stat-value">{{ stats.total }}</span><span class="ad-stat-sub">Including answered and cancelled</span></div>
+    </section>
+
+    <section class="activity-panel admin-table-panel">
+      <form method="get" action="{{ url_for('admin_consultations') }}" class="admin-filters" id="acFilters">
+        <label>Doctor<select name="doctor"><option value="">All doctors</option>{% for uid, name in doctors %}<option value="{{ uid }}"{{ ' selected' if doctor == uid }}>Dr. {{ name }}</option>{% endfor %}</select></label>
+        <label>Status<select name="status"><option value="all">All statuses</option>{% for s in statuses %}<option value="{{ s }}"{{ ' selected' if status == s }}>{{ s|capitalize }}</option>{% endfor %}</select></label>
+        <button type="submit" class="admin-filter-button">Apply</button>
+        {% if doctor or status != 'all' %}<a href="{{ url_for('admin_consultations') }}" class="admin-clear">Clear filters</a>{% endif %}
+      </form>
+      {% if rows %}
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th scope="col">Patient</th><th scope="col">Doctor</th><th scope="col">Type</th><th scope="col">Urgency</th><th scope="col">Status</th><th scope="col">Received</th><th scope="col">Content</th></tr></thead>
+          <tbody>
+            {% for r in rows %}
+            <tr class="{{ 'ac-overdue' if r.overdue }}">
+              <td><strong>{{ r.patient_name }}</strong></td>
+              <td>Dr. {{ r.doctor_name }}</td>
+              <td><span class="cs-badge {{ 'cs-type-emergency' if r.type == 'emergency_appointment' else 'cs-type' }}">{{ r.type_label }}</span></td>
+              <td><span class="cs-badge cs-u-{{ r.urgency }}">{{ r.urgency_label }}</span></td>
+              <td><span class="cs-badge cs-s-{{ r.status }}">{{ r.status_label }}</span>{% if r.overdue %}<br><span class="ac-flag">No reply for {{ r.waiting }}</span>{% elif r.waiting %}<span class="admin-secondary">waiting {{ r.waiting }}</span>{% endif %}</td>
+              <td><span title="{{ r.created_full }}">{{ r.created_ago }}</span>{% if r.scheduled %}<span class="admin-secondary">Scheduled {{ r.scheduled }}</span>{% endif %}</td>
+              <td class="ac-hidden">Hidden</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="trend-empty">No consultation requests{{ ' match these filters' if doctor or status != 'all' }}.</p>
+      {% endif %}
+    </section>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script>document.querySelectorAll('#acFilters select').forEach((s) => s.addEventListener('change', () => s.form.submit()));</script>
+</body>
+</html>

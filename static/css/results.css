@@ -97,6 +97,9 @@
 }
 .btn-elevated:hover { background: #9A3412; }
 .btn-outline-dark { background: #0A5A47; color: #FFF; }
+/* These open the consultation request dialog, so they're buttons now: match the old link look */
+button.btn-emergency, button.btn-outline-dark, button.btn-elevated { font-family: inherit; border: none; cursor: pointer; }
+button.btn-emergency:focus-visible, button.btn-outline-dark:focus-visible, button.btn-elevated:focus-visible { outline: 3px solid rgba(15, 23, 42, 0.45); outline-offset: 2px; }
 .btn-outline { background: #FFF; color: #0F7A5F; border: 1px solid #0F7A5F; }
 
 .wristband-section {

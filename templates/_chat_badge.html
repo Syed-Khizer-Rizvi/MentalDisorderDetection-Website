@@ -6,4 +6,5 @@
 {% endif %}
 {% if session.user and session.user.role == 'doctor' %}
 <script src="{{ url_for('static', filename='js/alert_badge.js') }}" data-url="{{ url_for('alerts_unread') }}"></script>
+<script src="{{ url_for('static', filename='js/consult_badge.js') }}" data-url="{{ url_for('consultations_badge') }}"></script>
 {% endif %}

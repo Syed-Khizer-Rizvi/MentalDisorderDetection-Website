@@ -145,6 +145,8 @@
     e.preventDefault();
     alertBox.style.display = 'none';
     setBusy(true);
+    // End-to-end timer, reported in the console when the dashboard appears (see _login_toast.html)
+    try { sessionStorage.setItem('loginStartedAt', String(Date.now())); } catch (ignored) { /* storage blocked */ }
     try {
       const userCred = await signInWithEmailAndPassword(auth, emailInput.value.trim(), document.getElementById('password').value);
       await finishLogin(userCred.user, false);
@@ -157,6 +159,7 @@
   googleBtn.addEventListener('click', async () => {
     alertBox.style.display = 'none';
     setBusy(true);
+    try { sessionStorage.setItem('loginStartedAt', String(Date.now())); } catch (ignored) { /* storage blocked */ }
     try {
       const result = await signInWithPopup(auth, googleProvider(GoogleAuthProvider));
       await finishLogin(result.user, true);

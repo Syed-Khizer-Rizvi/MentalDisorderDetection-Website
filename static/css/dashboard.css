@@ -1050,6 +1050,11 @@ a.act-play { display: block; text-align: center; }
 
 /* ========== RISK ALERTS (doctor) ========== */
 .nav-badge-alert { background: #DC2626; }
+/* Consultations: amber count; red and pulsing while an emergency request is pending */
+.nav-badge.nav-badge-consult { background: #F59E0B; }
+.nav-badge.nav-badge-consult.is-emergency { background: #DC2626; animation: nav-consult-pulse 1.6s ease-out infinite; }
+@keyframes nav-consult-pulse { 0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.6); } 70% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); } 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); } }
+@media (prefers-reduced-motion: reduce) { .nav-badge.nav-badge-consult.is-emergency { animation: none; } }
 a.stat-card.stat-link { color: inherit; transition: transform 0.15s, box-shadow 0.15s; }
 a.stat-card.stat-link:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08); }
 .banner-link { margin-left: 6px; color: #FFFFFF; font-weight: 700; text-decoration: underline; }

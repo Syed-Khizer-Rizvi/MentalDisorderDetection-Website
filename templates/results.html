@@ -104,9 +104,9 @@
         <div class="doc-info"><strong>Dr. {{ assigned_doctor.name }}</strong><small>{{ assigned_doctor.specialization or 'Mental Health Professional' }}</small></div>
         <span class="doc-status">● Available for emergency</span>
       </div>
-      <button class="btn-emergency">🩺 Doctor Consult — Request Now</button>
-      <a href="#" class="btn-outline-dark">📅 Book Emergency Appointment</a>
-      <a href="#" class="btn-outline">💬 Chat with Doctor</a>
+      <button type="button" class="btn-emergency" data-consult-open="consultation">🩺 Doctor Consult — Request Now</button>
+      <button type="button" class="btn-outline-dark" data-consult-open="emergency">📅 Book Emergency Appointment</button>
+      <a href="{{ url_for('patient_chat') }}" class="btn-outline">💬 Chat with Doctor</a>
       {% else %}
       <h3>🩺 Your Doctor</h3>
       <p class="doc-pending">Your doctor assignment is pending. Please contact support if you need immediate help — or call one of the helplines below right away.</p>
@@ -146,8 +146,8 @@
         <div class="doc-info"><strong>Dr. {{ assigned_doctor.name }}</strong><small>{{ assigned_doctor.specialization or 'Mental Health Professional' }}</small></div>
         <span class="doc-status">● Accepting appointments</span>
       </div>
-      <a href="#" class="btn-elevated">📅 Book Appointment</a>
-      <a href="#" class="btn-outline">💬 Message Doctor</a>
+      <button type="button" class="btn-elevated" data-consult-open="consultation">📅 Book Appointment</button>
+      <a href="{{ url_for('patient_chat') }}" class="btn-outline">💬 Message Doctor</a>
       {% else %}
       <h3>🩺 Your Doctor</h3>
       <p class="doc-pending">Your doctor assignment is pending. Please contact support if you need immediate help — or call one of the helplines below right away.</p>
@@ -159,7 +159,7 @@
       <p>Your scores indicate elevated levels. We recommend combining mindfulness activities with professional support.</p>
       <div class="rec-grid">
         <a href="{{ url_for('patient_activities') }}#games" class="rec-card"><span class="rec-icon">🧘</span><strong>Mindfulness Games</strong><small>Breathing, meditation</small></a>
-        <a href="#" class="rec-card"><span class="rec-icon">👨‍⚕️</span><strong>Doctor Consultation</strong><small>Schedule session</small></a>
+        <a href="{{ url_for('patient_consultations_page') }}" class="rec-card" data-consult-open="consultation"><span class="rec-icon">👨‍⚕️</span><strong>Doctor Consultation</strong><small>Request a session</small></a>
         <a href="#" class="rec-card"><span class="rec-icon">📅</span><strong>Set Reminder</strong><small>Daily check-ins</small></a>
       </div>
     </div>
@@ -194,5 +194,7 @@
     {% endif %}
   </div>
 </main>
+{% set consult_doctor_name = assigned_doctor.name if assigned_doctor else None %}
+{% include '_consultation_modal.html' %}
 </body>
 </html>

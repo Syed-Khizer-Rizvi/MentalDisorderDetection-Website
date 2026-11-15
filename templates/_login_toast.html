@@ -15,6 +15,14 @@
     }
     toast.addEventListener('click', dismiss);
     setTimeout(dismiss, 4000);
+    // Password submit -> dashboard visible, measured in the browser (DevTools console)
+    try {
+      const started = Number(sessionStorage.getItem('loginStartedAt'));
+      if (started) {
+        sessionStorage.removeItem('loginStartedAt');
+        console.info(`Sign-in to dashboard: ${Date.now() - started} ms`);
+      }
+    } catch (ignored) { /* storage blocked */ }
   })();
 </script>
 {% endif %}

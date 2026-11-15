@@ -1,0 +1,51 @@
+{# Patient request dialog. Opened by any element with data-consult-open="consultation" or "emergency".
+   Needs consult_doctor_name (the assigned doctor's name, or None). #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/consultations.css') }}">
+<dialog class="cs-dialog" id="consultDialog" aria-labelledby="consultTitle" data-url="{{ url_for('consultation_request') }}"
+        data-list-url="{{ url_for('patient_consultations_page') }}">
+  <div class="cs-dialog-head" id="consultHead">
+    <div>
+      <h2 id="consultTitle">Request a consultation</h2>
+      <p id="consultSub">{% if consult_doctor_name %}Your request goes to Dr. {{ consult_doctor_name }}.{% else %}You don't have an assigned doctor yet.{% endif %}</p>
+    </div>
+    <button type="button" class="cs-close" data-consult-close aria-label="Close">×</button>
+  </div>
+  <form class="cs-dialog-body" id="consultForm" novalidate>
+    <input type="hidden" name="type" value="consultation">
+    <p class="cs-alert cs-alert-emergency" id="consultEmergencyNote" hidden>
+      <strong>If you are in immediate danger or thinking about harming yourself, call a helpline or emergency services now.</strong>
+      This request tells your doctor you need to be seen urgently.
+    </p>
+    <div class="cs-field">
+      <label for="csSubject">Subject</label>
+      <input id="csSubject" name="subject" maxlength="100" required placeholder="e.g. Trouble sleeping this week" aria-describedby="csSubjectErr">
+      <small class="cs-field-error" id="csSubjectErr" hidden></small>
+    </div>
+    <div class="cs-field" id="csUrgencyField">
+      <label for="csUrgency">Urgency</label>
+      <select id="csUrgency" name="urgency">
+        <option value="routine">Routine: within the next few days</option>
+        <option value="urgent">Urgent: as soon as possible</option>
+        <option value="emergency" hidden>Emergency</option>
+      </select>
+    </div>
+    <div class="cs-field" id="csPreferredField">
+      <label for="csPreferred">Preferred time <small>(optional)</small></label>
+      <input type="datetime-local" id="csPreferred" name="preferred_time" aria-describedby="csPreferredErr">
+      <small class="cs-field-error" id="csPreferredErr" hidden></small>
+    </div>
+    <div class="cs-field">
+      <label for="csMessage">What would you like to discuss?</label>
+      <textarea id="csMessage" name="message" minlength="10" maxlength="1000" required placeholder="A few sentences help your doctor prepare." aria-describedby="csMessageErr"></textarea>
+      <small class="cs-count"><span id="csCount">0</span>/1000</small>
+      <small class="cs-field-error" id="csMessageErr" hidden></small>
+    </div>
+    <p class="cs-form-error" id="consultError" role="alert" hidden></p>
+    <div class="cs-submit-row">
+      <button type="button" class="cs-btn" data-consult-close>Cancel</button>
+      <button type="submit" class="cs-btn cs-btn-primary" id="consultSubmit"{% if not consult_doctor_name %} disabled{% endif %}>Send Request</button>
+    </div>
+  </form>
+</dialog>
+<div class="cs-toast" id="consultToast" role="status" aria-live="polite" hidden></div>
+<script src="{{ url_for('static', filename='js/consultation_request.js') }}"></script>

@@ -21,6 +21,7 @@
       <a href="{{ url_for('patient_history') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">History</span></a>
       <a href="{{ url_for('patient_activities') }}" class="nav-item"><span class="nav-icon">🧩</span><span class="nav-label">Activities</span></a>
       <a href="{{ url_for('patient_chat') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Chat</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('patient_consultations_page') }}" class="nav-item"><span class="nav-icon">🩺</span><span class="nav-label">Consultations</span><span class="nav-badge nav-badge-consult" data-consult-unread{% if not consult_unread_total %} hidden{% endif %} title="New responses from your doctor">{{ consult_unread_total }}</span></a>
       <a href="{{ url_for('patient_wristband') }}" class="nav-item active"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
       <a href="{{ url_for('patient_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
       <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
@@ -40,7 +41,7 @@
 
     <section class="welcome-banner">
       <div class="welcome-text">
-        <h1>PsyMonitor Band ⌚</h1>
+        <h1>PsyMonitor Band v2 ⌚</h1>
         {% if wb %}
           <p>Your wristband is paired. Readings appear here as it syncs.</p>
         {% elif order %}
@@ -84,7 +85,7 @@
           </svg>
         </div>
         <div class="wb-price-text">
-          <span class="wb-price-label">PsyMonitor Band v2</span>
+          <span class="wb-price-label">Smart wellness wristband</span>
           <h3 id="wbPriceTitle">{{ product }}</h3>
           <p class="wb-price">{{ price|pkr }}</p>
           <p class="wb-price-sub">One-time payment · Cash on delivery</p>

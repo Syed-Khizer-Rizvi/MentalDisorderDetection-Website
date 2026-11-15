@@ -1,0 +1,91 @@
+/* Consultation requests: shared by the patient request dialog, patient + doctor + admin pages and widgets.
+   Urgency colours: routine green, urgent orange, emergency red. */
+dialog [hidden], .cs-toast[hidden] { display: none !important; }   /* rows below use display:flex, which would beat [hidden] */
+.cs-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.cs-u-routine { background: #D1FAE5; color: #065F46; }
+.cs-u-urgent { background: #FFEDD5; color: #9A3412; }
+.cs-u-emergency { background: #FEE2E2; color: #991B1B; }
+.cs-type { background: #EFF6FF; color: #1D4ED8; }
+.cs-type-emergency { background: #DC2626; color: #FFFFFF; }
+.cs-s-pending { background: #FEF3C7; color: #92400E; }
+.cs-s-accepted { background: #D1FAE5; color: #065F46; }
+.cs-s-declined { background: #F1F5F9; color: #475569; }
+.cs-s-completed { background: #DBEAFE; color: #1E40AF; }
+.cs-s-cancelled { background: #F1F5F9; color: #94A3B8; text-decoration: line-through; }
+.cs-new { background: #0F7A5F; color: #FFFFFF; }
+.cs-row { --accent: #059669; display: grid; gap: 6px; padding: 14px 16px; border: 1px solid #E2E8F0; border-left: 4px solid var(--accent); border-radius: 12px; background: #FFFFFF; }
+.cs-row.u-urgent { --accent: #EA580C; }
+.cs-row.u-emergency { --accent: #DC2626; background: #FFFBFB; }
+.cs-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cs-row-head strong { color: #0F172A; font-size: 15px; }
+.cs-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: #64748B; font-size: 12.5px; }
+.cs-meta b { color: #334155; font-weight: 700; }
+.cs-text { color: #334155; font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cs-response { padding: 10px 12px; border-radius: 10px; background: #F0FDF9; color: #065F46; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cs-response-head { display: block; margin-bottom: 3px; font-size: 11.5px; font-weight: 800; letter-spacing: 0.3px; text-transform: uppercase; }
+.cs-list { display: grid; gap: 10px; }
+.cs-empty { padding: 22px; border: 1px dashed #CBD5E1; border-radius: 12px; color: #64748B; font-size: 14px; text-align: center; }
+.cs-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.cs-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 7px 14px; border: 1px solid #CBD5E1; border-radius: 9px; background: #FFFFFF; color: #0F172A; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; text-decoration: none; }
+.cs-btn:hover { border-color: #0F7A5F; color: #0F7A5F; }
+.cs-btn-primary { border-color: #0F7A5F; background: #0F7A5F; color: #FFFFFF; }
+.cs-btn-primary:hover { background: #0A5A47; color: #FFFFFF; }
+.cs-btn-danger { border-color: #FCA5A5; color: #B91C1C; }
+.cs-btn-danger:hover { border-color: #DC2626; background: #FEF2F2; color: #991B1B; }
+.cs-btn-emergency { border-color: #DC2626; background: #DC2626; color: #FFFFFF; }
+.cs-btn-emergency:hover { background: #B91C1C; color: #FFFFFF; }
+.cs-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.cs-btn:focus-visible { outline: 3px solid rgba(15, 122, 95, 0.4); outline-offset: 2px; }
+
+/* Dialogs */
+.cs-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 40px); margin: auto; padding: 0; border: 0; border-radius: 16px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3); }
+.cs-dialog::backdrop { background: rgba(15, 23, 42, 0.5); }
+.cs-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 22px; border-bottom: 1px solid #E2E8F0; }
+.cs-dialog-head.is-emergency { background: #FEF2F2; border-bottom-color: #FECACA; }
+.cs-dialog-head h2 { color: #0F172A; font-size: 18px; font-weight: 800; }
+.cs-dialog-head p { margin-top: 2px; color: #64748B; font-size: 13px; }
+.cs-close { flex-shrink: 0; width: 34px; height: 34px; border: 0; border-radius: 9px; background: transparent; color: #64748B; font-size: 20px; cursor: pointer; }
+.cs-close:hover { background: #F1F5F9; color: #0F172A; }
+.cs-dialog-body { display: grid; gap: 14px; padding: 18px 22px 22px; }
+.cs-field { display: grid; gap: 5px; }
+.cs-field label { color: #0F172A; font-size: 13.5px; font-weight: 700; }
+.cs-field small { color: #64748B; font-size: 12px; }
+.cs-field input, .cs-field select, .cs-field textarea {
+  width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid #CBD5E1; border-radius: 10px;
+  color: #0F172A; font: inherit; font-size: 14px; background: #FFFFFF;
+}
+.cs-field textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
+.cs-field input:focus, .cs-field select:focus, .cs-field textarea:focus { outline: none; border-color: #0F7A5F; box-shadow: 0 0 0 3px rgba(15, 122, 95, 0.15); }
+.cs-field [aria-invalid="true"] { border-color: #DC2626; }
+.cs-field-error { color: #B91C1C !important; font-weight: 700; }
+.cs-count { justify-self: end; }
+.cs-alert { padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+.cs-alert-emergency { border: 1px solid #FECACA; background: #FEF2F2; color: #7F1D1D; }
+.cs-alert-info { background: #F0FDF9; color: #065F46; }
+.cs-form-error { color: #B91C1C; font-size: 13px; font-weight: 700; }
+.cs-submit-row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.cs-toast {
+  position: fixed; left: 50%; bottom: 24px; z-index: 300; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 12px 18px;
+  border-radius: 12px; background: #065F46; color: #FFFFFF; font-size: 14px; font-weight: 700; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+}
+.cs-toast.is-error { background: #991B1B; }
+
+/* (Sidebar consultation badges live in dashboard.css, which every sidebar page loads.) */
+
+/* Widgets */
+.cs-widget-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid #F1F5F9; }
+.cs-widget-row:last-child { border-bottom: 0; }
+.cs-widget-row strong { overflow: hidden; color: #0F172A; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.cs-widget-row small { color: #64748B; font-size: 12px; }
+.cs-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0 14px; }
+.cs-counts div { padding: 12px; border-radius: 10px; background: #F8FAFC; text-align: center; }
+.cs-counts strong { display: block; color: #0F172A; font-size: 24px; font-weight: 800; }
+.cs-counts span { color: #64748B; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+.cs-counts .is-emergency { background: #FEF2F2; }
+.cs-counts .is-emergency strong { color: #DC2626; }
+
+@media (max-width: 640px) {
+  .cs-dialog-body, .cs-dialog-head { padding-left: 16px; padding-right: 16px; }
+  .cs-submit-row .cs-btn { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .nav-badge.nav-badge-consult.is-emergency { animation: none; } }

@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/consultations.css') }}">
 </head>
 <body>
 <div class="dashboard-wrapper">
@@ -21,7 +22,7 @@
       <a href="{{ url_for('doctor_messages') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
       <a href="{{ url_for('doctor_risk_alerts') }}" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span><span class="nav-badge nav-badge-alert" data-alert-badge{% if not alert_unread_total %} hidden{% endif %}>{{ alert_unread_total if alert_unread_total < 100 else "99+" }}</span></a>
       <a href="{{ url_for('doctor_reports') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
-      <a href="#" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultation</span></a>
+      <a href="{{ url_for('doctor_consultations_page') }}" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultations</span><span class="nav-badge nav-badge-consult{{ ' is-emergency' if consult_emergency_total }}" data-consult-badge{% if not consult_pending_total %} hidden{% endif %} title="Pending consultation requests">{{ consult_pending_total }}</span></a>
       <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
       <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
       <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
@@ -92,6 +93,16 @@
           {% endfor %}
         </div>
       </div>
+    </section>
+
+    <section class="chart-panel" aria-labelledby="consultDashTitle">
+      <div class="panel-head"><h3 id="consultDashTitle">Pending Consultations</h3><a href="{{ url_for('doctor_consultations_page', tab='pending') }}" class="panel-link">Open consultations →</a></div>
+      <div class="cs-counts">
+        <div class="{{ 'is-emergency' if consult_counts.emergency }}"><strong>{{ consult_counts.emergency }}</strong><span>Emergency</span></div>
+        <div><strong>{{ consult_counts.pending }}</strong><span>Pending</span></div>
+        <div><strong>{{ consult_counts.today }}</strong><span>Today</span></div>
+      </div>
+      {% if consult_counts.emergency %}<a href="{{ url_for('doctor_consultations_page', tab='emergency') }}" class="cs-btn cs-btn-emergency">Review {{ consult_counts.emergency }} emergency request{{ 's' if consult_counts.emergency != 1 }} now</a>{% endif %}
     </section>
 
     <section class="activity-panel">

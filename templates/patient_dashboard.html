@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/consultations.css') }}">
 </head>
 <body>
 <div class="dashboard-wrapper">
@@ -21,6 +22,7 @@
       <a href="{{ url_for('patient_history') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">History</span></a>
       <a href="{{ url_for('patient_activities') }}" class="nav-item"><span class="nav-icon">🧩</span><span class="nav-label">Activities</span></a>
       <a href="{{ url_for('patient_chat') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Chat</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('patient_consultations_page') }}" class="nav-item"><span class="nav-icon">🩺</span><span class="nav-label">Consultations</span><span class="nav-badge nav-badge-consult" data-consult-unread{% if not consult_unread_total %} hidden{% endif %} title="New responses from your doctor">{{ consult_unread_total }}</span></a>
       <a href="{{ url_for('patient_wristband') }}" class="nav-item"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
       <a href="{{ url_for('patient_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
       <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
@@ -146,6 +148,28 @@
     {% set wb_pair_url = url_for('patient_wristband') ~ '#pair' %}
     {% include '_wristband_panel.html' %}
 
+    <section class="chart-panel" aria-labelledby="consultWidgetTitle">
+      <div class="panel-head">
+        <h3 id="consultWidgetTitle">My Consultation Requests{% if consult_unread_total %} <span class="cs-badge cs-new">{{ consult_unread_total }} new response{{ 's' if consult_unread_total != 1 }}</span>{% endif %}</h3>
+        <a href="{{ url_for('patient_consultations_page') }}" class="panel-link">View all</a>
+      </div>
+      {% if consult_rows %}
+      <div>
+        {% for r in consult_rows %}
+        <a href="{{ url_for('patient_consultations_page') }}#c-{{ r.id }}" class="cs-widget-row" style="color: inherit; text-decoration: none;">
+          <span style="min-width: 0; display: grid; gap: 2px;">
+            <strong>{{ r.subject }}</strong>
+            <small>{% if r.scheduled %}Scheduled {{ r.scheduled }}{% else %}Sent {{ r.created_ago }}{% endif %}{% if r.patient_unread %} · <b style="color:#0F7A5F;">Doctor replied</b>{% endif %}</small>
+          </span>
+          <span style="display: flex; gap: 6px;"><span class="cs-badge cs-u-{{ r.urgency }}">{{ r.urgency_label }}</span><span class="cs-badge cs-s-{{ r.status }}">{{ r.status_label }}</span></span>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="trend-empty">No open requests. Need to talk to your doctor? {% if assigned_doctor %}<button type="button" class="cs-btn" data-consult-open="consultation" style="margin-left: 6px;">Request a consultation</button>{% endif %}</p>
+      {% endif %}
+    </section>
+
     <section class="dashboard-row">
       <div class="chart-panel">
         <div class="panel-head"><h3>Quick Actions</h3></div>
@@ -171,6 +195,9 @@
 
 <script src="{{ url_for('static', filename='js/risk_trend.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% set consult_doctor_name = assigned_doctor.name if assigned_doctor else None %}
+{% include '_consultation_modal.html' %}
+<script>document.addEventListener('consultation-sent', () => setTimeout(() => location.reload(), 1200));</script>
 {% include '_chat_badge.html' %}
 {% include '_login_toast.html' %}
 </body>
