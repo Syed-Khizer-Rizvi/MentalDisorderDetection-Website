@@ -187,21 +187,30 @@ ul { list-style: none; }
 .git-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 13px; color: var(--text); }
 .git-icon { width: 32px; height: 32px; background: #fff; color: var(--primary); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
-.team-card {
+.getintouch-card a, .info-card a { color: inherit; }
+.getintouch-card a:hover, .info-card a:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Project Highlights (About section, right column) */
+.highlights-card {
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
     color: #fff; padding: 36px 32px; border-radius: 20px;
     box-shadow: var(--shadow-lg);
 }
 .team-icon { color: #fff; opacity: 0.9; margin-bottom: 16px; }
-.team-card h3 { color: #fff; font-size: 22px; margin-bottom: 12px; line-height: 1.3; }
-.team-card p { font-size: 14px; opacity: 0.95; line-height: 1.7; margin-bottom: 22px; }
-.team-avatars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
-.team-avatar {
-    aspect-ratio: 1; background: rgba(255,255,255,0.15);
-    border-radius: 12px; display: flex; align-items: center; justify-content: center;
-    color: rgba(255,255,255,0.7);
+.highlights-card h3 { color: #fff; font-size: 22px; margin-bottom: 20px; line-height: 1.3; }
+.hl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.hl-grid li {
+    display: flex; flex-direction: column; gap: 4px; padding: 20px 18px; border-radius: 14px;
+    background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.18);
 }
-.team-sub { font-size: 11px; opacity: 0.8; }
+.hl-grid strong { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 28px; font-weight: 800; line-height: 1.1; letter-spacing: -0.5px; }
+.hl-grid span { font-size: 13.5px; font-weight: 500; color: rgba(255, 255, 255, 0.88); }
+
+/* Contact form messages */
+.contact-error { margin: -4px 0 12px; color: #B91C1C; font-size: 13px; font-weight: 600; }
+.contact-error[hidden] { display: none; }
+.contact-note { margin-top: 10px; color: var(--muted); font-size: 12px; text-align: center; }
+.form-group :is(input, select, textarea)[aria-invalid="true"] { border-color: #F87171; }
 
 /* ========== FEATURES ========== */
 .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
@@ -297,16 +306,12 @@ ul { list-style: none; }
 .footer-brand svg { width: 28px; height: 28px; background: var(--primary); padding: 6px; border-radius: 8px; color: #fff; }
 .footer-tagline { color: #fff; font-size: 14px; font-weight: 600; margin-bottom: 10px; }
 .footer-text { font-size: 13px; line-height: 1.7; margin-bottom: 16px; }
-.footer-social { display: flex; gap: 10px; }
-.footer-social a {
-    width: 34px; height: 34px; background: rgba(255,255,255,0.08); color: #94A3B8;
-    border-radius: 8px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
-}
-.footer-social a:hover { background: var(--primary); color: #fff; }
 .footer-col h4 { color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; margin-bottom: 16px; text-transform: uppercase; }
 .footer-col a { display: block; font-size: 13px; color: #94A3B8; margin-bottom: 10px; transition: color 0.2s; }
 .footer-col a:hover { color: var(--primary); }
 .footer-contact-item { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin-bottom: 10px; color: #94A3B8; }
+.footer-col .footer-contact-item a { display: inline; margin: 0; font-size: inherit; overflow-wrap: anywhere; }
+.footer :is(a):focus-visible { outline-color: #34D399; }
 .footer-bottom { max-width: 1200px; margin: 0 auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); text-align: center; font-size: 12px; color: #64748B; }
 
 /* ========== AUTH (keep working) ========== */
@@ -400,17 +405,11 @@ ul { list-style: none; }
 .team-member-card h3 {
     font-size: 15px;
     color: var(--dark);
-    margin-bottom: 6px;
+    margin-bottom: 12px;
     line-height: 1.3;
 }
-
-.tm-role {
-    font-size: 12px;
-    color: var(--primary);
-    font-weight: 600;
-    margin-bottom: 10px;
-    font-family: 'Plus Jakarta Sans', sans-serif;
-}
+.team-member-card { display: flex; flex-direction: column; align-items: center; }
+.team-member-card .tm-id { margin-top: auto; }
 
 .tm-id {
     display: inline-block;
@@ -444,7 +443,33 @@ ul { list-style: none; }
 .supervisor-chip strong { font-family: 'Plus Jakarta Sans', sans-serif; }
 
 @media (max-width: 968px) {
-    .team-grid { grid-template-columns: 1fr; }
+    .team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+}
+@media (max-width: 600px) {
+    .container { padding: 0 16px; }
+    .navbar { padding: 12px 16px; }
+    .nav-links { gap: 6px 14px; }
+    .nav-link { font-size: 13.5px; }
+    .team-member-card { padding: 22px 12px; }
+    .tm-avatar { width: 60px; height: 60px; font-size: 19px; margin-bottom: 12px; }
+    .team-member-card h3 { font-size: 14px; }
+    .supervisor-chip { flex-wrap: wrap; justify-content: center; text-align: center; gap: 4px 8px; border-radius: 18px; padding: 12px 18px; }
+    .highlights-card { padding: 28px 20px; }
+    .hl-grid { gap: 10px; }
+    .hl-grid li { padding: 16px 14px; }
+    .hl-grid strong { font-size: 22px; }
+    .contact-form-card { padding: 22px 18px; }
+    /* Hero illustration: smaller cards so they don't pile on top of each other */
+    .hero { padding: 40px 16px 60px; }
+    .hero-right { height: 330px; }
+    .hero-brain { width: 150px; height: 150px; }
+    .hero-brain svg { width: 84px; height: 84px; }
+    .float-card { min-width: 0; padding: 10px 12px; }
+    .card-top-left { top: 0; left: 0; width: 46%; }
+    .card-top-right { top: 0; right: 0; width: 50%; min-width: 0; }
+    .card-bottom-left { bottom: 0; left: 0; width: 46%; min-width: 0; }
+    .card-bottom-right { bottom: 0; right: 0; width: 46%; min-width: 0; }
+    .fc-value.big { font-size: 22px; }
 }
 /* ========== ALERT BOX (Login/Register) ========== */
 .alert-box {

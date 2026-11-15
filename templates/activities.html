@@ -3,10 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Wellness activities: breathing, calming games, journaling and a gratitude jar.">
 <title>Activities | Mental Disorder Detection</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
 </head>
 <body>
 <div class="dashboard-wrapper">
@@ -61,37 +63,7 @@
       </div>
     </section>
 
-    <section class="dashboard-row">
-      <div class="chart-panel" id="meditations">
-        <div class="panel-head"><h3>Guided Meditations</h3><span class="panel-sub">Audio sessions</span></div>
-        <ul class="act-sessions">
-          <li class="act-session">
-            <span class="act-session-icon">🌬</span>
-            <div class="act-session-info"><strong>Breathing</strong><small>Calm your mind with slow, guided breaths</small></div>
-            <span class="act-duration">5 min</span>
-            <button type="button" class="act-session-play" data-coming-soon="5 min Breathing" aria-label="Play 5 minute breathing meditation">▶</button>
-          </li>
-          <li class="act-session">
-            <span class="act-session-icon">🧘</span>
-            <div class="act-session-info"><strong>Body Scan</strong><small>Release tension from head to toe</small></div>
-            <span class="act-duration">10 min</span>
-            <button type="button" class="act-session-play" data-coming-soon="10 min Body Scan" aria-label="Play 10 minute body scan">▶</button>
-          </li>
-          <li class="act-session">
-            <span class="act-session-icon">💭</span>
-            <div class="act-session-info"><strong>Anxiety Relief</strong><small>Ground yourself when worries feel heavy</small></div>
-            <span class="act-duration">10 min</span>
-            <button type="button" class="act-session-play" data-coming-soon="10 min Anxiety Relief" aria-label="Play 10 minute anxiety relief meditation">▶</button>
-          </li>
-          <li class="act-session">
-            <span class="act-session-icon">🌙</span>
-            <div class="act-session-info"><strong>Sleep Meditation</strong><small>Wind down for a restful night</small></div>
-            <span class="act-duration">15 min</span>
-            <button type="button" class="act-session-play" data-coming-soon="15 min Sleep Meditation" aria-label="Play 15 minute sleep meditation">▶</button>
-          </li>
-        </ul>
-      </div>
-
+    <section class="act-journal-row">
       <div class="actions-panel" id="journal">
         <div class="panel-head"><h3>Daily Journal</h3><span class="panel-sub">Private unless you share it</span></div>
         <form id="journalForm" novalidate>
@@ -130,26 +102,9 @@
   </main>
 </div>
 
-<dialog class="act-modal" id="comingSoon" aria-labelledby="comingSoonTitle">
-  <span class="act-modal-icon">🚧</span>
-  <h3 id="comingSoonTitle">Coming soon</h3>
-  <p><strong id="comingSoonName"></strong> is still being built. Check back soon!</p>
-  <button type="button" class="profile-save" id="comingSoonClose">Got it</button>
-</dialog>
-
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script>
-  const modal = document.getElementById('comingSoon');
-  document.querySelectorAll('[data-coming-soon]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.getElementById('comingSoonName').textContent = btn.dataset.comingSoon;
-      modal.showModal();
-    });
-  });
-  document.getElementById('comingSoonClose').addEventListener('click', () => modal.close());
-  modal.addEventListener('click', (e) => { if (e.target === modal) modal.close(); });
-
   const toast = document.getElementById('toast');
   let toastTimer;
   function showToast(msg, success) {

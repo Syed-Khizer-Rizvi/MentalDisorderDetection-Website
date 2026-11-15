@@ -956,7 +956,7 @@ a.db-stub { color: #0F7A5F; text-decoration: underline; text-decoration-style: d
 
 @media (max-width: 1100px) {
   .ad-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ad-row { grid-template-columns: 1fr; }
+  .ad-row { grid-template-columns: minmax(0, 1fr); }   /* minmax: wide content (tabs, donut) can not push past the screen */
 }
 @media (max-width: 720px) {
   .ad-head h1 { font-size: 22px; }
@@ -965,7 +965,7 @@ a.db-stub { color: #0F7A5F; text-decoration: underline; text-decoration-style: d
   .ad-alert { flex-wrap: wrap; }
   .ad-alert p { flex-basis: calc(100% - 80px); }
   .ad-alert-link { order: 3; margin-left: 32px; }
-  .ad-stats { grid-template-columns: 1fr; gap: 12px; }
+  .ad-stats { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .ad-stat-value { font-size: 26px; }
   .ad-legend { grid-template-columns: 1fr; }
   .ad-pending-card { flex-wrap: wrap; }

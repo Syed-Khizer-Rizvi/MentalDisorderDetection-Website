@@ -1,0 +1,149 @@
+/* =====================================================================================
+   Shared design layer for every page (public site, portals, patient / doctor / admin).
+   Loaded LAST so the pages share one look without rewriting each page's own stylesheet:
+   one button system, one card style, one set of form states, one heading scale and the
+   same hover + keyboard-focus behaviour everywhere. Colours match the existing green brand.
+   ===================================================================================== */
+:root {
+  --ui-green: #0F7A5F;
+  --ui-green-dark: #0A5A47;
+  --ui-green-soft: #ECFDF5;
+  --ui-ink: #0F172A;
+  --ui-text: #334155;
+  --ui-muted: #64748B;
+  --ui-faint: #94A3B8;
+  --ui-border: #E2E8F0;
+  --ui-border-strong: #CBD5E1;
+  --ui-surface: #FFFFFF;
+  --ui-danger: #DC2626;
+  --ui-danger-dark: #B91C1C;
+  --ui-danger-soft: #FEF2F2;
+
+  --ui-radius-sm: 8px;      /* chips, small controls */
+  --ui-radius: 10px;        /* buttons, inputs */
+  --ui-radius-card: 14px;   /* cards and panels */
+
+  --ui-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --ui-shadow-hover: 0 10px 24px rgba(15, 23, 42, 0.08);
+  --ui-ring: rgba(15, 122, 95, 0.45);
+
+  --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px;
+  --ui-space-5: 20px; --ui-space-6: 24px; --ui-space-8: 32px;
+  --ui-ease: 0.16s ease;
+}
+
+/* ---------- Keyboard focus: one visible ring everywhere (pages that define their own keep it) ---------- */
+:where(a, button, summary, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 3px solid var(--ui-ring);
+  outline-offset: 2px;
+}
+:where(input, select, textarea):focus-visible { outline: none; }
+/* On the green sidebar a green ring would vanish */
+.sidebar .nav-item:focus-visible, .sidebar a:focus-visible { outline: 2px solid #FFFFFF; outline-offset: -2px; }
+
+/* ---------- Buttons: one system ----------
+   Primary   = solid green          (.btn-primary, .ad-btn-primary, .cs-btn-primary, .gm-btn-primary, .btn-auth ...)
+   Secondary = white with a border  (.ad-btn, .cs-btn, .gm-btn, .mon-btn, .action-btn, .btn-outline ...)
+   Ghost     = text-only links      (.panel-link, .auth-link)
+   Danger    = red                  (.cs-btn-danger, .pd-btn-alert, .btn-emergency ...)            */
+:is(.btn, .ad-btn, .cs-btn, .gm-btn, .mon-btn, .action-btn, .pd-btn, .rp-btn, .rp-btn-reset, .wbp-btn, .wb-order-btn,
+    .admin-filter-button, .admin-clear, .btn-auth, .btn-auth-secondary, .btn-google, .btn-proceed, .btn-submit,
+    .btn-dashboard, .btn-wristband, .btn-secondary, .btn-emergency, .btn-outline-dark, .btn-elevated,
+    .btn-scan-start, .btn-scan-skip, .mf-verify-btn, .role-card-go) {
+  border-radius: var(--ui-radius);
+  font-weight: 700;
+  letter-spacing: 0;
+  transition: background-color var(--ui-ease), border-color var(--ui-ease), color var(--ui-ease),
+              box-shadow var(--ui-ease), transform var(--ui-ease), opacity var(--ui-ease);
+}
+:is(.btn, .ad-btn, .cs-btn, .gm-btn, .mon-btn, .action-btn, .pd-btn, .rp-btn, .rp-btn-reset, .wbp-btn, .wb-order-btn,
+    .admin-filter-button, .admin-clear, .btn-auth, .btn-auth-secondary, .btn-google, .btn-proceed, .btn-submit,
+    .btn-dashboard, .btn-wristband, .btn-secondary, .btn-emergency, .btn-outline-dark, .btn-elevated,
+    .btn-scan-start, .btn-scan-skip, .mf-verify-btn):focus-visible {
+  outline: 3px solid var(--ui-ring);
+  outline-offset: 2px;
+}
+:is(.btn, .ad-btn, .cs-btn, .gm-btn, .mon-btn, .action-btn, .pd-btn, .rp-btn, .wbp-btn, .wb-order-btn,
+    .admin-filter-button, .btn-auth, .btn-auth-secondary, .btn-google, .btn-proceed, .btn-submit, .btn-secondary,
+    .btn-scan-start, .btn-scan-skip, .mf-verify-btn):is(:disabled, [aria-disabled="true"], .is-disabled) {
+  opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none;
+}
+/* Secondary buttons all hover the same way */
+:is(.ad-btn, .cs-btn, .gm-btn, .mon-btn, .rp-btn-reset, .btn-auth-secondary):not(.ad-btn-primary, .cs-btn-primary, .gm-btn-primary,
+    .cs-btn-danger, .cs-btn-emergency, .mf-btn-danger, .is-paused, .is-disabled, [aria-pressed="true"], :disabled):hover {
+  border-color: var(--ui-green); color: var(--ui-green); background: var(--ui-green-soft);
+}
+/* Primary buttons all hover the same way */
+:is(.btn-primary, .ad-btn-primary, .cs-btn-primary, .gm-btn-primary, .admin-filter-button, .wb-order-btn, .btn-auth):not(:disabled):hover {
+  background: var(--ui-green-dark); border-color: var(--ui-green-dark); color: #FFFFFF;
+}
+.admin-filter-button, .admin-clear { font-size: 13px; }
+
+/* Ghost / text links */
+:is(.panel-link, .auth-link, .ad-alert-link) { border-radius: 4px; transition: color var(--ui-ease); }
+:is(.panel-link, .auth-link):hover { color: var(--ui-green-dark); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- Cards and panels: same radius, border and shadow ---------- */
+:is(.stat-card, .chart-panel, .actions-panel, .activity-panel, .top-header, .ad-stat, .mon-patient, .mon-card,
+    .mon-chart-panel, .mon-empty, .mon-disconnected, .contact-form-card, .info-card, .feat-card, .team-member-card,
+    .auth-admin-card, .role-card, .wbd-panel) {
+  border-radius: var(--ui-radius-card);
+}
+:is(.stat-card, .chart-panel, .actions-panel, .activity-panel, .top-header, .mon-patient, .mon-card, .mon-chart-panel) {
+  box-shadow: var(--ui-shadow-card);
+}
+.welcome-banner { border-radius: var(--ui-radius-card); }
+/* Grid children may shrink below their content (stops wide tables / tabs / charts pushing past a phone screen) */
+:is(.stat-card, .chart-panel, .actions-panel, .activity-panel, .ad-stat, .mon-card, .mon-chart-panel, .admin-table-panel) { min-width: 0; }
+
+/* Clickable cards lift slightly on hover */
+:is(a.stat-card, .stat-link, a.ad-consult, .history-card, .feat-card, .role-card):hover {
+  border-color: var(--ui-green);
+  box-shadow: var(--ui-shadow-hover);
+}
+:is(a.stat-card, .stat-link) { transition: border-color var(--ui-ease), box-shadow var(--ui-ease), transform var(--ui-ease); }
+:is(a.stat-card, .stat-link):hover { transform: translateY(-2px); }
+
+/* Sidebar items */
+.nav-item { transition: background-color var(--ui-ease), color var(--ui-ease); }
+
+/* ---------- Form fields: placeholder, focus and error states ---------- */
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea)::placeholder {
+  color: var(--ui-faint); opacity: 1;
+}
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea):focus {
+  border-color: var(--ui-green);
+  box-shadow: 0 0 0 3px rgba(15, 122, 95, 0.12);
+  outline: none;
+}
+:where(input, select, textarea)[aria-invalid="true"] { border-color: #F87171; }
+:where(input, select, textarea)[aria-invalid="true"]:focus { border-color: var(--ui-danger); box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12); }
+:where(input, select, textarea):disabled { background: #F1F5F9; color: var(--ui-faint); cursor: not-allowed; }
+:where(input[type="checkbox"], input[type="radio"], input[type="range"]) { accent-color: var(--ui-green); }
+
+/* ---------- Heading scale ----------
+   H1 page title 26px / 800 (22px on phones) · H2 section 20px / 800 · H3 panel title 16px / 700 */
+:is(.welcome-text h1, .ad-head h1, .admin-page-head h1, .ra-head h1, .mon-head h1) {
+  font-size: 26px; font-weight: 800; letter-spacing: -0.3px; line-height: 1.2;
+}
+:is(.panel-head h3, .mon-chart-panel h3) { font-size: 16px; font-weight: 700; color: var(--ui-ink); }
+:is(.stat-label, .ad-stat-label) { letter-spacing: 0.5px; }
+
+/* ---------- Spacing: the main column already spaces its sections with gap ---------- */
+.main-area > :is(.mon-head, .mon-patient, .mon-vitals, .mon-disconnected) { margin-bottom: 0; }
+
+/* ---------- Phones (390px and up) ---------- */
+@media (max-width: 720px) {
+  :is(.welcome-text h1, .ad-head h1, .admin-page-head h1, .ra-head h1, .mon-head h1) { font-size: 22px; }
+  .main-area { padding: 16px; gap: 16px; }
+  .welcome-banner { padding: 22px 20px; }
+  .top-header { padding: 10px 14px; }
+  :is(.chart-panel, .actions-panel, .activity-panel) { padding: 16px; }
+  .stat-card { padding: 16px; }
+  /* Comfortable touch targets */
+  :is(.btn, .ad-btn, .cs-btn, .mon-btn, .action-btn, .pd-btn, .btn-auth, .btn-google, .admin-filter-button) { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(a.stat-card, .stat-link, .feat-card, .role-card, .team-member-card):hover { transform: none; }
+}

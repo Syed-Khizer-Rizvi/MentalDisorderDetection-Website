@@ -71,24 +71,21 @@
                     </div>
                     <div class="git-row">
                         <div class="git-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
-                        <span>MentalDisorderDetection.Support@gmail.com</span>
+                        <a href="mailto:psymonitor.support@gmail.com">psymonitor.support@gmail.com</a>
                     </div>
                 </div>
             </div>
 
             <div class="about-right">
-                <div class="team-card">
-                    <div class="team-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-                    <h3>Built by passionate students, guided by clinicians.</h3>
-                    <p>Our team brings together expertise in AI, embedded systems, and clinical psychology to build tools that actually move the needle on mental health outcomes.</p>
-
-                    <div class="team-avatars">
-                        <div class="team-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-                        <div class="team-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-                        <div class="team-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-                        <div class="team-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-                    </div>
-                    <p class="team-sub">Team: Khizer · Laiba · Samreen · Taha</p>
+                <div class="highlights-card" aria-labelledby="highlightsTitle">
+                    <div class="team-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
+                    <h3 id="highlightsTitle">Project Highlights</h3>
+                    <ul class="hl-grid">
+                        <li><strong>67.46%</strong><span>AI Model Accuracy</span></li>
+                        <li><strong>7</strong><span>Wellness Games</span></li>
+                        <li><strong>Real-time</strong><span>IoT Monitoring</span></li>
+                        <li><strong>ESP32</strong><span>Based Wristband</span></li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -207,28 +204,24 @@
             <div class="team-member-card">
                 <div class="tm-avatar">SK</div>
                 <h3>Syed Muhammad Khizer Rizvi</h3>
-                <p class="tm-role">Project Lead & Full-Stack Developer</p>
                 <span class="tm-id">IU04-0123-0087</span>
             </div>
 
             <div class="team-member-card">
                 <div class="tm-avatar">LF</div>
                 <h3>Laiba Fatima</h3>
-                <p class="tm-role">Mobile Developer</p>
                 <span class="tm-id">IU04-0322-0617</span>
             </div>
 
             <div class="team-member-card">
                 <div class="tm-avatar">SP</div>
                 <h3>Samreen Pervaiz</h3>
-                <p class="tm-role">UI / UX Designer</p>
                 <span class="tm-id">IU04-0322-0158</span>
             </div>
 
             <div class="team-member-card">
                 <div class="tm-avatar">MT</div>
                 <h3>Muhammad Taha</h3>
-                <p class="tm-role">Backend Developer</p>
                 <span class="tm-id">IU04-0322-0619</span>
             </div>
         </div>
@@ -237,7 +230,7 @@
             <div class="supervisor-chip">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                 <span>Supervised by</span>
-                <strong>Engr. Sidra Rehman</strong>
+                <strong>Prof. Dr. Engr. Muhammad Zamin Ali Khan</strong>
             </div>
         </div>
     </div>
@@ -254,30 +247,32 @@
         <div class="contact-grid">
             <div class="contact-form-card">
                 <h3>Send us a Message</h3>
-                <form>
+                <form id="contactForm" novalidate>
                     <div class="form-group">
-                        <label>Full Name</label>
+                        <label for="contactName">Full Name</label>
                         <div class="input-with-icon">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                            <input type="text" placeholder="Your full name">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            <input type="text" id="contactName" placeholder="Your full name" autocomplete="name" required>
                         </div>
                     </div>
                     <div class="form-group">
-                        <label>Email Address</label>
+                        <label for="contactEmail">Email Address</label>
                         <div class="input-with-icon">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                            <input type="email" placeholder="your@email.com">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            <input type="email" id="contactEmail" placeholder="your@email.com" autocomplete="email" required>
                         </div>
                     </div>
                     <div class="form-group">
-                        <label>Subject</label>
-                        <select><option>General Inquiry</option><option>Technical Support</option><option>Partnership</option></select>
+                        <label for="contactSubject">Subject</label>
+                        <select id="contactSubject"><option>General Inquiry</option><option>Technical Support</option><option>Partnership</option></select>
                     </div>
                     <div class="form-group">
-                        <label>Message</label>
-                        <textarea rows="4" placeholder="Write your message here..."></textarea>
+                        <label for="contactMessage">Message</label>
+                        <textarea id="contactMessage" rows="4" placeholder="Write your message here..." required></textarea>
                     </div>
-                    <button class="btn btn-primary btn-full btn-lg">Send Message →</button>
+                    <p class="contact-error" id="contactError" role="alert" hidden></p>
+                    <button type="submit" class="btn btn-primary btn-full btn-lg">Send Message →</button>
+                    <p class="contact-note">Opens your email app with the message ready to send to psymonitor.support@gmail.com.</p>
                 </form>
             </div>
 
@@ -288,7 +283,7 @@
                 </div>
                 <div class="info-card">
                     <div class="info-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
-                    <div><span class="info-label">EMAIL</span><strong>MentalDisorderDetection.Support@gmail.com</strong></div>
+                    <div><span class="info-label">EMAIL</span><strong><a href="mailto:psymonitor.support@gmail.com">psymonitor.support@gmail.com</a></strong></div>
                 </div>
                 <div class="info-card">
                     <div class="info-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
@@ -298,5 +293,30 @@
         </div>
     </div>
 </section>
+
+<script>
+// Contact form: there is no mail server behind the site, so the message is handed to the visitor's email app
+(function () {
+    const form = document.getElementById('contactForm');
+    const error = document.getElementById('contactError');
+    const field = (id) => document.getElementById(id);
+    form.addEventListener('input', (e) => e.target.removeAttribute('aria-invalid'));
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const missing = ['contactName', 'contactEmail', 'contactMessage'].find((id) => !field(id).value.trim() || !field(id).checkValidity());
+        if (missing) {
+            error.textContent = missing === 'contactEmail' ? 'Enter a valid email address.' : 'Please fill in your name and message.';
+            error.hidden = false;
+            field(missing).setAttribute('aria-invalid', 'true');
+            field(missing).focus();
+            return;
+        }
+        error.hidden = true;
+        const body = `${field('contactMessage').value.trim()}\n\n— ${field('contactName').value.trim()} (${field('contactEmail').value.trim()})`;
+        window.location.href = 'mailto:psymonitor.support@gmail.com?subject=' + encodeURIComponent(field('contactSubject').value)
+            + '&body=' + encodeURIComponent(body);
+    });
+})();
+</script>
 
 {% endblock %}

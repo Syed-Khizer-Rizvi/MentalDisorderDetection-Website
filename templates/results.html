@@ -3,11 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Your assessment results, composite risk score and recommended next steps.">
 <title>Your Results | Mental Disorder Detection</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/assessment.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/results.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
 </head>
 <body>
 <div class="progress-bar-top" style="background:#0F7A5F;"></div>
@@ -160,7 +162,7 @@
       <div class="rec-grid">
         <a href="{{ url_for('patient_activities') }}#games" class="rec-card"><span class="rec-icon">🧘</span><strong>Mindfulness Games</strong><small>Breathing, meditation</small></a>
         <a href="{{ url_for('patient_consultations_page') }}" class="rec-card" data-consult-open="consultation"><span class="rec-icon">👨‍⚕️</span><strong>Doctor Consultation</strong><small>Request a session</small></a>
-        <a href="#" class="rec-card"><span class="rec-icon">📅</span><strong>Set Reminder</strong><small>Daily check-ins</small></a>
+        <a href="{{ url_for('patient_activities') }}#journal" class="rec-card"><span class="rec-icon">📖</span><strong>Daily Journal</strong><small>Track your mood</small></a>
       </div>
     </div>
 
@@ -170,7 +172,7 @@
       <p>Your scores indicate low distress levels. Keep up the healthy habits with these recommended activities.</p>
       <div class="rec-grid">
         <a href="{{ url_for('patient_activities') }}#games" class="rec-card"><span class="rec-icon">🧩</span><strong>Mind Fresh Games</strong><small>Fun brain games</small></a>
-        <a href="{{ url_for('patient_activities') }}#meditations" class="rec-card"><span class="rec-icon">🫁</span><strong>Breathing Exercise</strong><small>5-min guided</small></a>
+        <a href="{{ url_for('patient_game', game='breathing') }}" class="rec-card"><span class="rec-icon">🫁</span><strong>Breathing Exercise</strong><small>5-min guided</small></a>
         <a href="{{ url_for('patient_activities') }}#journal" class="rec-card"><span class="rec-icon">📖</span><strong>Daily Journal</strong><small>Track your mood</small></a>
       </div>
     </div>
