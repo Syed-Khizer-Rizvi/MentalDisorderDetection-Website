@@ -27,8 +27,8 @@
         </div>
 
         <div class="nav-buttons">
-            <a href="/login" class="btn btn-outline">Patient Login</a>
-            <a href="/login" class="btn btn-primary">Doctor Login</a>
+            <a href="{{ url_for('patient_login') }}" class="btn btn-outline">Patient Login</a>
+            <a href="{{ url_for('doctor_login') }}" class="btn btn-primary">Doctor Login</a>
         </div>
     </nav>
 
@@ -66,9 +66,9 @@
 
             <div class="footer-col">
                 <h4>Portals</h4>
-                <a href="/login">Patient Login</a>
-                <a href="/login">Doctor Login</a>
-                <a href="/login">Admin Login</a>
+                <a href="{{ url_for('patient_login') }}">Patient Login</a>
+                <a href="{{ url_for('doctor_login') }}">Doctor Login</a>
+                <a href="{{ url_for('admin_login') }}">Admin Login</a>
                 <a href="/register">Patient Register</a>
                 <a href="/register">Doctor Register</a>
             </div>

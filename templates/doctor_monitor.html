@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Monitoring | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/monitor.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="{{ url_for('doctor_messages') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('doctor_risk_alerts') }}" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span><span class="nav-badge nav-badge-alert" data-alert-badge{% if not alert_unread_total %} hidden{% endif %}>{{ alert_unread_total if alert_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('doctor_monitor') }}" class="nav-item active" aria-current="page"><span class="nav-icon">📈</span><span class="nav-label">Monitor Patient</span></a>
+      <a href="{{ url_for('doctor_reports') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="{{ url_for('doctor_consultations_page') }}" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultations</span><span class="nav-badge nav-badge-consult{{ ' is-emergency' if consult_emergency_total }}" data-consult-badge{% if not consult_pending_total %} hidden{% endif %}>{{ consult_pending_total }}</span></a>
+      <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="mon-head">
+      <div>
+        <h1>Live Monitoring</h1>
+        <p>Real-time vitals from connected wearable · Updates every 2s</p>
+      </div>
+      {% if patients %}
+      <div class="mon-controls">
+        <label class="mon-select"><span class="sr-only">Patient</span>
+          <select id="monPatient" aria-label="Patient">
+            {% for p in patients %}<option value="{{ p.uid }}"{{ ' selected' if selected and p.uid == selected.uid }}>{{ p.name }}{{ '' if p.has_band else ' (no wristband)' }}</option>{% endfor %}
+          </select>
+        </label>
+        <button type="button" class="mon-btn" id="monPause" aria-pressed="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="ic-pause"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="ic-play"><path d="M7 4v16l13-8z"/></svg>
+          <span>Pause</span></button>
+        <button type="button" class="mon-btn" id="monReset">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+          <span>Reset</span></button>
+      </div>
+      {% endif %}
+    </section>
+
+    {% if not patients %}
+    <section class="mon-empty">
+      <span class="mon-empty-icon" aria-hidden="true">👥</span>
+      <h2>No assigned patients yet</h2>
+      <p>Live monitoring appears here once patients are assigned to you and pair their PsyMonitor Band v2.</p>
+    </section>
+    {% else %}
+    <section class="mon-patient" aria-label="Selected patient">
+      <div class="mon-avatar" aria-hidden="true">{{ selected.name.split()[:2]|map('first')|join|upper }}</div>
+      <div class="mon-patient-info">
+        <a href="{{ url_for('doctor_patient_detail', patient_uid=selected.uid) }}" class="mon-patient-name">{{ selected.name }}</a>
+        <span class="mon-condition">
+          {% if selected.composite_score is not none %}<span class="mon-chip" style="--chip: {{ selected.risk_color }};">{{ selected.risk_label }} risk</span>
+          Latest assessment {{ selected.composite_score }}/100 · {{ selected.last_assessment }}{% else %}No assessment yet{% endif %}
+        </span>
+      </div>
+      <div class="mon-live" id="monStatus" data-status="{{ initial.status }}">
+        <span class="mon-dot" aria-hidden="true"></span><span id="monStatusText">{{ initial.status_label }}</span>
+      </div>
+      <div class="mon-counter"><strong id="monUpdates">0</strong><span>updates</span></div>
+      <p class="mon-sync" id="monSync" aria-live="polite">{% if initial.last_sync_ago %}Last reading {{ initial.last_sync_ago }}{% endif %}</p>
+    </section>
+
+    <section class="mon-disconnected" id="monDisconnected"{% if initial.connected %} hidden{% endif %}>
+      <span class="mon-empty-icon" aria-hidden="true">⌚</span>
+      <h2>Patient wristband not connected</h2>
+      <p id="monDisconnectedText">{{ 'This patient has not paired a PsyMonitor Band v2 yet.' if initial.status == 'none' else 'The wristband is paired but has not sent any readings yet.' }}
+        This page keeps checking and will update as soon as readings arrive.</p>
+    </section>
+
+    <div id="monLive"{% if not initial.connected %} hidden{% endif %}>
+      <section class="mon-vitals" aria-label="Latest vitals">
+        <article class="mon-card" data-metric="hr" style="--c: #E11D48;">
+          <header><span class="mon-card-icon" aria-hidden="true">❤</span><span>Heart Rate</span></header>
+          <p class="mon-value"><strong data-value>—</strong><span>BPM</span></p>
+          <svg class="mon-spark" viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true"><path class="mon-spark-area"/><path class="mon-spark-line"/></svg>
+          <p class="mon-card-sub" data-sub></p>
+        </article>
+        <article class="mon-card" data-metric="second" style="--c: #0284C7;">
+          <header><span class="mon-card-icon" aria-hidden="true" data-icon>🌡</span><span data-title>Skin Temperature</span></header>
+          <p class="mon-value"><strong data-value>—</strong><span data-unit>°C</span></p>
+          <svg class="mon-spark" viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true"><path class="mon-spark-area"/><path class="mon-spark-line"/></svg>
+          <p class="mon-card-sub" data-sub>Respiration is not measured by this band</p>
+        </article>
+        <article class="mon-card" data-metric="gsr" style="--c: #7C3AED;">
+          <header><span class="mon-card-icon" aria-hidden="true">⚡</span><span>GSR</span></header>
+          <p class="mon-value"><strong data-value>—</strong><span>raw</span></p>
+          <svg class="mon-spark" viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true"><path class="mon-spark-area"/><path class="mon-spark-line"/></svg>
+          <p class="mon-card-sub" data-sub>Skin response (sensor units)</p>
+        </article>
+        <article class="mon-card" data-metric="risk" style="--c: #0F7A5F;">
+          <header><span class="mon-card-icon" aria-hidden="true">◎</span><span>Risk Score</span></header>
+          <p class="mon-value"><strong data-value>—</strong><span>/100</span></p>
+          <svg class="mon-spark" viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true"><path class="mon-spark-area"/><path class="mon-spark-line"/></svg>
+          <p class="mon-card-sub" data-sub>Stress indicator from HR + GSR</p>
+        </article>
+      </section>
+
+      <section class="mon-charts">
+        <article class="mon-chart-panel" style="--c: #E11D48;">
+          <div class="panel-head"><h3>Heart Rate Trend</h3><span class="mon-chart-meta" data-range="hr"></span></div>
+          <svg class="mon-chart" id="chartHr" role="img" aria-label="Heart rate over the latest readings"></svg>
+        </article>
+        <article class="mon-chart-panel" style="--c: #0F7A5F;">
+          <div class="panel-head"><h3>Composite Risk Score</h3><span class="mon-chart-meta" data-range="risk"></span></div>
+          <svg class="mon-chart" id="chartRisk" role="img" aria-label="Wristband risk score over the latest readings"></svg>
+        </article>
+      </section>
+      <p class="mon-note">Last {{ window }} readings. The band sends a reading every {{ initial.interval_s }} s (set in System Settings); this page checks for new ones every 2 s. Risk score here is the wristband's stress indicator, not a clinical diagnosis.</p>
+    </div>
+
+    <script type="application/json" id="monInitial">{{ initial|tojson }}</script>
+    <div class="mon-config" hidden data-url="{{ url_for('doctor_monitor_data', patient_uid=selected.uid) }}"
+         data-page="{{ url_for('doctor_monitor') }}" data-window="{{ window }}"></div>
+    {% endif %}
+  </main>
+</div>
+{% if patients %}<script src="{{ url_for('static', filename='js/doctor_monitor.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% include '_chat_badge.html' %}
+</body>
+</html>

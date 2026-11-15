@@ -42,11 +42,13 @@ export function googleProvider(GoogleAuthProvider) {
   return provider;
 }
 
-export async function verifyToken(user) {
+// `portal` ('patient' | 'doctor' | 'admin') makes the server refuse accounts of another role
+// (the reply then has wrong_portal, portal_url and portal_title).
+export async function verifyToken(user, portal) {
   const res = await fetch('/api/verify-token', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ idToken: await user.getIdToken() })
+    body: JSON.stringify({ idToken: await user.getIdToken(), ...(portal ? { portal } : {}) })
   });
   return res.json();
 }
@@ -61,8 +63,8 @@ export function showAuthSuccess(message, href, delay = 150) {
   pill.setAttribute('role', 'status');
   pill.innerHTML = '<span class="auth-success-icon" aria-hidden="true">✓</span><span></span>';
   pill.lastChild.textContent = message;
-  const tabs = document.querySelector('.auth-tabs');
-  tabs.parentNode.insertBefore(pill, tabs);
+  const anchor = document.querySelector('.auth-tabs') || document.querySelector('.auth-form-box');   // admin page has no tabs
+  anchor.parentNode.insertBefore(pill, anchor);
   pill.scrollIntoView({ block: 'nearest', behavior: 'smooth' });   // register page: submit button is far below
 
   document.querySelector('.auth-form-box').classList.add('is-redirecting');

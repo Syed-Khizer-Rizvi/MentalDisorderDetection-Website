@@ -11,3 +11,7 @@ IriunWebcam-2.9.9.exe
 
 # Credentials: never commit
 kaggle.json
+
+# One-off database scripts (already run; contain real patient/doctor names)
+scripts/swap_doctors.py
+scripts/reassign_patients.py

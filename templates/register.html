@@ -1,116 +1,162 @@
+{#- /patient/register and /doctor/register (role = 'patient' | 'doctor'). Creates the Firebase account,
+    then /api/register-profile stores the profile: patients are active straight away, doctors wait
+    for an administrator's approval. -#}
+{%- from '_portal_icons.html' import icon -%}
+{%- set is_doctor = role == 'doctor' -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Create Account | Mental Disorder Detection</title>
+<title>{{ 'Doctor' if is_doctor else 'Patient' }} Registration | Mental Disorder Detection</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
 </head>
-<body>
+<body class="portal-{{ role }}">
 <div class="auth-wrapper">
   <aside class="auth-left">
-    <div class="auth-brand">
-      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="auth-logo">
-      <span class="auth-brand-text">Mental Disorder Detection</span>
-    </div>
+    <a href="{{ url_for('home') }}" class="auth-brand"><img src="{{ url_for('static', filename='images/logo.png') }}" alt="" class="auth-logo">
+      <span class="auth-brand-text">Mental Disorder Detection</span></a>
     <div class="auth-hero">
-      <h1>Your mind matters.<br>Let's check in.</h1>
-      <p>Take a quick, private assessment combining clinical screening and facial emotion analysis. Your data stays yours.</p>
-      <ul class="auth-features">
-        <li>✓ PHQ-9 &amp; GAD-7 standardized screenings</li>
-        <li>✓ AI-powered facial emotion scan</li>
-        <li>✓ Personalized care recommendations</li>
+      <span class="portal-badge">{{ icon(role, 16) }}{{ 'Doctor Portal' if is_doctor else 'Patient Portal' }}</span>
+      {% if is_doctor %}
+      <h1>Join as a doctor.</h1>
+      <p>Create your account, then an administrator checks your PMC registration before your first sign-in.</p>
+      <ol class="portal-steps">
+        <li><strong>Register</strong><small>Your details and PMC license number</small></li>
+        <li><strong>Admin approval</strong><small>We verify your registration</small></li>
+        <li><strong>Start monitoring</strong><small>Patients are assigned to you</small></li>
+      </ol>
+      {% else %}
+      <h1>Start your wellness journey.</h1>
+      <p>Your account is ready as soon as you register. Everything you share stays between you and your doctor.</p>
+      <ul class="portal-features">
+        <li><span class="portal-feature-icon">{{ icon('clipboard') }}</span><span><strong>Daily Assessments</strong><small>Short, private check-ins</small></span></li>
+        <li><span class="portal-feature-icon">{{ icon('watch') }}</span><span><strong>Wristband Monitoring</strong><small>Pair your PsyMonitor Band v2</small></span></li>
+        <li><span class="portal-feature-icon">{{ icon('leaf') }}</span><span><strong>Wellness Activities</strong><small>Breathing, games and journaling</small></span></li>
       </ul>
+      {% endif %}
     </div>
+    <p class="portal-trust">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      {{ 'Secure Medical Portal' if is_doctor else 'Private & secure · Your data stays yours' }}</p>
   </aside>
 
   <main class="auth-right">
+    <a href="{{ url_for('register') }}" class="portal-switch">← Choose a different account type</a>
     <div class="auth-tabs">
-      <a href="{{ url_for('login') }}" class="auth-tab">Sign in</a>
-      <a href="{{ url_for('register') }}" class="auth-tab active">Create account</a>
+      <a href="{{ url_for(role ~ '_login') }}" class="auth-tab">Sign in</a>
+      <a href="{{ url_for(role ~ '_register') }}" class="auth-tab active" aria-current="page">Create account</a>
     </div>
     <div class="auth-form-box">
-      <h2>Create your account</h2>
-      <p class="auth-sub">Register as a new patient to start your assessment</p>
+      <h2>{{ 'Register as Doctor' if is_doctor else 'Register as Patient' }}</h2>
+      <p class="auth-sub">{{ 'Your account is activated after an administrator approves it.' if is_doctor else 'Create your patient account to start your first assessment.' }}</p>
 
-      <div id="jsAlert" class="auth-alert" style="display:none;"></div>
+      <div id="jsAlert" class="auth-alert" role="alert" hidden><span id="jsAlertText"></span>
+        <a id="jsAlertLink" class="auth-alert-link" hidden></a></div>
 
-      <form id="registerForm" class="auth-form">
+      <form id="registerForm" class="auth-form" novalidate>
         <div class="google-banner" id="googleBanner" hidden>
           <svg class="google-icon" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-          <p>Signed in with Google as <strong id="googleEmail"></strong>. Choose how you're registering to finish.</p>
+          <p>Signed in with Google as <strong id="googleEmail"></strong>. Fill in the rest to finish.</p>
           <button type="button" class="auth-link" id="googleSwitch">Use a different account</button>
         </div>
+
         <div class="form-group">
           <label for="fullname">Full name</label>
-          <div class="input-wrap">
-            <span class="input-icon">👤</span>
-            <input type="text" id="fullname" placeholder="Jane Doe" required>
-          </div>
+          <div class="input-wrap"><span class="input-icon" aria-hidden="true">👤</span>
+            <input type="text" id="fullname" placeholder="{{ 'Dr. Sara Malik' if is_doctor else 'Ayesha Khan' }}" autocomplete="name" maxlength="100" required></div>
         </div>
-        <div class="form-group">
-          <label for="email">Email</label>
-          <div class="input-wrap">
-            <span class="input-icon">✉</span>
-            <input type="email" id="email" placeholder="you@example.com" required>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="email">Email</label>
+            <div class="input-wrap"><span class="input-icon" aria-hidden="true">✉</span>
+              <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required></div>
           </div>
-        </div>
-        <div class="form-group">
-          <label for="role">Register as</label>
-          <div class="input-wrap">
-            <span class="input-icon">🎭</span>
-            <select id="role" required>
-              <option value="patient">Patient</option>
-              <option value="doctor">Doctor</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group" id="passwordGroup">
-          <label for="password">Password</label>
-          <div class="input-wrap">
-            <span class="input-icon">🔒</span>
-            <input type="password" id="password" placeholder="••••••••" required minlength="6">
-          </div>
-        </div>
-        <div class="form-group" id="confirmGroup">
-          <label for="confirm">Confirm password</label>
-          <div class="input-wrap">
-            <span class="input-icon">🔒</span>
-            <input type="password" id="confirm" placeholder="Repeat password" required>
+          <div class="form-group">
+            <label for="phone">Phone</label>
+            <div class="input-wrap"><span class="input-icon" aria-hidden="true">📞</span>
+              <input type="tel" id="phone" placeholder="0300 1234567" autocomplete="tel" maxlength="20" required></div>
           </div>
         </div>
 
-        <fieldset class="reg-step" id="doctorStep">
+        {% if is_doctor %}
+        <div class="form-group">
+          <label for="specialization">Specialty</label>
+          <div class="input-wrap"><span class="input-icon" aria-hidden="true">🩺</span>
+            <input type="text" id="specialization" list="specializationList" placeholder="e.g. Psychiatry" maxlength="100" required></div>
+          <datalist id="specializationList">{% for s in specializations %}<option value="{{ s }}">{% endfor %}</datalist>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="license">License number (PMC)</label>
+            <div class="input-wrap"><span class="input-icon" aria-hidden="true">🪪</span>
+              <input type="text" id="license" placeholder="PMC-12345-P" maxlength="50" autocapitalize="characters" required></div>
+          </div>
+          <div class="form-group">
+            <label for="affiliation">Hospital / Clinic</label>
+            <div class="input-wrap"><span class="input-icon" aria-hidden="true">🏥</span>
+              <input type="text" id="affiliation" placeholder="e.g. Aga Khan Hospital" maxlength="100" required></div>
+          </div>
+        </div>
+        {% else %}
+        <div class="form-row">
+          <div class="form-group">
+            <label for="age">Age</label>
+            <div class="input-wrap"><span class="input-icon" aria-hidden="true">🎂</span>
+              <input type="number" id="age" min="13" max="120" step="1" inputmode="numeric" placeholder="e.g. 24" required></div>
+          </div>
+          <div class="form-group">
+            <label for="gender">Gender</label>
+            <div class="input-wrap"><span class="input-icon" aria-hidden="true">⚧</span>
+              <select id="gender" required><option value="">Select…</option>{% for g in genders %}<option value="{{ g }}">{{ g }}</option>{% endfor %}</select></div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="form-row" id="passwordRow">
+          <div class="form-group">
+            <label for="password">Password</label>
+            <div class="input-wrap"><span class="input-icon" aria-hidden="true">🔒</span>
+              <input type="password" id="password" placeholder="At least 6 characters" autocomplete="new-password" minlength="6" required></div>
+          </div>
+          <div class="form-group">
+            <label for="confirm">Confirm password</label>
+            <div class="input-wrap"><span class="input-icon" aria-hidden="true">🔒</span>
+              <input type="password" id="confirm" placeholder="Repeat password" autocomplete="new-password" required></div>
+          </div>
+        </div>
+
+        {% if not is_doctor %}
+        <fieldset class="reg-step">
           <legend><span class="reg-step-num">Step 2</span> Choose your doctor</legend>
           {% if doctors %}
           <div class="form-group">
             <label for="doctor">Your doctor</label>
-            <div class="input-wrap">
-              <span class="input-icon">🩺</span>
+            <div class="input-wrap"><span class="input-icon" aria-hidden="true">🩺</span>
               <select id="doctor" required>
                 <option value="">Select a doctor…</option>
                 {% for d in doctors %}
                 <option value="{{ d.uid }}">Dr. {{ d.name }}{% if d.specialization %} - {{ d.specialization }}{% endif %}{% if d.affiliation %} ({{ d.affiliation }}){% endif %}</option>
                 {% endfor %}
-              </select>
-            </div>
+              </select></div>
             <small class="reg-hint">Your doctor will see your assessment results and any journal entries you choose to share.</small>
           </div>
           {% else %}
           <p class="reg-note">No doctors available right now. You can complete registration — we'll assign a doctor as soon as one becomes available.</p>
           {% endif %}
         </fieldset>
+        {% endif %}
 
-        <button type="submit" class="btn-auth" id="submitBtn">Create account</button>
+        <button type="submit" class="btn-auth" id="submitBtn">{{ 'Register as Doctor' if is_doctor else 'Create patient account' }}</button>
       </form>
 
       <div id="googleEntry">
 {% include '_google_button.html' %}
       </div>
 
-      <p class="auth-footer-text">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
+      <p class="auth-footer-text">Already have an account? <a href="{{ url_for(role ~ '_login') }}">Sign in to the {{ 'Doctor' if is_doctor else 'Patient' }} Portal</a></p>
     </div>
   </main>
 </div>
@@ -130,104 +176,89 @@
     databaseURL: "{{ firebase_config.databaseURL }}"
   };
 
+  const ROLE = "{{ role }}";
+  const LOGIN_URL = {{ url_for(role ~ '_login')|tojson }};
+  const DOCTOR_PENDING_MESSAGE = "Registration successful! Your account is pending admin approval. You can sign in to the Doctor Portal once an administrator has approved it.";
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+  const $ = (id) => document.getElementById(id);
 
-  const form = document.getElementById('registerForm');
-  const alertBox = document.getElementById('jsAlert');
-  const submitBtn = document.getElementById('submitBtn');
-  const roleSelect = document.getElementById('role');
-  const doctorStep = document.getElementById('doctorStep');
-  const doctorSelect = document.getElementById('doctor');   // absent when no doctors are approved
+  const form = $('registerForm');
+  const alertBox = $('jsAlert');
+  const submitBtn = $('submitBtn');
+  const submitLabel = submitBtn.textContent;
+  const doctorSelect = $('doctor');   // patients only, and absent when no doctors are approved
 
-  // Doctors don't choose a doctor; only patients see Step 2
-  function syncDoctorStep() {
-    const isPatient = roleSelect.value === 'patient';
-    doctorStep.hidden = !isPatient;
-    if (doctorSelect) doctorSelect.required = isPatient;
-  }
-  roleSelect.addEventListener('change', syncDoctorStep);
-  syncDoctorStep();
-
-  function showAlert(msg, isSuccess = false) {
-    alertBox.textContent = msg;
-    alertBox.style.display = 'block';
-    if (isSuccess) {
-      alertBox.style.background = '#D1FAE5';
-      alertBox.style.color = '#065F46';
-      alertBox.style.borderColor = '#6EE7B7';
-    } else {
-      alertBox.style.background = '#FEE2E2';
-      alertBox.style.color = '#B91C1C';
-      alertBox.style.borderColor = '#FCA5A5';
-    }
+  function showAlert(msg, isSuccess = false, link = null) {
+    if (!msg) return;
+    $('jsAlertText').textContent = msg;
+    alertBox.classList.toggle('is-success', isSuccess);
+    $('jsAlertLink').hidden = !link;
+    if (link) { $('jsAlertLink').href = link.href; $('jsAlertLink').textContent = link.text; }
+    alertBox.hidden = false;
+    alertBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   // ----- Google sign-up -----
   // In Google mode the Firebase account already exists (signed in via the popup), so the form
-  // only collects name, role and doctor; email comes from Google and there's no password.
-  const googleBtn = document.getElementById('googleBtn');
-  const googleEntry = document.getElementById('googleEntry');
-  const googleBanner = document.getElementById('googleBanner');
-  const nameInput = document.getElementById('fullname');
-  const emailInput = document.getElementById('email');
-  const passwordGroup = document.getElementById('passwordGroup');
-  const confirmGroup = document.getElementById('confirmGroup');
+  // only collects the profile; email comes from Google and there's no password.
+  const googleBtn = $('googleBtn');
+  const nameInput = $('fullname');
+  const emailInput = $('email');
   let googleUser = null;
 
   function setGoogleMode(user) {
     googleUser = user;
     const on = Boolean(user);
-    googleBanner.hidden = !on;
-    googleEntry.hidden = on;
-    passwordGroup.hidden = confirmGroup.hidden = on;
-    document.getElementById('password').required = document.getElementById('confirm').required = !on;
+    $('googleBanner').hidden = !on;
+    $('googleEntry').hidden = on;
+    $('passwordRow').hidden = on;
+    $('password').required = $('confirm').required = !on;
     emailInput.readOnly = on;
     if (on) {
-      document.getElementById('googleEmail').textContent = user.email;
+      $('googleEmail').textContent = user.email;
       emailInput.value = user.email || '';
       if (!nameInput.value.trim()) nameInput.value = user.displayName || '';
-      roleSelect.focus();
+      $('phone').focus();
     } else {
       emailInput.value = '';
     }
   }
 
-  // Already registered -> just sign in; first-time Google user -> finish the form here
+  // Already registered -> just sign in (on this portal); first-time Google user -> finish the form here
   async function useGoogleUser(user) {
-    const data = await verifyToken(user);
+    const data = await verifyToken(user, ROLE);
     if (data.success) {
-      showAuthSuccess(data.mfa_required ? 'Password accepted. Enter your two-factor code next...'
-                                        : 'Login successful! Redirecting to your dashboard...', data.redirect);
+      showAuthSuccess('Login successful! Redirecting to your dashboard...', data.redirect);
     } else if (data.needs_registration) {
       setGoogleMode(user);
     } else {
       await signOut(auth);
-      showAlert(data.error || 'Google sign-in failed');
+      showAlert(data.error || 'Google sign-in failed', false,
+                data.wrong_portal ? { href: data.portal_url, text: `Go to the ${data.portal_title} →` } : null);
     }
   }
 
   googleBtn.addEventListener('click', async () => {
-    alertBox.style.display = 'none';
+    alertBox.hidden = true;
     googleBtn.disabled = true;
     try {
       const result = await signInWithPopup(auth, googleProvider(GoogleAuthProvider));
       await useGoogleUser(result.user);
     } catch (err) {
-      const msg = authErrorMessage(err);
-      if (msg) showAlert(msg);
+      showAlert(authErrorMessage(err));
     } finally {
       googleBtn.disabled = false;
     }
   });
 
-  document.getElementById('googleSwitch').addEventListener('click', async () => {
+  $('googleSwitch').addEventListener('click', async () => {
     await signOut(auth);
     setGoogleMode(null);
     googleBtn.click();
   });
 
-  // Arriving from "Continue with Google" on the login page: pick up that Firebase sign-in
+  // Arriving from "Continue with Google" on the sign-in page: pick up that Firebase sign-in
   if (new URLSearchParams(window.location.search).get('google') === '1') {
     const stop = onAuthStateChanged(auth, (user) => {
       stop();
@@ -238,6 +269,41 @@
         showAlert('Your Google sign-in has expired. Click "Continue with Google" to try again.');
       }
     });
+  }
+
+  // ----- Validation (the server checks all of this again) -----
+  function fail(input, message) {
+    showAlert(message);
+    if (input) { input.setAttribute('aria-invalid', 'true'); input.focus(); }
+    return null;
+  }
+  form.addEventListener('input', (e) => e.target.removeAttribute('aria-invalid'));
+
+  function collect() {
+    const body = { role: ROLE, name: nameInput.value.trim(), phone: $('phone').value.trim() };
+    if (!body.name) return fail(nameInput, 'Enter your full name.');
+    if (!googleUser && !emailInput.checkValidity()) return fail(emailInput, 'Enter a valid email address.');
+    if (!/^\d{10,15}$/.test(body.phone.replace(/[\s\-+]/g, ''))) return fail($('phone'), 'Phone must contain 10-15 digits.');
+    if (ROLE === 'patient') {
+      const age = $('age').value.trim();
+      if (!/^\d+$/.test(age) || +age < 13 || +age > 120) return fail($('age'), 'Enter your age (a number from 13 to 120).');
+      if (!$('gender').value) return fail($('gender'), 'Choose your gender.');
+      Object.assign(body, { age: +age, gender: $('gender').value, doctor_uid: doctorSelect ? doctorSelect.value : '' });
+      if (doctorSelect && !body.doctor_uid) return fail(doctorSelect, 'Please choose your doctor.');
+    } else {
+      const fields = [['specialization', 'Enter your specialty.'], ['license', 'Enter your PMC license number.'],
+                      ['affiliation', 'Enter your hospital or clinic.']];
+      for (const [id, message] of fields) if (!$(id).value.trim()) return fail($(id), message);
+      if (!/^[A-Za-z0-9\/-]{1,50}$/.test($('license').value.trim()))
+        return fail($('license'), 'License number can use letters, numbers, hyphens and slashes.');
+      Object.assign(body, { specialization: $('specialization').value.trim(), license_number: $('license').value.trim(),
+                            affiliation: $('affiliation').value.trim() });
+    }
+    if (!googleUser) {
+      if ($('password').value.length < 6) return fail($('password'), 'Password must be at least 6 characters.');
+      if ($('password').value !== $('confirm').value) return fail($('confirm'), 'Passwords do not match.');
+    }
+    return body;
   }
 
   async function registerProfile(user, body) {
@@ -251,74 +317,55 @@
 
   function resetSubmit() {
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Create account';
+    submitBtn.textContent = submitLabel;
+  }
+
+  function doctorRegistered() {
+    $('googleBanner').hidden = true;
+    form.querySelectorAll('input, select, button').forEach((el) => { el.disabled = true; });
+    submitBtn.textContent = 'Pending approval';
+    showAlert(DOCTOR_PENDING_MESSAGE, true, { href: LOGIN_URL, text: 'Go to the Doctor Portal sign-in →' });
+    setTimeout(() => { window.location.href = LOGIN_URL; }, 6000);
   }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    alertBox.style.display = 'none';
-
-    const fullname = nameInput.value.trim();
-    const email = emailInput.value.trim();
-    const role = document.getElementById('role').value;
-    const password = document.getElementById('password').value;
-    const confirm = document.getElementById('confirm').value;
-
-    if (!googleUser && password !== confirm) {
-      showAlert('Passwords do not match');
-      return;
-    }
-
-    // Checked before the Firebase account is created, so a missing choice never leaves a
-    // half-registered account behind
-    const doctorUid = role === 'patient' && doctorSelect ? doctorSelect.value : '';
-    if (role === 'patient' && doctorSelect && !doctorUid) {
-      showAlert('Please choose your doctor.');
-      doctorSelect.focus();
-      return;
-    }
+    alertBox.hidden = true;
+    const body = collect();
+    if (!body) return;   // checked before the Firebase account is created, so nothing is left half-registered
 
     submitBtn.disabled = true;
     submitBtn.textContent = 'Creating account...';
-    const body = { name: fullname, phone: '', role, doctor_uid: doctorUid };
-
     try {
       if (googleUser) {
         const data = await registerProfile(googleUser, body);
         if (!data.success) {
-          // The Google account is kept, so the user can fix the form and submit again
-          showAlert(data.error || 'Registration failed');
+          showAlert(data.error || 'Registration failed');   // the Google account is kept, so the form can be fixed
           resetSubmit();
-        } else if (role === 'doctor') {
+        } else if (ROLE === 'doctor') {
           await signOut(auth);
-          googleBanner.hidden = true;
-          showAlert(data.message, true);
-          submitBtn.textContent = 'Pending approval';
+          doctorRegistered();
         } else {
-          // Patients are signed straight in; there's no password to type on the login page
-          const login = await verifyToken(googleUser);
+          // Patients are signed straight in; there's no password to type on the sign-in page
+          const login = await verifyToken(googleUser, 'patient');
           showAuthSuccess(login.success ? 'Account created successfully! Redirecting to your dashboard...'
-                                        : 'Account created successfully! Redirecting to login...',
-                          login.success ? login.redirect : '/login');
+                                        : 'Account created successfully! Redirecting to sign in...',
+                          login.success ? login.redirect : LOGIN_URL);
         }
         return;
       }
 
-      const userCred = await createUserWithEmailAndPassword(auth, email, password);
+      const userCred = await createUserWithEmailAndPassword(auth, emailInput.value.trim(), $('password').value);
       const data = await registerProfile(userCred.user, body);
-
       await signOut(auth);
 
-      if (data.success) {
-        if (role === 'doctor') {
-          showAlert(data.message, true);
-          submitBtn.textContent = 'Pending approval';
-        } else {
-          showAuthSuccess('Account created successfully! Redirecting to login...', '/login');
-        }
-      } else {
+      if (!data.success) {
         showAlert(data.error || 'Registration failed');
         resetSubmit();
+      } else if (ROLE === 'doctor') {
+        doctorRegistered();
+      } else {
+        showAuthSuccess('Account created successfully! Redirecting to the Patient Portal sign-in...', LOGIN_URL, 900);
       }
     } catch (err) {
       showAlert(authErrorMessage(err) || 'Registration error');

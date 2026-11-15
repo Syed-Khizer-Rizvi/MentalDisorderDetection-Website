@@ -1,56 +1,94 @@
+{#- One sign-in page for the three portals (portal = 'patient' | 'doctor' | 'admin').
+    All of them use the same Firebase sign-in and /api/verify-token; the portal name is sent along
+    so the server can refuse an account of another role. -#}
+{%- set portals = {
+  'patient': {
+    'title': 'Patient Portal', 'sub': 'Sign in to access your wellness dashboard',
+    'hero': 'Your mind matters. Let\'s check in.',
+    'lead': 'A private space to track how you feel, with a doctor who follows your progress.',
+    'features': [
+      ('clipboard', 'Daily Assessments', 'PHQ-9, GAD-7 and PSS-10 check-ins with an optional facial emotion scan'),
+      ('watch', 'Wristband Monitoring', 'Heart rate, skin response and stress from your PsyMonitor Band v2'),
+      ('leaf', 'Wellness Activities', 'Breathing exercises, calming games, a journal and a gratitude jar')],
+    'register': 'Register as Patient', 'footer': 'Private & secure · Your data stays yours'},
+  'doctor': {
+    'title': 'Doctor Portal', 'sub': 'Sign in to access your patient dashboard',
+    'hero': 'Clinical insight, in real time.',
+    'lead': 'Follow every assigned patient between visits and step in when it matters.',
+    'features': [
+      ('pulse', 'Real-time Patient Monitoring', 'Live vitals from your patients\' wristbands, updated every few seconds'),
+      ('bell', 'Automated Critical Alerts', 'Notified as soon as an assessment reaches a critical score'),
+      ('brain', 'AI Risk Assessment', 'Questionnaires and facial emotion analysis fused into one risk score')],
+    'register': 'Register as Doctor', 'footer': 'Secure Medical Portal'},
+  'admin': {'title': 'Administrator sign-in', 'sub': 'Restricted area. Sign-ins are logged.'}
+} -%}
+{%- set p = portals[portal] -%}
+{%- from '_portal_icons.html' import icon -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sign In | Mental Disorder Detection</title>
+<title>{{ p.title|capitalize if portal == 'admin' else p.title }} | Mental Disorder Detection</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
 </head>
-<body>
+<body class="portal-{{ portal }}">
+{% if portal == 'admin' %}
+<main class="auth-admin">
+  <a href="{{ url_for('home') }}" class="auth-brand auth-brand-dark"><img src="{{ url_for('static', filename='images/logo.png') }}" alt="" class="auth-logo">
+    <span class="auth-brand-text">Mental Disorder Detection</span></a>
+  <div class="auth-form-box auth-admin-card">
+{% else %}
 <div class="auth-wrapper">
   <aside class="auth-left">
-    <div class="auth-brand">
-      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="auth-logo">
-      <span class="auth-brand-text">Mental Disorder Detection</span>
-    </div>
+    <a href="{{ url_for('home') }}" class="auth-brand"><img src="{{ url_for('static', filename='images/logo.png') }}" alt="" class="auth-logo">
+      <span class="auth-brand-text">Mental Disorder Detection</span></a>
     <div class="auth-hero">
-      <h1>Your mind matters.<br>Let's check in.</h1>
-      <p>Take a quick, private assessment combining clinical screening and facial emotion analysis. Your data stays yours.</p>
-      <ul class="auth-features">
-        <li>✓ PHQ-9 &amp; GAD-7 standardized screenings</li>
-        <li>✓ AI-powered facial emotion scan</li>
-        <li>✓ Personalized care recommendations</li>
+      <span class="portal-badge">{{ icon(portal, 16) }}{{ p.title }}</span>
+      <h1>{{ p.hero }}</h1>
+      <p>{{ p.lead }}</p>
+      <ul class="portal-features">
+        {% for icon_name, title, text in p.features %}
+        <li><span class="portal-feature-icon" aria-hidden="true">{{ icon(icon_name) }}</span>
+          <span><strong>{{ title }}</strong><small>{{ text }}</small></span></li>
+        {% endfor %}
       </ul>
     </div>
+    <p class="portal-trust">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      {{ p.footer }}</p>
   </aside>
 
   <main class="auth-right">
+    <a href="{{ url_for('login') }}" class="portal-switch">← All portals</a>
     <div class="auth-tabs">
-      <a href="{{ url_for('login') }}" class="auth-tab active">Sign in</a>
-      <a href="{{ url_for('register') }}" class="auth-tab">Create account</a>
+      <a href="{{ url_for(portal ~ '_login') }}" class="auth-tab active" aria-current="page">Sign in</a>
+      <a href="{{ url_for(portal ~ '_register') }}" class="auth-tab">Create account</a>
     </div>
     <div class="auth-form-box">
-      <h2>Welcome back</h2>
-      <p class="auth-sub">Sign in</p>
+{% endif %}
+      <h2>{{ p.title }}</h2>
+      <p class="auth-sub">{{ p.sub }}</p>
 
-      {% if error %}<div class="auth-alert">{{ error }}</div>{% endif %}
-      <div id="jsAlert" class="auth-alert" style="display:none;"></div>
+      {% with messages = get_flashed_messages(category_filter=['error']) %}{% for m in messages %}<div class="auth-alert">{{ m }}</div>{% endfor %}{% endwith %}
+      <div id="jsAlert" class="auth-alert" role="alert" hidden><span id="jsAlertText"></span>
+        <a id="jsAlertLink" class="auth-alert-link" hidden></a></div>
 
       <form id="loginForm" class="auth-form">
         <div class="form-group">
           <label for="email">Email</label>
           <div class="input-wrap">
-            <span class="input-icon">✉</span>
-            <input type="email" id="email" placeholder="you@example.com" required>
+            <span class="input-icon" aria-hidden="true">✉</span>
+            <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required>
           </div>
         </div>
         <div class="form-group">
           <label for="password">Password</label>
           <div class="input-wrap">
-            <span class="input-icon">🔒</span>
-            <input type="password" id="password" placeholder="••••••••" required>
+            <span class="input-icon" aria-hidden="true">🔒</span>
+            <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required>
           </div>
           <button type="button" class="auth-link auth-forgot" id="forgotLink">Forgot password?</button>
         </div>
@@ -59,10 +97,13 @@
 
 {% include '_google_button.html' %}
 
-      <p class="auth-footer-text">Don't have an account? <a href="{{ url_for('register') }}">Create account</a></p>
+      {% if portal != 'admin' %}
+      <p class="auth-footer-text">Don't have an account? <a href="{{ url_for(portal ~ '_register') }}">{{ p.register }}</a></p>
+      {% if portal == 'doctor' %}<p class="portal-footnote">New doctor accounts are activated once an administrator has approved them.</p>{% endif %}
+      {% endif %}
     </div>
   </main>
-</div>
+{% if portal != 'admin' %}</div>{% endif %}
 
 <dialog class="auth-modal" id="resetModal" aria-labelledby="resetTitle">
   <button type="button" class="auth-modal-close" id="resetClose" aria-label="Close">×</button>
@@ -102,21 +143,28 @@
     databaseURL: "{{ firebase_config.databaseURL }}"
   };
 
+  const PORTAL = "{{ portal }}";
+  const REGISTER_URL = {{ (url_for(portal ~ '_register') if portal != 'admin' else '')|tojson }};
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
 
   const form = document.getElementById('loginForm');
   const alertBox = document.getElementById('jsAlert');
+  const alertText = document.getElementById('jsAlertText');
+  const alertLink = document.getElementById('jsAlertLink');
   const submitBtn = document.getElementById('submitBtn');
-
   const googleBtn = document.getElementById('googleBtn');
   const emailInput = document.getElementById('email');
 
-  function showAlert(msg) {
+  // `link` ({href, text}) adds a button-style link, e.g. to the right portal
+  function showAlert(msg, link) {
     if (!msg) return;
-    alertBox.textContent = msg;
-    alertBox.style.display = 'block';
+    alertText.textContent = msg;
+    alertLink.hidden = !link;
+    if (link) { alertLink.href = link.href; alertLink.textContent = link.text; }
+    alertBox.hidden = false;
   }
+  function hideAlert() { alertBox.hidden = true; }
 
   function setBusy(busy) {
     submitBtn.disabled = googleBtn.disabled = busy;
@@ -124,26 +172,27 @@
   }
 
   // Creates the Flask session for a Firebase user. A first-time Google user has no profile
-  // yet, so they stay signed in to Firebase and finish on the register page.
+  // yet, so they stay signed in to Firebase and finish on this portal's register page.
   async function finishLogin(user, viaGoogle) {
-    const data = await verifyToken(user);
+    const data = await verifyToken(user, PORTAL);
     if (data.success) {
       showAuthSuccess(data.mfa_required ? 'Password accepted. Enter your two-factor code next...'
                                         : 'Login successful! Redirecting to your dashboard...', data.redirect);
       return;
     }
-    if (viaGoogle && data.needs_registration) {
-      window.location.href = "{{ url_for('register') }}?google=1";
+    if (viaGoogle && data.needs_registration && REGISTER_URL) {
+      window.location.href = REGISTER_URL + '?google=1';
       return;
     }
     await signOut(auth);
-    showAlert(data.error || 'Login failed');
+    showAlert(data.error || 'Login failed',
+              data.wrong_portal && data.portal_url ? { href: data.portal_url, text: `Go to the ${data.portal_title} →` } : null);
     setBusy(false);
   }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    alertBox.style.display = 'none';
+    hideAlert();
     setBusy(true);
     // End-to-end timer, reported in the console when the dashboard appears (see _login_toast.html)
     try { sessionStorage.setItem('loginStartedAt', String(Date.now())); } catch (ignored) { /* storage blocked */ }
@@ -157,7 +206,7 @@
   });
 
   googleBtn.addEventListener('click', async () => {
-    alertBox.style.display = 'none';
+    hideAlert();
     setBusy(true);
     try { sessionStorage.setItem('loginStartedAt', String(Date.now())); } catch (ignored) { /* storage blocked */ }
     try {

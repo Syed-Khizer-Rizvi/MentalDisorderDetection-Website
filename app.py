@@ -44,6 +44,7 @@ RATE_LIMITS = {   # shown on the Security page; applied with @limiter.limit on e
     'verify_token': '10 per minute', 'register_profile': '5 per hour', 'wristband_pair': '10 per hour',
     'wristband_data': '120 per minute', 'admin_login': '10 per minute', 'admin_mfa_verify': '5 per 15 minutes',
     'analyze_emotion': '60 per minute', 'consultation_request': '3 per hour',
+    'doctor_monitor_data': '60 per minute',   # the live monitor polls every 2 s
 }
 limiter = Limiter(
     get_remote_address, app=app,
@@ -145,7 +146,7 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if 'user' not in session:
-            return redirect(url_for('login'))
+            return redirect(portal_login_url())
         return f(*args, **kwargs)
     return decorated
 
@@ -155,7 +156,7 @@ def role_required(*roles):
         @wraps(f)
         def decorated(*args, **kwargs):
             if 'user' not in session:
-                return redirect(url_for('login'))
+                return redirect(portal_login_url())
             if session['user'].get('role') not in roles:
                 flash('Access denied: You do not have permission to view this page.', 'error')
                 return redirect(url_for('home'))
@@ -169,7 +170,7 @@ def admin_required(f):
     def decorated(*args, **kwargs):
         if session.get('user', {}).get('role') != 'admin':
             if 'user' not in session:
-                return redirect(url_for('login'))
+                return redirect(portal_login_url())
             flash('Access denied: administrator access is required.', 'error')
             return redirect(url_for('home'))
         return f(*args, **kwargs)
@@ -593,27 +594,88 @@ def home():
     return render_template('home.html', firebase_config=FIREBASE_WEB_CONFIG)
 
 
+# Separate sign-in pages per role. All of them use the same Firebase sign-in and /api/verify-token;
+# the page sends its portal name so a patient can't sign in on the Doctor Portal (and vice versa).
+PORTALS = {
+    'patient': {'title': 'Patient Portal', 'login': 'patient_login', 'register': 'patient_register'},
+    'doctor': {'title': 'Doctor Portal', 'login': 'doctor_login', 'register': 'doctor_register'},
+    'admin': {'title': 'admin sign-in', 'login': 'admin_login', 'register': None},
+}
+
+
+def portal_mismatch_message(portal, role):
+    here = 'This is the admin sign-in' if portal == 'admin' else f"This is the {PORTALS[portal]['title']}"
+    there = 'the admin sign-in page' if role == 'admin' else f"the {PORTALS[role]['title']}"
+    return f'{here}. Please use {there}.'
+
+
+def portal_login_url():
+    """Where a signed-out visitor is sent: the portal matching the page they asked for."""
+    path = request.path
+    if path.startswith('/admin'):
+        return url_for('admin_login')
+    if path.startswith('/doctor'):
+        return url_for('doctor_login')
+    if path.startswith('/patient'):
+        return url_for('patient_login')
+    return url_for('login')
+
+
+def render_portal_login(portal):
+    if 'user' in session:
+        return redirect(url_for('dashboard'))
+    return render_template('login.html', firebase_config=FIREBASE_WEB_CONFIG, portal=portal)
+
+
 @app.route('/login')
 def login():
     if 'user' in session:
         return redirect(url_for('dashboard'))
-    return render_template('login.html', firebase_config=FIREBASE_WEB_CONFIG)
+    return render_template('auth_choose.html', mode='login')
+
+
+@app.route('/patient/login')
+def patient_login():
+    return render_portal_login('patient')
+
+
+@app.route('/doctor/login')
+def doctor_login():
+    return render_portal_login('doctor')
+
+
+@app.route('/admin/login', methods=['GET'])
+@limiter.limit(RATE_LIMITS['admin_login'])
+def admin_login():
+    return render_portal_login('admin')
 
 
 @app.route('/register')
 def register():
     if 'user' in session:
         return redirect(url_for('dashboard'))
+    if request.args.get('google') == '1':   # older "finish your Google sign-up" links
+        return redirect(url_for('patient_register', google=1))
+    return render_template('auth_choose.html', mode='register')
+
+
+@app.route('/patient/register')
+def patient_register():
+    if 'user' in session:
+        return redirect(url_for('dashboard'))
     # Public page: only the details a patient needs to choose (no contact info)
     doctors = [{'uid': d['uid'], 'name': d['name'], 'specialization': d['specialization'],
                 'affiliation': d['affiliation']} for d in load_approved_doctors()]
-    return render_template('register.html', firebase_config=FIREBASE_WEB_CONFIG, doctors=doctors)
+    return render_template('register.html', firebase_config=FIREBASE_WEB_CONFIG, role='patient', doctors=doctors,
+                           genders=GENDER_OPTIONS)
 
 
-@app.route('/admin/login', methods=['GET', 'POST'])
-@limiter.limit(RATE_LIMITS['admin_login'])
-def admin_login():
-    return redirect(url_for('login'))
+@app.route('/doctor/register')
+def doctor_register():
+    if 'user' in session:
+        return redirect(url_for('dashboard'))
+    return render_template('register.html', firebase_config=FIREBASE_WEB_CONFIG, role='doctor', doctors=[],
+                           specializations=SPECIALIZATION_SUGGESTIONS)
 
 
 # ========== API ROUTES (called by frontend JS) ==========
@@ -624,6 +686,7 @@ def verify_token():
     try:
         data = request.get_json()
         id_token = data.get('idToken')
+        portal = data.get('portal') if data.get('portal') in PORTALS else None   # None: no portal check
 
         decoded = auth.verify_id_token(id_token, clock_skew_seconds=10)
         uid = decoded['uid']
@@ -659,6 +722,15 @@ def verify_token():
                          {'email': email, 'reason': 'not_registered'}, user={'uid': uid, 'name': email or 'Unknown', 'role': 'guest'})
             return jsonify({'success': False, 'needs_registration': True,
                             'error': 'User profile not found. Please create your account first.'}), 404
+
+        role = profile.get('role', 'patient')
+        if portal and role in PORTALS and role != portal:
+            # Right password, wrong door: no session is created
+            activity_log('login_failed', f'Sign-in blocked: {role} account used on the {portal} portal', 'failed',
+                         {'email': email, 'reason': 'wrong_portal', 'portal': portal},
+                         user={'uid': uid, 'name': profile.get('name') or email, 'role': role})
+            return jsonify({'success': False, 'wrong_portal': True, 'error': portal_mismatch_message(portal, role),
+                            'portal_url': url_for(PORTALS[role]['login']), 'portal_title': PORTALS[role]['title']}), 403
 
         if profile.get('role') == 'doctor' and profile.get('status') != 'approved':
             activity_log('login_failed', f"Sign-in blocked: doctor account {profile.get('status') or 'not approved'}", 'failed',
@@ -706,6 +778,41 @@ def verify_token():
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
+PATIENT_AGE_RANGE = (13, 120)
+
+
+def registration_details(role, name, phone, data):
+    """({'name', 'phone', ...profile fields}, None) or (None, error message) for /api/register-profile."""
+    name, problem = validate_doctor_field('name', name)
+    if problem:
+        return None, 'Enter your full name.' if not str(data.get('name') or '').strip() else problem
+    if not str(phone or '').strip():
+        return None, 'Enter your phone number.'
+    phone, problem = validate_doctor_field('phone', phone)
+    if problem:
+        return None, problem
+    details = {'name': name, 'phone': phone}
+    if role == 'patient':
+        age = str(data.get('age') or '').strip()
+        if not age.isdigit() or not PATIENT_AGE_RANGE[0] <= int(age) <= PATIENT_AGE_RANGE[1]:
+            return None, f'Enter your age (a number from {PATIENT_AGE_RANGE[0]} to {PATIENT_AGE_RANGE[1]}).'
+        gender = str(data.get('gender') or '').strip()
+        if gender not in GENDER_OPTIONS:
+            return None, 'Choose your gender.'
+        details.update(age=int(age), gender=gender)
+    else:
+        labels = {'specialization': 'your specialty', 'license_number': 'your PMC license number',
+                  'affiliation': 'your hospital or clinic'}
+        for field, label in labels.items():
+            if not str(data.get(field) or '').strip():
+                return None, f'Enter {label}.'
+            value, problem = validate_doctor_field(field, data.get(field))
+            if problem:
+                return None, problem
+            details[field] = value
+    return details, None
+
+
 @app.route('/api/register-profile', methods=['POST'])
 @limiter.limit(RATE_LIMITS['register_profile'])
 def register_profile():
@@ -743,6 +850,13 @@ def register_profile():
 
         status = 'pending' if role == 'doctor' else 'active'
 
+        # Role-specific details from the Patient / Doctor registration pages (checked here too, not just in the browser)
+        profile_fields, problem = registration_details(role, name, phone, data)
+        if problem:
+            discard_auth_account()
+            return jsonify({'success': False, 'error': problem}), 400
+        name, phone = profile_fields.pop('name'), profile_fields.pop('phone')
+
         record = {
             'uid': uid,
             'name': name,
@@ -752,6 +866,8 @@ def register_profile():
             'status': status,
             'created_at': {'.sv': 'timestamp'}
         }
+        if profile_fields:
+            record['profile'] = profile_fields   # same place the Profile pages read and edit them
 
         if role == 'patient':
             doctor_uid = str(data.get('doctor_uid') or '').strip()
@@ -773,7 +889,7 @@ def register_profile():
         db.reference(f'users/{uid}').set(record)
 
         message = (
-            'Account created! Your doctor account is pending admin approval. You will be notified once approved.'
+            'Account created! Your doctor account is pending admin approval. You can sign in once an administrator has approved it.'
             if role == 'doctor'
             else 'Account created successfully! You can now log in.'
         )
@@ -1470,7 +1586,9 @@ def update_profile():
             return jsonify({'success': False, 'error': 'Invalid gender option.'}), 400
 
         # name/phone stay at the top level where registration and login read them
-        db.reference(f'users/{uid}').update({'name': name, 'phone': phone, 'profile': profile or None})
+        # Field by field, so details from registration that this form doesn't edit (age) are kept
+        db.reference(f'users/{uid}').update({'name': name, 'phone': phone,
+                                             **{f'profile/{f}': profile.get(f) for f in PROFILE_FIELDS}})
 
         session['user']['name'] = name
         session.modified = True
@@ -2983,6 +3101,88 @@ def chat_unread():
 def admin_chats():
     # Placeholder: chat oversight for administrators is not built yet
     return jsonify({'success': False, 'error': 'Chat oversight for administrators is not available yet.'}), 501
+
+
+# ========== DOCTOR LIVE MONITORING (wristband vitals) ==========
+MONITOR_WINDOW = 30   # readings shown in the sparklines and trend charts
+
+
+def monitor_recent_readings(patient_uid, limit=MONITOR_WINDOW):
+    """The newest `limit` wristband readings, oldest first. Keys are 't{device seconds}' (device clock)
+    or 'r{server ms}...' (no device clock); each kind sorts by time on its own, so the newest of each
+    kind are fetched in parallel and merged by received_at (no database index needed)."""
+    base = f'users/{patient_uid}/wristband_readings'
+    got = fetch_parallel(
+        t=lambda: db.reference(base).order_by_key().start_at('t').end_at('t').limit_to_last(limit).get(),
+        r=lambda: db.reference(base).order_by_key().start_at('r').end_at('r').limit_to_last(limit).get())
+    rows = [v for part in (got['t'], got['r']) if isinstance(part, dict) for v in part.values()
+            if isinstance(v, dict) and isinstance(v.get('received_at'), (int, float))]
+    rows.sort(key=lambda v: v['received_at'])
+    return rows[-limit:]
+
+
+def monitor_payload(patient_uid):
+    """JSON for the live monitor: connection status, the latest values and the recent window."""
+    now = int(time.time() * 1000)
+    got = fetch_parallel(node=lambda: db.reference(f'users/{patient_uid}/wristband').get(),
+                         readings=lambda: monitor_recent_readings(patient_uid))
+    node = got['node'] if isinstance(got['node'], dict) else {}
+    readings = got['readings'] or []
+    last_sync = node.get('last_sync') if isinstance(node.get('last_sync'), (int, float)) else None
+    age = now - last_sync if last_sync else None
+    if not node.get('device_id'):
+        status, label = 'none', 'No wristband paired'
+    elif age is not None and age <= WRISTBAND_ACTIVE_MS:
+        status, label = 'live', 'Live'
+    elif age is not None and age <= WRISTBAND_IDLE_MS:
+        status, label = 'idle', 'Idle'
+    else:
+        status, label = 'offline', 'Offline'
+    latest = node.get('latest') if isinstance(node.get('latest'), dict) else (readings[-1] if readings else None)
+    point = lambda r: {'t': r.get('received_at'), 'hr': r.get('heart_rate'), 'gsr': r.get('gsr'),
+                       'temp': r.get('temperature'), 'risk': r.get('stress'),
+                       'resp': r.get('respiration')}   # only if a future band sends it
+    payload = {'success': True, 'status': status, 'status_label': label, 'connected': bool(readings or latest),
+               'last_sync': last_sync, 'last_sync_ago': time_ago(last_sync) if last_sync else None,
+               'latest': point(latest) if latest else None, 'readings': [point(r) for r in readings],
+               'interval_s': setting('wristband', 'interval_s'), 'server_time': now}
+    if latest and isinstance(latest.get('stress'), (int, float)):
+        payload['latest']['risk_label'], payload['latest']['risk_color'] = stress_band(latest['stress'])[1:]
+    return payload
+
+
+@app.route('/doctor/monitor')
+@login_required
+@role_required('doctor')
+def doctor_monitor():
+    me = session['user']['uid']
+    prefetch('users', 'alerts', f'chat_unread/{me}', 'consultations')
+    patients, _ = load_active_patients(me)
+    users = cached_read('users') or {}
+    for p in patients:   # patients with a paired band first, then by name
+        band = (users.get(p['uid']) or {}).get('wristband')
+        p['has_band'] = isinstance(band, dict) and bool(band.get('device_id'))
+    patients.sort(key=lambda p: (not p['has_band'], p['name'].lower()))
+    selected = next((p for p in patients if p['uid'] == request.args.get('patient')), patients[0] if patients else None)
+    user_name, user_initials = doctor_identity()
+    return render_template('doctor_monitor.html', user_name=user_name, user_initials=user_initials,
+                           patients=patients, selected=selected, window=MONITOR_WINDOW,
+                           initial=monitor_payload(selected['uid']) if selected else None)
+
+
+@app.route('/api/doctor/monitor/<patient_uid>')
+@limiter.limit(RATE_LIMITS['doctor_monitor_data'])
+@login_required
+@role_required('doctor')
+def doctor_monitor_data(patient_uid):
+    """Polled every 2 s by static/js/doctor_monitor.js. Assigned patients only."""
+    if not is_safe_key(patient_uid):
+        return chat_json_error('Patient not found.', 404)
+    patient = fetch_parallel(a=lambda: db.reference(f'users/{patient_uid}/assigned_doctor_uid').get(),
+                             r=lambda: db.reference(f'users/{patient_uid}/role').get())
+    if patient['r'] != 'patient' or patient['a'] != session['user']['uid']:
+        return chat_json_error('Patient not found.', 404)
+    return jsonify(monitor_payload(patient_uid))
 
 
 # ========== CONSULTATION REQUESTS (patient <-> assigned doctor) ==========
@@ -4602,7 +4802,7 @@ def mfa_admin_only(view):
     def wrapper(*args, **kwargs):
         user = session.get('user') or {}
         if user.get('role') != 'admin' or user.get('uid') != ADMIN_UID:
-            return redirect(url_for('login'))
+            return redirect(url_for('admin_login'))
         return view(*args, **kwargs)
     return wrapper
 
@@ -4716,7 +4916,7 @@ def admin_mfa_verify():
         session.pop('_mfa_pending', None)
         if pending:
             flash('The sign-in took too long. Please sign in again.', 'error')
-        return redirect(url_for('login'))
+        return redirect(url_for('admin_login'))
     user = pending['user']
     csrf_token = session.setdefault('_mfa_csrf', secrets.token_urlsafe(32))
     if request.method == 'GET':

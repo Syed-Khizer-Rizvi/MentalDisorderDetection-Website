@@ -1,0 +1,58 @@
+{#- /login and /register: pick a portal first (mode = 'login' | 'register'). -#}
+{%- from '_portal_icons.html' import icon -%}
+{%- set signin = mode == 'login' -%}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ 'Sign In' if signin else 'Create Account' }} | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+</head>
+<body class="auth-choose-page">
+<main class="auth-choose">
+  <a href="{{ url_for('home') }}" class="auth-brand auth-brand-dark"><img src="{{ url_for('static', filename='images/logo.png') }}" alt="" class="auth-logo">
+    <span class="auth-brand-text">Mental Disorder Detection</span></a>
+
+  <header class="auth-choose-head">
+    <h1>{{ 'Welcome back' if signin else 'Create your account' }}</h1>
+    <p>{{ 'Choose your portal to sign in.' if signin else 'Choose how you will use Mental Disorder Detection.' }}</p>
+  </header>
+
+  {% with messages = get_flashed_messages(category_filter=['error']) %}{% for m in messages %}<div class="auth-alert auth-choose-alert">{{ m }}</div>{% endfor %}{% endwith %}
+
+  <div class="role-cards">
+    <a href="{{ url_for('patient_login' if signin else 'patient_register') }}" class="role-card">
+      <span class="role-card-icon">{{ icon('patient', 26) }}</span>
+      <span class="role-card-kicker">Patient Portal</span>
+      <strong>{{ "I'm a Patient" if signin else 'Register as Patient' }}</strong>
+      <span class="role-card-text">{{ 'Check in on your mood, see your results and talk to your doctor.' if signin
+          else 'Take private mental health check-ins, pair your wristband and get matched with a doctor. Ready to use straight away.' }}</span>
+      <ul class="role-card-points">
+        <li>{{ icon('check', 14) }}Daily assessments</li><li>{{ icon('check', 14) }}Wristband monitoring</li><li>{{ icon('check', 14) }}Wellness activities</li>
+      </ul>
+      <span class="role-card-go">{{ 'Patient sign-in' if signin else 'Create patient account' }} {{ icon('arrow', 16) }}</span>
+    </a>
+    <a href="{{ url_for('doctor_login' if signin else 'doctor_register') }}" class="role-card role-card-doctor">
+      <span class="role-card-icon">{{ icon('doctor', 26) }}</span>
+      <span class="role-card-kicker">Doctor Portal</span>
+      <strong>{{ "I'm a Doctor" if signin else 'Register as Doctor' }}</strong>
+      <span class="role-card-text">{{ 'Monitor your patients, respond to alerts and consultation requests.' if signin
+          else 'Follow your assigned patients between visits. Needs your PMC license number; an administrator approves new doctor accounts.' }}</span>
+      <ul class="role-card-points">
+        <li>{{ icon('check', 14) }}Real-time monitoring</li><li>{{ icon('check', 14) }}Critical alerts</li><li>{{ icon('check', 14) }}AI risk assessment</li>
+      </ul>
+      <span class="role-card-go">{{ 'Doctor sign-in' if signin else 'Create doctor account' }} {{ icon('arrow', 16) }}</span>
+    </a>
+  </div>
+
+  <p class="auth-choose-foot">
+    {% if signin %}New here? <a href="{{ url_for('register') }}">Create an account</a>
+    {% else %}Already have an account? <a href="{{ url_for('login') }}">Sign in</a>{% endif %}
+  </p>
+  {% if signin %}<a href="{{ url_for('admin_login') }}" class="auth-admin-link">{{ icon('admin', 13) }}Admin access</a>{% endif %}
+</main>
+</body>
+</html>
