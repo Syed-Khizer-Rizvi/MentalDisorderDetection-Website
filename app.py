@@ -45,6 +45,7 @@ RATE_LIMITS = {   # shown on the Security page; applied with @limiter.limit on e
     'wristband_data': '120 per minute', 'admin_login': '10 per minute', 'admin_mfa_verify': '5 per 15 minutes',
     'analyze_emotion': '60 per minute', 'consultation_request': '3 per hour',
     'doctor_monitor_data': '60 per minute',   # the live monitor polls every 2 s
+    'forgot_password_submit': '3 per 15 minutes',   # password reset emails, per IP
 }
 limiter = Limiter(
     get_remote_address, app=app,
@@ -1109,6 +1110,7 @@ def submit_facial():
             session.modified = True
 
             assessment_id = str(int(time.time() * 1000))
+            session['assessment']['id'] = assessment_id   # lets the results page link to its PDF
             full_assessment = {
                 'phq_score': session['assessment'].get('phq_score', 0),
                 'gad_score': session['assessment'].get('gad_score', 0),
@@ -1149,7 +1151,10 @@ def patient_results():
     assessment = session.get('assessment', {})
     if not assessment:
         return redirect(url_for('patient_assessment'))
+    # The saved copy of this assessment (older sessions don't carry the id: then it's the latest one)
+    saved_id = assessment.get('id') or db.reference(f"users/{session['user']['uid']}/latest_assessment_id").get()
     return render_template('results.html', assigned_doctor=patient_assigned_doctor(),
+                           pdf_url=url_for('patient_assessment_pdf', assessment_id=saved_id) if saved_id else None,
                            **build_results_context(assessment))
 
 
@@ -1204,6 +1209,7 @@ def patient_history_detail(assessment_id):
         return redirect(url_for('patient_history'))
 
     return render_template('results.html', read_only=True, assigned_doctor=patient_assigned_doctor(),
+                           pdf_url=url_for('patient_assessment_pdf', assessment_id=assessment_id),
                            assessment_date=format_timestamp(assessment.get('created_at'), '%d %b %Y, %I:%M %p'),
                            **build_results_context(assessment))
 
@@ -2077,6 +2083,297 @@ def too_many_requests(error):
             'padding:0 16px;color:#0F172A"><h1 style="font-size:22px">Too many requests</h1>'
             f'<p style="color:#475569">{message}</p><p><a href="/" style="color:#0F7A5F">Back to the home page</a></p></body>')
     return page, 429
+
+
+# ========== ERROR PAGES (404 / 500) ==========
+SUPPORT_EMAIL = 'psymonitor.support@gmail.com'
+
+
+def wants_json_response():
+    return request.path.startswith('/api/') or request.is_json or request.accept_mimetypes.best == 'application/json'
+
+
+def error_page(template, status):
+    """Rendered straight from the template, without the context processors: those read the database,
+    and a 500 page has to work even when the database is what failed."""
+    signed_in = bool(session.get('user'))
+    html = app.jinja_env.get_template(template).render(
+        url_for=url_for, signed_in=signed_in, support_email=SUPPORT_EMAIL,
+        home_url=url_for('dashboard') if signed_in else url_for('home'))
+    return html, status
+
+
+@app.errorhandler(404)
+def not_found(error):
+    if wants_json_response():
+        return jsonify({'success': False, 'error': 'Not found.'}), 404
+    return error_page('404.html', 404)
+
+
+@app.errorhandler(500)
+def server_error(error):
+    if wants_json_response():
+        return jsonify({'success': False, 'error': 'Something went wrong on our side. Please try again.'}), 500
+    try:
+        return error_page('500.html', 500)
+    except Exception:   # last resort: never let the error page itself fail
+        return (f'<!doctype html><meta charset="utf-8"><title>Something went wrong</title><h1>Something went wrong</h1>'
+                f'<p>Please try again, or email {SUPPORT_EMAIL}.</p><p><a href="/">Home</a></p>'), 500
+
+
+@app.route('/favicon.ico')
+def favicon():
+    from flask import send_from_directory
+    return send_from_directory(app.static_folder, 'favicon.ico', mimetype='image/vnd.microsoft.icon', max_age=7 * 86400)
+
+
+# ========== FORGOT PASSWORD ==========
+# Sent from the server through Firebase Auth's REST API (the same request the browser SDK's
+# sendPasswordResetEmail() makes), so the 3-per-15-minutes limit can't be skipped from the browser.
+# The reply never says whether an account exists for the address.
+RESET_PORTALS = ('patient', 'doctor', 'admin')
+
+
+def send_password_reset_email(email):
+    """'sent' | 'busy' (Firebase is throttling) | 'error'. An unknown address also counts as 'sent'."""
+    import json as _json
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(
+        f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_WEB_CONFIG['apiKey']}",
+        data=_json.dumps({'requestType': 'PASSWORD_RESET', 'email': email}).encode(),
+        headers={'Content-Type': 'application/json'})
+    try:
+        urllib.request.urlopen(req, timeout=10).read()
+        return 'sent'
+    except urllib.error.HTTPError as e:
+        try:
+            code = str(_json.loads(e.read().decode()).get('error', {}).get('message', ''))
+        except Exception:
+            code = ''
+        if code.startswith('EMAIL_NOT_FOUND'):
+            return 'sent'
+        if 'TOO_MANY' in code or 'EXCEED' in code:
+            return 'busy'
+        return 'error'
+    except Exception:
+        return 'error'
+
+
+def reset_portal():
+    portal = request.values.get('portal')
+    return portal if portal in RESET_PORTALS else None
+
+
+def render_forgot_password(status=200, **context):
+    csrf = session.setdefault('_reset_csrf', secrets.token_urlsafe(24))
+    portal = reset_portal()
+    return render_template('forgot_password.html', csrf_token=csrf, portal=portal,
+                           back_url=url_for(PORTALS[portal]['login']) if portal else url_for('login'), **context), status
+
+
+@app.route('/forgot-password', methods=['GET'])
+def forgot_password():
+    return render_forgot_password(sent=request.args.get('sent') == '1')
+
+
+@app.route('/forgot-password', methods=['POST'])
+@limiter.limit(RATE_LIMITS['forgot_password_submit'])
+def forgot_password_submit():
+    import re
+    expected = session.get('_reset_csrf', '')
+    if not (expected and hmac.compare_digest(request.form.get('csrf_token', ''), expected)):   # per-session form token
+        return render_forgot_password(400, error='Your session expired. Please try again.')
+    email = request.form.get('email', '').strip()
+    if len(email) > 254 or not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
+        return render_forgot_password(400, error='Enter a valid email address.', email=email)
+    result = send_password_reset_email(email)
+    # The address itself is never logged
+    activity_log('password_reset_requested', 'Password reset requested', 'info' if result == 'sent' else 'failed',
+                 details={'portal': reset_portal() or 'none', 'result': result},
+                 user={'uid': 'anonymous', 'name': 'Unknown', 'role': 'guest'})
+    if result != 'sent':
+        message = ('Too many reset requests for now. Please wait a few minutes and try again.' if result == 'busy'
+                   else "We couldn't send the email just now. Please try again in a few minutes.")
+        return render_forgot_password(503, error=message, email=email)
+    return redirect(url_for('forgot_password', sent=1, portal=reset_portal()))
+
+
+# ========== HELP / FAQ ==========
+@app.route('/help')
+def help_page():
+    """Public: linked from the site footer and the patient / doctor sidebars."""
+    return render_template('help.html', ranges=risk_ranges(), interval_s=setting('wristband', 'interval_s'),
+                           support_email=SUPPORT_EMAIL, product=WRISTBAND_PRODUCT, price=format_pkr(WRISTBAND_PRICE_PKR))
+
+
+# ========== ASSESSMENT REPORT PDF (patient) ==========
+def pdf_text(value):
+    """Text for a ReportLab Paragraph: escaped, and limited to what the built-in fonts can draw."""
+    from xml.sax.saxutils import escape
+    return escape(str(value or '')).encode('latin-1', 'replace').decode('latin-1')
+
+
+def build_assessment_pdf(patient_name, assessment, doctor, plan):
+    """A one-to-two page report on clinic letterhead. `plan` is the patient-safe treatment plan view
+    (instructions only, never the doctor's observations)."""
+    import io
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
+
+    green, ink, muted, line = colors.HexColor('#0F7A5F'), colors.HexColor('#0F172A'), colors.HexColor('#64748B'), colors.HexColor('#E2E8F0')
+    ctx = build_results_context(assessment)
+    created = assessment.get('created_at') if isinstance(assessment.get('created_at'), (int, float)) else None
+    date_label = format_timestamp(created, '%d %b %Y, %I:%M %p') if created else '—'
+    band = next((r for r in risk_ranges() if r['level'] == ctx['risk_level']), {'label': ctx['risk_level'].title(), 'range': ''})
+
+    def style(name, **kw):
+        base = dict(fontName='Helvetica', fontSize=10, leading=14, textColor=ink)
+        base.update(kw)
+        return ParagraphStyle(name, **base)
+    h1 = style('h1', fontName='Helvetica-Bold', fontSize=18, leading=22, spaceAfter=2)
+    h2 = style('h2', fontName='Helvetica-Bold', fontSize=12, leading=16, textColor=green, spaceBefore=12, spaceAfter=6)
+    body = style('body')
+    small = style('small', fontSize=8.5, leading=11.5, textColor=muted)
+    label = style('label', fontName='Helvetica-Bold', fontSize=8, leading=11, textColor=muted)
+
+    def letterhead(canvas, doc):
+        width, height = A4
+        canvas.saveState()
+        logo = os.path.join(app.static_folder, 'images', 'apple-touch-icon.png')
+        if os.path.exists(logo):
+            canvas.drawImage(logo, 18 * mm, height - 27 * mm, 13 * mm, 13 * mm, mask='auto')
+        canvas.setFillColor(green)
+        canvas.setFont('Helvetica-Bold', 15)
+        canvas.drawString(34 * mm, height - 19.5 * mm, 'Mental Disorder Detection')
+        canvas.setFillColor(muted)
+        canvas.setFont('Helvetica', 8.5)
+        canvas.drawString(34 * mm, height - 24.5 * mm, 'AI-assisted mental health screening and monitoring')
+        canvas.drawRightString(width - 18 * mm, height - 19.5 * mm, SUPPORT_EMAIL)
+        canvas.drawRightString(width - 18 * mm, height - 24.5 * mm, '+92 342 3050647 · Iqra University, Karachi')
+        canvas.setStrokeColor(green)
+        canvas.setLineWidth(1.4)
+        canvas.line(18 * mm, height - 30 * mm, width - 18 * mm, height - 30 * mm)
+        canvas.setStrokeColor(line)
+        canvas.setLineWidth(0.6)
+        canvas.line(18 * mm, 17 * mm, width - 18 * mm, 17 * mm)
+        canvas.setFont('Helvetica', 7.5)
+        canvas.drawString(18 * mm, 12 * mm, 'Screening summary, not a diagnosis. Discuss these results with your doctor.')
+        canvas.drawRightString(width - 18 * mm, 12 * mm, f'Generated {time.strftime("%d %b %Y, %I:%M %p")} · Page {doc.page}')
+        canvas.restoreState()
+
+    def boxed(rows, widths, extra=()):
+        table = Table(rows, colWidths=widths)
+        table.setStyle(TableStyle([
+            ('FONT', (0, 0), (-1, -1), 'Helvetica', 9.5), ('TEXTCOLOR', (0, 0), (-1, -1), ink),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8), ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('BOX', (0, 0), (-1, -1), 0.6, line), ('INNERGRID', (0, 0), (-1, -1), 0.4, line), *extra]))
+        return table
+
+    story = [Paragraph('Assessment Report', h1), Spacer(1, 4)]
+    info = [[Paragraph('PATIENT', label), Paragraph(pdf_text(patient_name), body),
+             Paragraph('ASSESSMENT DATE', label), Paragraph(pdf_text(date_label), body)],
+            [Paragraph('ASSIGNED DOCTOR', label), Paragraph(pdf_text(f"Dr. {doctor['name']}" if doctor else 'Not assigned yet'), body),
+             Paragraph('SPECIALTY', label), Paragraph(pdf_text((doctor or {}).get('specialization') or '—'), body)]]
+    story.append(boxed(info, [30 * mm, 57 * mm, 33 * mm, 54 * mm], [('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F8FAFC')),
+                                                                 ('BACKGROUND', (2, 0), (2, -1), colors.HexColor('#F8FAFC'))]))
+
+    story.append(Paragraph('Questionnaire scores', h2))
+    rows = [['Measure', 'Score', 'Severity']]
+    for name, score, out_of, severity, color in (('PHQ-9 (depression)', ctx['phq_score'], 27, ctx['phq_severity'], ctx['phq_color']),
+                                                 ('GAD-7 (anxiety)', ctx['gad_score'], 21, ctx['gad_severity'], ctx['gad_color']),
+                                                 ('PSS-10 (perceived stress)', ctx['pss_score'], 40, ctx['pss_severity'], ctx['pss_color'])):
+        rows.append([name, f'{score} / {out_of}', Paragraph(f'<font color="{color}"><b>{pdf_text(severity)}</b></font>', body)])
+    story.append(boxed(rows, [80 * mm, 40 * mm, 54 * mm], [('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 9),
+                                                           ('TEXTCOLOR', (0, 0), (-1, 0), muted),
+                                                           ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F8FAFC'))]))
+
+    story.append(Paragraph('Facial emotion summary', h2))
+    if ctx['facial_skipped']:
+        story.append(Paragraph('The facial scan was skipped for this assessment, so the score uses the questionnaires only.', body))
+    else:
+        emotions = sorted(((k, v) for k, v in (assessment.get('facial_emotions') or {}).items() if isinstance(v, (int, float))),
+                          key=lambda kv: -kv[1])[:4]
+        story.append(Paragraph(f"Dominant expression: <b>{pdf_text(ctx['facial_dominant'].title())}</b> ({ctx['facial_dominant_pct']}%). "
+                               f"Strongest single moment: {pdf_text(ctx['facial_peak'].title())} ({ctx['facial_peak_pct']}%).", body))
+        if emotions:
+            story.append(Spacer(1, 4))
+            story.append(boxed([[k.title() for k, _ in emotions], [f'{round(v)}%' for _, v in emotions]],
+                               [174 * mm / len(emotions)] * len(emotions),
+                               [('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('TEXTCOLOR', (0, 0), (-1, 0), muted),
+                                ('FONT', (0, 1), (-1, 1), 'Helvetica-Bold', 10)]))
+        story.append(Paragraph('Video is never stored; only these emotion percentages are saved.', small))
+
+    band_color = colors.HexColor(ctx['composite_color'])
+    risk = Table([[Paragraph(f'<font size="26"><b>{ctx["composite_score"]}</b></font><font size="11" color="#64748B"> / 100</font>',
+                             style('score', leading=30)),
+                   Paragraph(f'<b>{pdf_text(band["label"])} risk</b> (band {pdf_text(band["range"])})<br/>'
+                             '<font size="8.5" color="#64748B">Composite of the three questionnaires and the facial scan. '
+                             'Bands: ' + ', '.join(f"{r['label']} {r['range']}" for r in risk_ranges()) + '.</font>',
+                             style('band', textColor=band_color, leading=15))]],
+                 colWidths=[45 * mm, 129 * mm])
+    risk.setStyle(TableStyle([('BOX', (0, 0), (-1, -1), 1.2, band_color), ('LINEBEFORE', (0, 0), (0, -1), 5, band_color),
+                              ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                              ('TOPPADDING', (0, 0), (-1, -1), 10), ('BOTTOMPADDING', (0, 0), (-1, -1), 10)]))
+    story += [Paragraph('Composite risk score', h2), risk]
+
+    plan_story = [Paragraph('Treatment plan from your doctor', h2)]
+    if plan:
+        para = style('para', spaceAfter=5)
+        plan_story += [Paragraph(pdf_text(p).replace('\n', '<br/>'), para) for p in plan['instructions_paragraphs']]
+        details = []
+        if plan.get('activities'):
+            details.append('Daily activities: ' + ', '.join(a['label'] for a in plan['activities']))
+        if plan.get('games'):
+            details.append('Recommended games: ' + ', '.join(g['title'] for g in plan['games']))
+        details.append(f"Next follow-up: {plan.get('follow_up_label') or 'not scheduled'}")
+        plan_story += [Spacer(1, 4)] + [Paragraph(pdf_text(d), small) for d in details]
+        plan_story.append(Paragraph(pdf_text(f"Last updated by Dr. {plan['updated_by_name']} on {plan['updated_date']}."), small))
+    else:
+        plan_story.append(Paragraph('No treatment plan yet. Your doctor will create one after your consultation.', body))
+    story.append(KeepTogether(plan_story))
+
+    story += [Spacer(1, 10), Paragraph('If you feel you are in crisis, call a helpline now: Umang 0317-4288665 · Rozan 051-2890505.', small)]
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=36 * mm, bottomMargin=22 * mm,
+                            title=f'Assessment report: {patient_name}', author='Mental Disorder Detection', subject='Assessment report')
+    doc.build(story, onFirstPage=letterhead, onLaterPages=letterhead)
+    return buf.getvalue()
+
+
+def assessment_pdf_filename(patient_name, created_ms):
+    import re
+    slug = re.sub(r'[^A-Za-z0-9]+', '_', str(patient_name or 'patient')).strip('_') or 'patient'
+    day = format_timestamp(created_ms, '%Y-%m-%d') if isinstance(created_ms, (int, float)) else time.strftime('%Y-%m-%d')
+    return f'assessment_{slug}_{day}.pdf'
+
+
+@app.route('/patient/assessments/<assessment_id>/pdf')
+@login_required
+@role_required('patient')
+def patient_assessment_pdf(assessment_id):
+    uid = session['user']['uid']
+    if not assessment_id.isdigit():   # ids are millisecond timestamps
+        return redirect(url_for('patient_history'))
+    got = fetch_parallel(assessment=lambda: db.reference(f'users/{uid}/assessments/{assessment_id}').get(),
+                         doctor_uid=lambda: db.reference(f'users/{uid}/assigned_doctor_uid').get(),
+                         plan=lambda: db.reference(f'users/{uid}/treatment_plan').get(),
+                         name=lambda: db.reference(f'users/{uid}/name').get())
+    assessment = got['assessment']
+    if not isinstance(assessment, dict):
+        flash('That assessment could not be found.', 'error')
+        return redirect(url_for('patient_history'))
+    name = got['name'] or session['user'].get('name') or 'Patient'
+    pdf = build_assessment_pdf(name, assessment, load_doctor_summary(got['doctor_uid']),
+                               treatment_plan_view(got['plan'], for_doctor=False))
+    filename = assessment_pdf_filename(name, assessment.get('created_at'))
+    return app.response_class(pdf, mimetype='application/pdf', headers={
+        'Content-Disposition': f'attachment; filename="{filename}"', 'Cache-Control': 'private, no-store'})
 
 
 # ========== PRESENCE (admin "Active Sessions Now") ==========

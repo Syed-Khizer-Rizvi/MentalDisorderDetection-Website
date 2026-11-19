@@ -137,6 +137,14 @@ button.btn-emergency:focus-visible, button.btn-outline-dark:focus-visible, butto
   padding: 24px; margin-bottom: 24px;
 }
 .rec-section.rec-high { background: #FEF3C7; border-color: #FCD34D; }
+/* Moderate band: amber, matching the moderate risk colour (#D97706) */
+.rec-section.rec-moderate { background: #FFFBEB; border-color: #F59E0B; }
+.rec-moderate .rec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.rec-moderate .rec-band-icon { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 12px; background: #FEF3C7; font-size: 24px; }
+.rec-moderate h3 { margin-bottom: 2px; color: #92400E; }
+.rec-moderate .rec-band { display: inline-block; padding: 2px 9px; border-radius: 999px; background: #FDE68A; color: #92400E; font-size: 11.5px; font-weight: 800; }
+.rec-moderate p { color: #78350F; }
+.rec-moderate .rec-card:hover { border-color: #D97706; }
 .rec-section h3 { font-size: 18px; margin-bottom: 8px; color: #0F172A; }
 .rec-section p { font-size: 14px; color: #475569; margin-bottom: 18px; }
 .rec-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -159,6 +167,14 @@ button.btn-emergency:focus-visible, button.btn-outline-dark:focus-visible, butto
 .helplines p { font-size: 13px; color: #475569; margin-bottom: 4px; }
 .helplines small { color: #94A3B8; font-size: 12px; }
 .btn-dashboard { background: #0A5A47; color: #FFF; margin-top: 10px; }
+.results-download { display: flex; justify-content: center; margin: -6px 0 18px; }
+.btn-pdf {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 9px 16px;
+  border: 1.5px solid #0F7A5F; border-radius: 10px; background: #FFFFFF; color: #0F7A5F;
+  font-size: 14px; font-weight: 700; text-decoration: none;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+.btn-pdf:hover { background: #0F7A5F; color: #FFFFFF; }
 
 @media (max-width: 700px) {
   .score-cards { grid-template-columns: repeat(2, 1fr); }

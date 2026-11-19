@@ -1,0 +1,13 @@
+{% extends '_error_page.html' %}
+{% block title %}Something went wrong{% endblock %}
+{% block description %}Something went wrong on our side.{% endblock %}
+{% block content %}
+    <span class="err-code">ERROR 500</span>
+    <h1>Something went wrong</h1>
+    <p>Sorry, something went wrong on our side and the page couldn't load. Please try again in a moment. If it keeps happening,
+      email us at <a href="mailto:{{ support_email }}">{{ support_email }}</a>.</p>
+    <div class="err-actions">
+      <a href="{{ home_url }}" class="err-btn err-btn-primary">{{ 'Go to my dashboard' if signed_in else 'Back to home' }}</a>
+      <a href="mailto:{{ support_email }}" class="err-btn">Email support</a>
+    </div>
+{% endblock %}

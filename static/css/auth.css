@@ -401,6 +401,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .auth-brand-dark .auth-brand-text { color: #0F172A; }
 .auth-brand-dark .auth-logo { background: #E7F5EF; }
 
+/* Forgot password (templates/forgot_password.html) */
+.reset-done { text-align: center; }
+.reset-icon {
+  display: inline-grid; place-items: center; width: 56px; height: 56px; margin-bottom: 12px; border-radius: 16px;
+  background: #ECFDF5; color: #0F7A5F; font-size: 26px;
+}
+.reset-hint { margin: -12px 0 20px; color: #94A3B8; font-size: 13px; line-height: 1.5; }
+.reset-back { display: block; text-align: center; }
+
 /* Role picker (templates/auth_choose.html) */
 .auth-choose-page { background: radial-gradient(1200px 500px at 50% -10%, #D9F2E8 0%, #F8FAFC 60%); }
 .auth-choose { min-height: 100vh; max-width: 980px; margin: 0 auto; padding: 36px 20px 48px; display: flex; flex-direction: column; align-items: center; }

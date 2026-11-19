@@ -1,0 +1,13 @@
+{% extends '_error_page.html' %}
+{% block title %}Page not found{% endblock %}
+{% block description %}The page you were looking for could not be found.{% endblock %}
+{% block content %}
+    <span class="err-code">ERROR 404</span>
+    <h1>Page not found</h1>
+    <p>The page you were looking for doesn't exist or may have moved. Check the address, or head back and carry on from there.</p>
+    <div class="err-actions">
+      <a href="{{ home_url }}" class="err-btn err-btn-primary">{{ 'Go to my dashboard' if signed_in else 'Back to home' }}</a>
+      {% if not signed_in %}<a href="{{ url_for('login') }}" class="err-btn">Sign in</a>{% endif %}
+      <a href="{{ url_for('help_page') }}" class="err-btn">Help &amp; FAQ</a>
+    </div>
+{% endblock %}

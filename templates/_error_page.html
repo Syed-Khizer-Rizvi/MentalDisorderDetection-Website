@@ -1,0 +1,52 @@
+{#- Shared layout for 404.html / 500.html. Rendered without context processors (see error_page() in app.py),
+    so it may only use: url_for, signed_in, home_url, support_email. -#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="{% block description %}{% endblock %}">
+<meta name="robots" content="noindex">
+{% include '_favicon.html' %}
+<title>{% block title %}{% endblock %} | Mental Disorder Detection</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;
+    padding: 32px 16px; font-family: 'Inter', sans-serif; color: #334155;
+    background: radial-gradient(1100px 480px at 50% -10%, #D9F2E8 0%, #F8FAFC 62%);
+  }
+  .err-brand { display: inline-flex; align-items: center; gap: 10px; color: #0F172A; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 17px; font-weight: 700; text-decoration: none; }
+  .err-brand img { width: 36px; height: 36px; border-radius: 10px; background: #E7F5EF; padding: 4px; }
+  .err-card {
+    width: 100%; max-width: 520px; padding: 36px 32px; border: 1px solid #E2E8F0; border-radius: 18px; background: #FFFFFF;
+    text-align: center; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  }
+  .err-code {
+    display: inline-block; margin-bottom: 14px; padding: 5px 14px; border-radius: 999px; background: #E8F4F0; color: #0A5A47;
+    font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; font-weight: 800; letter-spacing: 1.5px;
+  }
+  .err-card h1 { margin-bottom: 10px; color: #0F172A; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 28px; font-weight: 800; letter-spacing: -0.4px; }
+  .err-card p { margin-bottom: 22px; font-size: 15px; line-height: 1.65; }
+  .err-card p a { color: #0F7A5F; font-weight: 600; }
+  .err-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+  .err-btn {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 11px 20px; border-radius: 10px;
+    font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14.5px; font-weight: 700; text-decoration: none;
+    border: 1.5px solid #0F7A5F; color: #0F7A5F; background: #FFFFFF; transition: background-color 0.16s ease, color 0.16s ease;
+  }
+  .err-btn:hover { background: #ECFDF5; }
+  .err-btn-primary { background: #0F7A5F; color: #FFFFFF; }
+  .err-btn-primary:hover { background: #0A5A47; border-color: #0A5A47; }
+  @media (max-width: 480px) { .err-card { padding: 28px 20px; } .err-card h1 { font-size: 24px; } .err-btn { flex: 1 1 100%; } }
+</style>
+</head>
+<body>
+  <a href="{{ url_for('home') }}" class="err-brand"><img src="{{ url_for('static', filename='images/favicon-192.png') }}" alt="">Mental Disorder Detection</a>
+  <main class="err-card">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

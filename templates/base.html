@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="{% block description %}AI-powered mental health monitoring: clinical questionnaires, facial emotion analysis and a smart wristband, with doctors alerted early.{% endblock %}">
+    {% include '_favicon.html' %}
     <title>{% block title %}Mental Disorder Detection{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
@@ -26,11 +27,16 @@
             <a href="/#features" class="nav-link">Features</a>
             <a href="/#how-it-works" class="nav-link">How It Works</a>
             <a href="/#contact" class="nav-link">Contact</a>
+            <a href="{{ url_for('help_page') }}" class="nav-link">Help</a>
         </div>
 
         <div class="nav-buttons">
+            {% if session.get('user') %}
+            <a href="{{ url_for('dashboard') }}" class="btn btn-primary">My dashboard →</a>
+            {% else %}
             <a href="{{ url_for('patient_login') }}" class="btn btn-outline">Patient Login</a>
             <a href="{{ url_for('doctor_login') }}" class="btn btn-primary">Doctor Login</a>
+            {% endif %}
         </div>
     </nav>
 
@@ -59,6 +65,7 @@
                 <a href="/#how-it-works">How It Works</a>
                 <a href="/#about">About Us</a>
                 <a href="/#contact">Contact</a>
+                <a href="{{ url_for('help_page') }}">Help &amp; FAQ</a>
             </div>
 
             <div class="footer-col">

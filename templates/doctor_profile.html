@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="Your professional profile: specialty, license and affiliation.">
 <title>My Profile | Mental Disorder Detection</title>
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+{% include '_favicon.html' %}
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
@@ -27,6 +27,7 @@
       <a href="{{ url_for('doctor_consultations_page') }}" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultations</span><span class="nav-badge nav-badge-consult{{ ' is-emergency' if consult_emergency_total }}" data-consult-badge{% if not consult_pending_total %} hidden{% endif %} title="Pending consultation requests">{{ consult_pending_total }}</span></a>
       <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
       <a href="{{ url_for('doctor_profile') }}" class="nav-item active"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('help_page') }}" class="nav-item"><span class="nav-icon">❓</span><span class="nav-label">Help &amp; FAQ</span></a>
       <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
     </nav>
   </aside>

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="Pair and view your PsyMonitor Band v2: heart rate, skin response, temperature and stress.">
 <title>Wristband | Mental Disorder Detection</title>
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+{% include '_favicon.html' %}
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
@@ -26,6 +26,7 @@
       <a href="{{ url_for('patient_consultations_page') }}" class="nav-item"><span class="nav-icon">🩺</span><span class="nav-label">Consultations</span><span class="nav-badge nav-badge-consult" data-consult-unread{% if not consult_unread_total %} hidden{% endif %} title="New responses from your doctor">{{ consult_unread_total }}</span></a>
       <a href="{{ url_for('patient_wristband') }}" class="nav-item active"><span class="nav-icon">⌚</span><span class="nav-label">Wristband</span></a>
       <a href="{{ url_for('patient_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('help_page') }}" class="nav-item"><span class="nav-icon">❓</span><span class="nav-label">Help &amp; FAQ</span></a>
       <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
     </nav>
   </aside>

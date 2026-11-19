@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Help & FAQ | Mental Disorder Detection{% endblock %}
+{% block description %}Answers to common questions about assessments, risk scores, the PsyMonitor Band v2 wristband, privacy and contacting your doctor.{% endblock %}
+
+{% block content %}
+<section class="section help-section">
+    <div class="container help-container">
+        <div class="section-head">
+            <span class="eyebrow">HELP</span>
+            <h1 class="help-title">Help &amp; <span class="text-gradient">FAQ</span></h1>
+            <p>Quick answers to the questions patients and doctors ask most. Tap a question to open it.</p>
+        </div>
+
+        <h2 class="help-group">For patients</h2>
+        <div class="faq-list">
+            <details class="faq" id="assessment">
+                <summary>How do I take an assessment?</summary>
+                <div class="faq-body">
+                    <p>Sign in to the Patient Portal and choose <strong>New Assessment</strong> on your dashboard. It has three short parts:</p>
+                    <ol>
+                        <li><strong>Questionnaires</strong>: PHQ-9 (mood), GAD-7 (anxiety) and PSS-10 (stress). Answer honestly about the last two weeks.</li>
+                        <li><strong>Facial scan</strong> (optional): your camera reads facial expressions for about 15 seconds. You can skip it.</li>
+                        <li><strong>Results</strong>: your scores, an overall risk score and suggested next steps. You can download them as a PDF.</li>
+                    </ol>
+                    <p>It takes about 8–10 minutes. Past results stay in <strong>History</strong>.</p>
+                </div>
+            </details>
+
+            <details class="faq" id="risk-score">
+                <summary>What does my risk score mean?</summary>
+                <div class="faq-body">
+                    <p>Your <strong>composite risk score</strong> (0–100) combines the three questionnaires and, if you did it, the facial scan. Higher means more signs of distress:</p>
+                    <ul class="faq-bands">
+                        {% for r in ranges %}<li><span class="faq-dot" style="background: {{ r.color }};"></span><strong>{{ r.label }}</strong> {{ r.range }}</li>{% endfor %}
+                    </ul>
+                    <p>It is a screening result, not a diagnosis. If a score is <strong>critical</strong>, your doctor is alerted automatically so they can reach out.</p>
+                </div>
+            </details>
+
+            <details class="faq" id="wristband">
+                <summary>How does the wristband connect?</summary>
+                <div class="faq-body">
+                    <p>The {{ product }} ({{ price }}, cash on delivery) measures heart rate, skin response (GSR) and skin temperature, and sends readings over Wi-Fi.</p>
+                    <ol>
+                        <li>Order it from the <strong>Wristband</strong> page.</li>
+                        <li>When it arrives, press <strong>Generate Pairing Code</strong> on the same page to get a <strong>Device ID</strong> and an <strong>API key</strong>.</li>
+                        <li>Enter both in the band's setup along with your Wi-Fi details. The API key is shown only once, so copy it straight away.</li>
+                    </ol>
+                    <p>The band then sends a reading about every {{ interval_s }} seconds while it's online, and your dashboard and doctor see them. Lost the key? Use <strong>Revoke &amp; Regenerate</strong> to get a new one.</p>
+                </div>
+            </details>
+
+            <details class="faq" id="contact-doctor">
+                <summary>How can I contact my doctor?</summary>
+                <div class="faq-body">
+                    <ul>
+                        <li><strong>Chat</strong>: send your doctor a private message any time from the Chat page.</li>
+                        <li><strong>Consultations</strong>: request a consultation, or an <strong>emergency appointment</strong> if you need to be seen urgently. Your doctor replies there and in chat.</li>
+                        <li><strong>Treatment plan</strong>: your doctor's instructions and daily activities appear on your dashboard.</li>
+                    </ul>
+                    <p class="faq-urgent">In a crisis, don't wait for a reply: call <strong>Umang 0317-4288665</strong> or <strong>Rozan 051-2890505</strong>.</p>
+                </div>
+            </details>
+
+            <details class="faq" id="password">
+                <summary>How do I change my password?</summary>
+                <div class="faq-body">
+                    <p>On the sign-in page, choose <strong>Forgot password?</strong>, enter your email and we'll send you a link to set a new password. If you signed up with Google, your password is managed by Google instead.</p>
+                    <p><a href="{{ url_for('forgot_password') }}">Reset my password →</a></p>
+                </div>
+            </details>
+
+            <details class="faq" id="privacy">
+                <summary>Is my data private?</summary>
+                <div class="faq-body">
+                    <ul>
+                        <li>Only <strong>your assigned doctor</strong> sees your assessments, and your journal entries only if you choose to share them.</li>
+                        <li>The facial scan <strong>never stores video</strong>, only emotion percentages.</li>
+                        <li>Administrators can manage accounts, but chat messages, notes, assessment answers and consultation details are hidden from them.</li>
+                        <li>Sign-in is protected, and every sign-in and change is recorded in an audit log.</li>
+                    </ul>
+                </div>
+            </details>
+
+            <details class="faq" id="delete-account">
+                <summary>Can I delete my account?</summary>
+                <div class="faq-body">
+                    <p>Yes. Email <a href="mailto:{{ support_email }}">{{ support_email }}</a> from the address you signed up with and ask for your account to be deleted. An administrator then deletes your sign-in account together with your assessments, chats, clinical notes, alerts and wristband data.</p>
+                </div>
+            </details>
+
+            <details class="faq" id="how-often">
+                <summary>How often should I check in?</summary>
+                <div class="faq-body">
+                    <p>The questionnaires ask about the last two weeks, so <strong>an assessment every two weeks</strong> works well, unless your doctor asks for more often. Day to day, follow the activities in your treatment plan and write a short journal entry. Small, regular check-ins show your progress best.</p>
+                </div>
+            </details>
+        </div>
+
+        <h2 class="help-group">For doctors</h2>
+        <div class="faq-list">
+            <details class="faq" id="doctor-approval">
+                <summary>I registered as a doctor. When can I sign in?</summary>
+                <div class="faq-body">
+                    <p>New doctor accounts are checked by an administrator first (including your PMC license number). You can sign in to the Doctor Portal as soon as your account is approved. Patients are then assigned to you.</p>
+                </div>
+            </details>
+
+            <details class="faq" id="alerts">
+                <summary>How do risk alerts and live monitoring work?</summary>
+                <div class="faq-body">
+                    <p>When one of your patients completes an assessment with a <strong>critical</strong> score, you get an alert in <strong>Risk Alerts</strong> and a badge in the sidebar. <strong>Monitor Patient</strong> shows live wristband vitals for patients who have paired a band, and each patient's page shows their history, notes and treatment plan.</p>
+                </div>
+            </details>
+        </div>
+
+        <div class="help-contact">
+            <h2>Still need help?</h2>
+            <p>Email <a href="mailto:{{ support_email }}">{{ support_email }}</a> or call <strong>+92 342 3050647</strong> (Mon–Fri, 9 AM–6 PM PKT).</p>
+        </div>
+    </div>
+</section>
+{% endblock %}

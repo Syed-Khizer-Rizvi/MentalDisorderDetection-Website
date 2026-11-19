@@ -448,8 +448,8 @@ ul { list-style: none; }
 @media (max-width: 600px) {
     .container { padding: 0 16px; }
     .navbar { padding: 12px 16px; }
-    .nav-links { gap: 6px 14px; }
-    .nav-link { font-size: 13.5px; }
+    .nav-links { gap: 6px 11px; }
+    .nav-link { font-size: 13px; }
     .team-member-card { padding: 22px 12px; }
     .tm-avatar { width: 60px; height: 60px; font-size: 19px; margin-bottom: 12px; }
     .team-member-card h3 { font-size: 14px; }
@@ -471,6 +471,46 @@ ul { list-style: none; }
     .card-bottom-right { bottom: 0; right: 0; width: 46%; min-width: 0; }
     .fc-value.big { font-size: 22px; }
 }
+/* ========== HELP / FAQ (templates/help.html) ========== */
+.help-container { max-width: 860px; }
+.help-section .section-head { margin-bottom: 36px; }
+.help-title { font-size: 40px; margin-bottom: 14px; letter-spacing: -1px; }
+.help-group { margin: 30px 0 12px; font-size: 13px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }
+.faq-list { display: grid; gap: 10px; }
+.faq { border: 1px solid var(--border); border-radius: 14px; background: #fff; box-shadow: var(--shadow-sm); transition: border-color 0.16s ease; }
+.faq:hover, .faq[open] { border-color: #A7D7C5; }
+.faq summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px;
+    cursor: pointer; list-style: none; color: var(--dark); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 16px; font-weight: 700;
+    border-radius: 14px;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+    content: ''; flex: none; width: 10px; height: 10px; margin-right: 4px; border-right: 2px solid var(--primary); border-bottom: 2px solid var(--primary);
+    transform: rotate(45deg) translateY(-3px); transition: transform 0.2s ease;
+}
+.faq[open] summary::after { transform: rotate(225deg) translateY(-2px); }
+.faq-body { padding: 0 20px 18px; color: var(--text); font-size: 14.5px; line-height: 1.7; }
+.faq-body p + p, .faq-body ul + p, .faq-body ol + p, .faq-body p + ul, .faq-body p + ol { margin-top: 10px; }
+.faq-body ul, .faq-body ol { padding-left: 20px; }
+.faq-body ul { list-style: disc; }
+.faq-body li + li { margin-top: 4px; }
+.faq-body a { color: var(--primary); font-weight: 600; }
+.faq-body a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.faq-bands { list-style: none !important; padding: 0 !important; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.faq-bands li { display: inline-flex; align-items: center; gap: 6px; margin: 0 !important; }
+.faq-dot { width: 10px; height: 10px; border-radius: 50%; }
+.faq-urgent { padding: 10px 14px; border-radius: 10px; background: #FEF2F2; color: #991B1B; }
+.help-contact { margin-top: 36px; padding: 24px; border-radius: 16px; background: var(--primary-light); text-align: center; }
+.help-contact h2 { font-size: 20px; margin-bottom: 6px; }
+.help-contact a { color: var(--primary); font-weight: 700; }
+@media (max-width: 600px) {
+    .help-title { font-size: 30px; }
+    .faq summary { padding: 16px; font-size: 15px; }
+    .faq-body { padding: 0 16px 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .faq summary::after { transition: none; } }
+
 /* ========== ALERT BOX (Login/Register) ========== */
 .alert-box {
     padding: 12px 16px;
