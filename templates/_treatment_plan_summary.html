@@ -1,0 +1,32 @@
+{#- Doctor-side summary of a treatment plan (`plan` = treatment_plan_view(..., for_doctor=True)). -#}
+<div class="tp-summary">
+  {% if plan.observations %}
+  <div class="tp-block tp-block-private">
+    <span class="tp-block-label">Observations <span class="tp-tag tp-tag-private">Only you see this</span></span>
+    {% for para in plan.observations_paragraphs %}<p>{{ para }}</p>{% endfor %}
+  </div>
+  {% endif %}
+  <div class="tp-block">
+    <span class="tp-block-label">Instructions for the patient</span>
+    {% for para in plan.instructions_paragraphs %}<p>{{ para }}</p>{% endfor %}
+  </div>
+  <div class="tp-summary-grid">
+    <div>
+      <span class="tp-block-label">Daily activities</span>
+      {% if plan.activities %}
+      <ul class="tp-pills">{% for a in plan.activities %}<li class="{{ 'is-done' if a.done }}{{ ' is-retired' if a.retired }}"{% if a.done %} title="Done today"{% endif %}>{{ '✓ ' if a.done }}{{ a.label }}{% if a.retired %} <span class="tp-tag tp-tag-removed">Feature removed</span>{% endif %}</li>{% endfor %}</ul>
+      <small class="tp-hint">{{ plan.done_count }} of {{ plan.total }} done today</small>
+      {% else %}<p class="tp-none">None</p>{% endif %}
+    </div>
+    <div>
+      <span class="tp-block-label">Wellness games</span>
+      {% if plan.games %}
+      <ul class="tp-pills">{% for g in plan.games %}<li>{{ g.icon }} {{ g.title }}</li>{% endfor %}</ul>
+      {% else %}<p class="tp-none">None</p>{% endif %}
+    </div>
+    <div>
+      <span class="tp-block-label">Follow-up</span>
+      <p class="tp-follow">{{ plan.follow_up_label or 'Not scheduled' }}</p>
+    </div>
+  </div>
+</div>

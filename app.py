@@ -927,7 +927,7 @@ def patient_dashboard():
     # Assessment keys are millisecond timestamps, so key order is chronological.
     recent_future = _READ_POOL.submit(lambda: db.reference(f'users/{uid}/assessments').order_by_key().limit_to_last(7).get())
     prefetch(f'users/{uid}/assigned_doctor_uid', f'users/{uid}/latest_assessment_id', f'wristband_orders/{uid}',
-             f'users/{uid}/wristband', f'chat_unread/{uid}', 'consultations')
+             f'users/{uid}/wristband', f'chat_unread/{uid}', 'consultations', f'users/{uid}/treatment_plan')
     recent = recent_future.result() or {}
 
     # Patients without a doctor (registered before assignment existed, or when no doctor
@@ -987,6 +987,7 @@ def patient_dashboard():
                            consult_rows=[r for r in patient_consultations_light(uid)   # active ones + answers not seen yet
                                          if r['status'] in ('pending', 'accepted') or r['patient_unread']][:4],
                            assigned_doctor=assigned_doctor,
+                           treatment_plan=treatment_plan_view(cached_read(f'users/{uid}/treatment_plan'), for_doctor=False),
                            login_just_happened=session.pop('_login_toast', False), **data)
 
 
@@ -2012,6 +2013,7 @@ def doctor_patient_detail(patient_uid):
                            wristband=wristband, wb=load_wristband_view(patient_uid, 7),
                            patient_alert_list=patient_alerts(patient_uid, patient),
                            clinical_notes=visible_clinical_notes(patient_uid, session['user']['uid']),
+                           treatment_plan=treatment_plan_view(patient.get('treatment_plan'), for_doctor=True),
                            note_categories=NOTE_CATEGORIES, note_title_max=NOTE_TITLE_MAX, note_body_max=NOTE_BODY_MAX)
 
 
@@ -3101,6 +3103,271 @@ def chat_unread():
 def admin_chats():
     # Placeholder: chat oversight for administrators is not built yet
     return jsonify({'success': False, 'error': 'Chat oversight for administrators is not available yet.'}), 501
+
+
+# ========== TREATMENT PLAN (assigned doctor writes, patient follows) ==========
+# users/{patient_uid}/treatment_plan: observations (doctor only), instructions, recommended_activities [ids],
+#   recommended_games [GAMES keys], follow_up_date ('YYYY-MM-DD' or absent), created_at, updated_at,
+#   created_by, created_by_name, updated_by, updated_by_name, completed_today {activity_id: ms timestamp}.
+# "Today" is the patient's local day: the browser sends its UTC offset with each tick and works out which
+# ticks are from today when it shows the plan, so the checklist clears at the patient's own midnight.
+TREATMENT_ACTIVITIES = {   # id -> label (the order the checklist shows)
+    'breathing': 'Daily breathing exercise', 'journal': 'Journal entry', 'memory': 'Memory match game',
+    'color': 'Color focus game', 'bubbles': 'Bubble pop', 'zen': 'Zen garden', 'mandala': 'Mandala draw',
+    'gratitude': 'Gratitude jar note',
+}
+# No longer offered (the feature was removed), but plans that already include one keep it: it's shown
+# marked "Feature removed", can still be ticked, and the doctor can untick it to drop it from the plan.
+RETIRED_TREATMENT_ACTIVITIES = {'meditation': 'Guided meditation'}
+ALL_TREATMENT_ACTIVITIES = {**TREATMENT_ACTIVITIES, **RETIRED_TREATMENT_ACTIVITIES}
+TREATMENT_TEXT_MAX = 2000
+TREATMENT_DONE_KEEP_MS = 36 * 3_600_000   # ticks older than this can't be "today" anywhere, so they're dropped on write
+
+
+def reflow_paragraphs(text):
+    """Display paragraphs for text typed or pasted into a textarea. Text copied from elsewhere often has a
+    hard line break every ~50 characters, which would show as a narrow column; single breaks inside a
+    paragraph become spaces. Blank lines still separate paragraphs and list lines (-, *, •, 1.) keep their
+    own line. The stored text is never changed."""
+    import re
+    paragraphs = []
+    for block in re.split(r'\n\s*\n', str(text or '').replace('\r\n', '\n').strip()):
+        lines = []
+        for line in (l.strip() for l in block.split('\n')):
+            if not line:
+                continue
+            if lines and not re.match(r'([-*•]|\d+[.)])\s', line):
+                lines[-1] += ' ' + line   # continuation of the same sentence
+            else:
+                lines.append(line)
+        if lines:
+            paragraphs.append('\n'.join(lines))   # list items stay on separate lines (white-space: pre-line)
+    return paragraphs
+
+
+def treatment_plan_ref(patient_uid):
+    return db.reference(f'users/{patient_uid}/treatment_plan')
+
+
+def local_day_start_ms(now_ms, tz_offset_min):
+    """Midnight of the patient's local day, in ms. tz_offset_min is JavaScript's getTimezoneOffset()
+    (minutes to ADD to local time to get UTC, e.g. -300 for Pakistan)."""
+    local_ms = now_ms - tz_offset_min * 60_000
+    return local_ms - local_ms % 86_400_000 + tz_offset_min * 60_000
+
+
+def clean_tz_offset(raw):
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if -840 <= value <= 720 else None
+
+
+def server_tz_offset():
+    """The server's own offset, used when the browser hasn't told us the patient's (first page render)."""
+    return -int(time.localtime().tm_gmtoff // 60)
+
+
+def done_today(plan, now_ms, tz_offset_min):
+    """{activity_id: ms} ticked since the patient's local midnight, for activities still in the plan."""
+    start = local_day_start_ms(now_ms, tz_offset_min)
+    wanted = set(plan.get('recommended_activities') or [])
+    raw = plan.get('completed_today') if isinstance(plan.get('completed_today'), dict) else {}
+    return {k: v for k, v in raw.items() if k in wanted and isinstance(v, (int, float)) and start <= v <= now_ms + 60_000}
+
+
+def validate_treatment_plan(data, existing_activities=()):
+    """(clean fields, errors) for a doctor's save. Unknown activities / games are rejected, not dropped.
+    A retired activity is accepted only if the plan already had it (it can be kept or removed, never added)."""
+    from datetime import date, timedelta
+    errors, fields = {}, {}
+    for key in ('observations', 'instructions'):
+        value = str(data.get(key) or '').strip()
+        if len(value) > TREATMENT_TEXT_MAX:
+            errors[key] = f'Keep this to {TREATMENT_TEXT_MAX} characters.'
+        fields[key] = value
+    if not fields['instructions']:
+        errors['instructions'] = 'Write the instructions your patient will see.'
+    kept_retired = {a: label for a, label in RETIRED_TREATMENT_ACTIVITIES.items() if a in existing_activities}
+    for key, allowed, label in (('recommended_activities', {**TREATMENT_ACTIVITIES, **kept_retired}, 'activity'),
+                                ('recommended_games', GAMES, 'game')):
+        raw = data.get(key) or []
+        if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+            errors[key] = f'Choose from the listed {label} options.'
+            continue
+        unknown = [x for x in raw if x not in allowed]
+        if unknown:
+            errors[key] = f'Unknown {label}: {", ".join(unknown[:3])}.'
+        fields[key] = [x for x in allowed if x in raw]   # stored in the listed order, no duplicates
+    follow = str(data.get('follow_up_date') or '').strip()
+    if follow:
+        try:
+            when = date.fromisoformat(follow)
+            if when < date.today() - timedelta(days=1) or when > date.today() + timedelta(days=366):
+                errors['follow_up_date'] = 'Pick a follow-up date within the next year.'
+        except ValueError:
+            errors['follow_up_date'] = 'Pick a valid date.'
+    fields['follow_up_date'] = follow or None
+    if not errors and not fields['recommended_activities'] and not fields['recommended_games']:
+        errors['recommended_activities'] = 'Recommend at least one activity or game.'
+    return fields, errors
+
+
+def treatment_plan_view(plan, for_doctor, now_ms=None, tz_offset_min=None):
+    """Display data. The patient's version never contains the doctor's observations."""
+    if not isinstance(plan, dict) or not plan.get('created_at'):
+        return None
+    from datetime import date
+    now_ms = now_ms or int(time.time() * 1000)
+    done = done_today(plan, now_ms, server_tz_offset() if tz_offset_min is None else tz_offset_min)
+    activities = [{'id': a, 'label': ALL_TREATMENT_ACTIVITIES[a], 'done': a in done, 'done_at': done.get(a),
+                   'retired': a in RETIRED_TREATMENT_ACTIVITIES}
+                  for a in plan.get('recommended_activities') or [] if a in ALL_TREATMENT_ACTIVITIES]
+    games = [{'key': g, 'title': GAMES[g]['title'], 'icon': GAMES[g]['icon'], 'color': GAMES[g]['color'],
+              'url': url_for('patient_game', game=g)} for g in plan.get('recommended_games') or [] if g in GAMES]
+    follow = plan.get('follow_up_date')
+    try:
+        follow_label = date.fromisoformat(follow).strftime('%a %d %b %Y') if follow else None
+    except ValueError:
+        follow_label = None
+    updated = plan.get('updated_at') if isinstance(plan.get('updated_at'), (int, float)) else plan.get('created_at')
+    view = {
+        'instructions': plan.get('instructions', ''), 'instructions_paragraphs': reflow_paragraphs(plan.get('instructions')),
+        'activities': activities, 'games': games,
+        'done_count': sum(1 for a in activities if a['done']), 'total': len(activities),
+        'follow_up_date': follow, 'follow_up_label': follow_label,
+        'updated_by_name': strip_dr(plan.get('updated_by_name') or plan.get('created_by_name')) or 'your doctor',
+        'updated_label': format_timestamp(updated, '%d %b %Y, %I:%M %p') if isinstance(updated, (int, float)) else '',
+        'updated_date': format_timestamp(updated, '%d %b %Y') if isinstance(updated, (int, float)) else '',
+    }
+    if for_doctor:
+        view.update(observations=plan.get('observations', ''), observations_paragraphs=reflow_paragraphs(plan.get('observations')),
+                    created_by_name=strip_dr(plan.get('created_by_name')) or 'a doctor',
+                    created_label=format_timestamp(plan.get('created_at'), '%d %b %Y'),
+                    recommended_activities=list(plan.get('recommended_activities') or []),
+                    recommended_games=list(plan.get('recommended_games') or []))
+    else:   # ticks as raw times, so the browser can decide what counts as "today" for the patient
+        view['completed'] = {a['id']: a['done_at'] for a in activities if a['done']}
+        listed = {a['id'] for a in activities}
+        view['all_completed'] = {k: v for k, v in (plan.get('completed_today') or {}).items()
+                                 if k in listed and isinstance(v, (int, float))}
+    return view
+
+
+def assigned_patient_or_error(patient_uid, json_errors):
+    """(patient, None) for the signed-in doctor's own active patient, else (None, response)."""
+    patient = get_active_patient(patient_uid) if is_safe_key(patient_uid) else None
+    if not patient or not patient_assigned_to(patient, session['user']['uid']):
+        if json_errors:
+            return None, note_json_error("That patient isn't assigned to you.", 403 if patient else 404)
+        flash("That patient isn't assigned to you." if patient else 'That patient could not be found or is no longer active.', 'error')
+        return None, redirect(url_for('doctor_patients'))
+    return patient, None
+
+
+@app.route('/doctor/patients/<patient_uid>/treatment-plan', methods=['GET'])
+@login_required
+@role_required('doctor')
+def doctor_treatment_plan(patient_uid):
+    patient, error = assigned_patient_or_error(patient_uid, json_errors=False)
+    if error:
+        return error
+    user_name, user_initials = doctor_identity()
+    plan = patient.get('treatment_plan') if isinstance(patient.get('treatment_plan'), dict) else None
+    return render_template('doctor_treatment_plan.html', user_name=user_name, user_initials=user_initials,
+                           patient_uid=patient_uid, patient_name=patient.get('name') or 'Unnamed patient',
+                           plan=treatment_plan_view(plan, for_doctor=True), activities=TREATMENT_ACTIVITIES, games=GAMES,
+                           retired_in_plan={a: label for a, label in RETIRED_TREATMENT_ACTIVITIES.items()
+                                            if a in ((plan or {}).get('recommended_activities') or [])},
+                           text_max=TREATMENT_TEXT_MAX, today=time.strftime('%Y-%m-%d'))
+
+
+@app.route('/doctor/patients/<patient_uid>/treatment-plan', methods=['POST'])
+@login_required
+@role_required('doctor')
+def doctor_save_treatment_plan(patient_uid):
+    if not request.is_json:   # JSON only, so a cross-site form can't post it
+        return note_json_error('Expected a JSON request.', 415)
+    patient, error = assigned_patient_or_error(patient_uid, json_errors=True)
+    if error:
+        return error
+    existing = patient.get('treatment_plan') if isinstance(patient.get('treatment_plan'), dict) else None
+    fields, errors = validate_treatment_plan(request.get_json(silent=True) or {},
+                                             (existing or {}).get('recommended_activities') or ())
+    if errors:
+        return note_json_error('Please fix the highlighted fields.', 400, errors)
+    me = session['user']
+    doctor_name, _ = doctor_identity()
+    is_new = not (existing and existing.get('created_at'))
+    base = f'users/{patient_uid}/treatment_plan'
+    updates = {f'{base}/{k}': v for k, v in fields.items()}   # None clears the follow-up date
+    updates.update({f'{base}/updated_at': {'.sv': 'timestamp'}, f'{base}/updated_by': me['uid'],
+                    f'{base}/updated_by_name': doctor_name})
+    if is_new:
+        updates.update({f'{base}/created_at': {'.sv': 'timestamp'}, f'{base}/created_by': me['uid'],
+                        f'{base}/created_by_name': doctor_name, f'{base}/completed_today': None})
+    else:   # ticks for activities that are no longer recommended go away
+        for activity in (existing.get('completed_today') or {}):
+            if activity not in fields['recommended_activities']:
+                updates[f'{base}/completed_today/{activity}'] = None
+    db.reference().update(updates)
+    activity_log('treatment_plan_created' if is_new else 'treatment_plan_updated',
+                 f"{'Created' if is_new else 'Updated'} the treatment plan for {patient.get('name') or 'a patient'}",
+                 details={'patient_uid': patient_uid, 'activities': len(fields['recommended_activities']),
+                          'games': len(fields['recommended_games']), 'follow_up': bool(fields['follow_up_date'])})
+    return jsonify({'success': True, 'created': is_new,
+                    'plan': treatment_plan_view(treatment_plan_ref(patient_uid).get(), for_doctor=True)})
+
+
+@app.route('/patient/treatment-plan')
+@login_required
+@role_required('patient')
+def patient_treatment_plan():
+    """JSON for scripts (?format=json or Accept: application/json); a browser visit goes to the dashboard card."""
+    wants_json = request.args.get('format') == 'json' or request.accept_mimetypes.best == 'application/json'
+    if not wants_json:
+        return redirect(url_for('patient_dashboard') + '#treatment-plan')
+    tz = clean_tz_offset(request.args.get('tz'))
+    view = treatment_plan_view(treatment_plan_ref(session['user']['uid']).get(), for_doctor=False, tz_offset_min=tz)
+    return jsonify({'success': True, 'plan': view})
+
+
+@app.route('/api/treatment-plan/complete', methods=['POST'])
+@login_required
+@role_required('patient')
+def treatment_plan_complete():
+    """Tick (done=true) or untick one recommended activity for today."""
+    if not request.is_json:
+        return chat_json_error('Expected a JSON request.', 415)
+    data = request.get_json(silent=True) or {}
+    activity, done = data.get('activity'), data.get('done', True)
+    tz = clean_tz_offset(data.get('tz_offset'))
+    tz = server_tz_offset() if tz is None else tz
+    uid = session['user']['uid']
+    plan = treatment_plan_ref(uid).get()
+    if not isinstance(plan, dict) or not plan.get('created_at'):
+        return chat_json_error('You have no treatment plan yet.', 404)
+    if activity not in (plan.get('recommended_activities') or []):
+        return chat_json_error('That activity is not in your treatment plan.', 400)
+    if not isinstance(done, bool):
+        return chat_json_error('done must be true or false.', 400)
+    now = int(time.time() * 1000)
+    base = f'users/{uid}/treatment_plan/completed_today'
+    updates = {f'{base}/{activity}': now if done else None}
+    for key, stamp in (plan.get('completed_today') or {}).items():   # housekeeping: old days' ticks
+        if key != activity and (not isinstance(stamp, (int, float)) or now - stamp > TREATMENT_DONE_KEEP_MS):
+            updates[f'{base}/{key}'] = None
+    db.reference().update(updates)
+    if done:
+        activity_log('treatment_activity_completed', f'Completed "{ALL_TREATMENT_ACTIVITIES.get(activity, activity)}" from the treatment plan',
+                     details={'activity': activity})
+    plan.setdefault('completed_today', {})
+    plan['completed_today'] = {**{k: v for k, v in (plan['completed_today'] or {}).items() if f'{base}/{k}' not in updates},
+                               **({activity: now} if done else {})}
+    view = treatment_plan_view(plan, for_doctor=False, now_ms=now, tz_offset_min=tz)
+    return jsonify({'success': True, 'done': done, 'completed': view['completed'],
+                    'done_count': view['done_count'], 'total': view['total']})
 
 
 # ========== DOCTOR LIVE MONITORING (wristband vitals) ==========
@@ -4976,6 +5243,8 @@ DB_PRIVATE_PATHS = (
     (('chats', '*', 'messages', '*', 'text'), '***message hidden***'),
     (('chats', '*', 'last_message', 'text'), '***message hidden***'),   # copy of the newest message
     (('clinical_notes', '*', '*', 'body'), '***note hidden***'),        # the note text
+    (('users', '*', 'treatment_plan', 'observations'), '***note hidden***'),   # doctor's clinical summary
+    (('users', '*', 'treatment_plan', 'instructions'), '***note hidden***'),   # what the doctor told the patient
     (('clinical_notes', '*', '*', 'title'), '***note hidden***'),
     (('users', '*', 'clinical_notes', '*', 'body'), '***note hidden***'),   # older notes, stored under the patient
     (('users', '*', 'clinical_notes', '*', 'title'), '***note hidden***'),

@@ -8,6 +8,8 @@
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/consultations.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/treatment.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
 </head>
 <body>
@@ -183,6 +185,21 @@
       </ul>
       {% else %}
       <p class="trend-empty">No journal entries shared with you yet.</p>
+      {% endif %}
+    </section>
+
+    {# Treatment plan: what this doctor has asked the patient to do (only the assigned doctor reaches this page) #}
+    <section class="chart-panel" id="treatment-plan" aria-labelledby="tpTitle">
+      <div class="panel-head">
+        <h3 id="tpTitle">Treatment Plan</h3>
+        <a href="{{ url_for('doctor_treatment_plan', patient_uid=patient_uid) }}" class="cs-btn {{ '' if treatment_plan else 'cs-btn-primary' }}">{{ '✎ Edit plan' if treatment_plan else '+ Create plan' }}</a>
+      </div>
+      {% if treatment_plan %}
+      {% set plan = treatment_plan %}
+      <p class="panel-sub tp-updated">Last updated {{ plan.updated_label }} by Dr. {{ plan.updated_by_name }}</p>
+      {% include '_treatment_plan_summary.html' %}
+      {% else %}
+      <p class="tp-empty">No treatment plan yet. Create one to give {{ patient.name }} instructions, daily activities and games on their dashboard.</p>
       {% endif %}
     </section>
 

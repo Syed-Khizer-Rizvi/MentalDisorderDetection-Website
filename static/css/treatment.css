@@ -1,0 +1,109 @@
+/* Treatment plan: doctor form + summary (doctor_treatment_plan.html, doctor_patient_detail.html)
+   and the patient's "My Treatment Plan" card (patient_dashboard.html). */
+.tp-card [hidden], .tp-form [hidden], .tp-toast[hidden] { display: none !important; }
+.tp-lead { margin-top: 6px; max-width: 720px; color: #64748B; font-size: 14px; line-height: 1.55; }
+.tp-block-label { display: block; margin-bottom: 6px; color: #64748B; font-size: 11.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; }
+.tp-tag {
+  display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; vertical-align: 1px;
+  background: #D1FAE5; color: #065F46; font-size: 10.5px; font-weight: 800; letter-spacing: 0.2px; text-transform: none;
+}
+.tp-tag-private { background: #EDE9FE; color: #5B21B6; }
+.tp-tag-removed { margin-left: 4px; background: #F1F5F9; color: #64748B; text-decoration: none; }
+.tp-check.is-retired { border-style: dashed; }
+.tp-pills li.is-retired { background: #F8FAFC; color: #64748B; border: 1px dashed #CBD5E1; }
+.tp-checklist li.is-done .tp-tick .tp-tag-removed { text-decoration: none; }
+.tp-hint { color: #94A3B8; font-size: 12px; }
+.tp-empty { padding: 18px; border: 1px dashed #CBD5E1; border-radius: 12px; background: #F8FAFC; color: #64748B; font-size: 14px; line-height: 1.55; text-align: center; }
+.tp-updated { margin-top: 12px; color: #94A3B8; font-size: 12px; }
+.panel-sub.tp-updated { margin: -4px 0 12px; }
+
+/* ---------- Doctor: summary ---------- */
+.tp-summary { display: grid; gap: 14px; }
+.tp-block { padding: 14px 18px; border-radius: 12px; background: #F8FAFC; border: 1px solid #E2E8F0; }
+.tp-block-private { background: #FAF5FF; border-color: #E9D5FF; }
+.tp-block p { color: #0F172A; font-size: 14px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.tp-block p + p, .tp-instructions p + p { margin-top: 8px; }
+.tp-summary-grid { display: grid; grid-template-columns: 1.4fr 1.2fr 0.8fr; gap: 14px; }
+.tp-pills { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin-bottom: 6px; }
+.tp-pills li { padding: 5px 10px; border-radius: 999px; background: #F1F5F9; color: #334155; font-size: 12.5px; font-weight: 600; }
+.tp-pills li.is-done { background: #D1FAE5; color: #065F46; }
+.tp-none { color: #94A3B8; font-size: 13px; }
+.tp-follow { color: #0F172A; font-size: 14px; font-weight: 700; }
+.chart-panel .panel-head .cs-btn { text-decoration: none; }
+
+/* ---------- Doctor: form ---------- */
+.tp-form { display: grid; gap: 20px; }
+.tp-field { display: grid; gap: 6px; min-width: 0; border: 0; }
+.tp-field > label, .tp-field > legend { color: #0F172A; font-size: 14px; font-weight: 700; }
+.tp-field > legend { margin-bottom: 4px; }
+.tp-optional { color: #94A3B8; font-weight: 500; }
+.tp-field textarea, .tp-field input[type="date"] {
+  width: 100%; padding: 11px 13px; border: 1px solid #E2E8F0; border-radius: 10px; background: #FFFFFF;
+  color: #0F172A; font: inherit; font-size: 14px; line-height: 1.5;
+}
+.tp-field textarea { resize: vertical; min-height: 96px; }
+.tp-date input[type="date"] { max-width: 240px; }
+.tp-checks, .tp-games { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; margin-top: 4px; }
+.tp-check, .tp-game {
+  display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 9px 12px; border: 1px solid #E2E8F0; border-radius: 10px;
+  background: #FFFFFF; color: #0F172A; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+.tp-check:hover, .tp-game:hover { border-color: #0F7A5F; }
+.tp-check:has(input:checked), .tp-game:has(input:checked) { border-color: #0F7A5F; background: #ECFDF5; }
+.tp-check input, .tp-game input { width: 17px; height: 17px; flex: none; accent-color: #0F7A5F; }
+.tp-check:focus-within, .tp-game:focus-within { outline: 3px solid rgba(15, 122, 95, 0.45); outline-offset: 2px; }
+.tp-game-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 8px; font-size: 16px; }
+.tp-error, .tp-form-error, .tp-tick-error { color: #B91C1C; font-size: 12.5px; font-weight: 600; }
+.tp-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid #F1F5F9; }
+.tp-actions .tp-form-error { flex: 1 1 100%; text-align: right; }
+.tp-toast {
+  position: fixed; right: 24px; bottom: 24px; z-index: 50; padding: 12px 18px; border-radius: 10px;
+  background: #065F46; color: #FFFFFF; font-size: 14px; font-weight: 600; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
+}
+
+/* ---------- Patient: My Treatment Plan card ---------- */
+.tp-card { border-top: 3px solid #0F7A5F; }
+.tp-badge {
+  padding: 5px 11px; border-radius: 999px; background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 800; white-space: nowrap;
+}
+.tp-badge.is-complete { background: #D1FAE5; color: #065F46; }
+.tp-instructions { margin-bottom: 16px; padding: 14px 18px; border-radius: 12px; background: #ECFDF5; border: 1px solid #A7F3D0; }
+.tp-instructions p { color: #064E3B; font-size: 14.5px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.tp-patient-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px; }
+.tp-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.tp-progress-text { color: #64748B; font-size: 13px; }
+.tp-progress-text strong { color: #0F172A; }
+.tp-progress { height: 8px; margin: 2px 0 12px; overflow: hidden; border-radius: 999px; background: #E2E8F0; }
+.tp-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #10B981, #0F7A5F); transition: width 0.3s ease; }
+.tp-checklist { display: grid; gap: 8px; list-style: none; }
+.tp-tick {
+  display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 10px 14px; border: 1px solid #E2E8F0; border-radius: 10px;
+  background: #FFFFFF; color: #0F172A; font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+.tp-tick:hover { border-color: #0F7A5F; }
+.tp-tick input { width: 20px; height: 20px; flex: none; accent-color: #0F7A5F; }
+.tp-tick:focus-within { outline: 3px solid rgba(15, 122, 95, 0.45); outline-offset: 2px; }
+.tp-checklist li.is-done .tp-tick { border-color: #A7F3D0; background: #F0FDF9; }
+.tp-checklist li.is-done .tp-tick span { color: #047857; text-decoration: line-through; text-decoration-color: rgba(4, 120, 87, 0.45); }
+.tp-tick-error { margin-top: 8px; }
+.tp-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tp-game-list { display: grid; gap: 8px; list-style: none; margin-bottom: 12px; }
+.tp-game-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #E2E8F0; border-radius: 10px; }
+.tp-game-name { flex: 1; min-width: 0; color: #0F172A; font-size: 14px; font-weight: 600; }
+.tp-play { min-height: 36px; padding: 6px 12px; text-decoration: none; }
+.tp-follow-box { display: grid; gap: 2px; padding: 12px 14px; border-radius: 10px; background: #F8FAFC; border: 1px solid #E2E8F0; }
+.tp-follow-box strong { color: #0F172A; font-size: 15px; }
+
+@media (max-width: 900px) {
+  .tp-summary-grid, .tp-patient-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .tp-checks, .tp-games { grid-template-columns: minmax(0, 1fr); }
+  .tp-actions .cs-btn { flex: 1; }
+  .tp-date input[type="date"] { max-width: none; }
+  .tp-card .panel-head { flex-wrap: wrap; gap: 8px; }
+  .tp-toast { left: 16px; right: 16px; bottom: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .tp-progress span { transition: none; } }

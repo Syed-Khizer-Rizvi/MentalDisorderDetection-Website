@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Create or update the treatment plan your patient follows: instructions, daily activities, games and follow-up date.">
+<title>Treatment Plan · {{ patient_name }} | Mental Disorder Detection</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/consultations.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/treatment.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
+</head>
+<body>
+<div class="dashboard-wrapper">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-brand">Mental Disorder Detection</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('doctor_dashboard') }}" class="nav-item"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
+      <a href="{{ url_for('doctor_patients') }}" class="nav-item active" aria-current="page"><span class="nav-icon">👥</span><span class="nav-label">My Patients</span></a>
+      <a href="{{ url_for('doctor_messages') }}" class="nav-item"><span class="nav-icon">💬</span><span class="nav-label">Messages</span><span class="nav-badge" data-chat-badge{% if not chat_unread_total %} hidden{% endif %}>{{ chat_unread_total if chat_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('doctor_risk_alerts') }}" class="nav-item"><span class="nav-icon">🚨</span><span class="nav-label">Risk Alerts</span><span class="nav-badge nav-badge-alert" data-alert-badge{% if not alert_unread_total %} hidden{% endif %}>{{ alert_unread_total if alert_unread_total < 100 else "99+" }}</span></a>
+      <a href="{{ url_for('doctor_monitor') }}" class="nav-item"><span class="nav-icon">📈</span><span class="nav-label">Monitor Patient</span></a>
+      <a href="{{ url_for('doctor_reports') }}" class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Assessment Reports</span></a>
+      <a href="{{ url_for('doctor_consultations_page') }}" class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Consultations</span><span class="nav-badge nav-badge-consult{{ ' is-emergency' if consult_emergency_total }}" data-consult-badge{% if not consult_pending_total %} hidden{% endif %}>{{ consult_pending_total }}</span></a>
+      <a href="{{ url_for('doctor_notes') }}" class="nav-item"><span class="nav-icon">📝</span><span class="nav-label">Clinical Notes</span></a>
+      <a href="{{ url_for('doctor_profile') }}" class="nav-item"><span class="nav-icon">👤</span><span class="nav-label">Profile</span></a>
+      <a href="{{ url_for('logout') }}" class="nav-item nav-logout"><span class="nav-icon">🚪</span><span class="nav-label">Logout</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="top-header">
+      <button class="menu-toggle" id="menuToggle">☰</button>
+      <div class="header-right">
+        <div class="user-chip">
+          <div class="user-avatar">{{ user_initials }}</div>
+          <div class="user-info"><span class="user-name">Dr. {{ user_name }}</span><span class="user-role">Doctor</span></div>
+        </div>
+      </div>
+    </header>
+
+    <a href="{{ url_for('doctor_patient_detail', patient_uid=patient_uid) }}#treatment-plan" class="pd-back">← {{ patient_name }}</a>
+
+    <section class="ra-head">
+      <div>
+        <h1>Treatment Plan</h1>
+        <p class="tp-lead">{{ 'Update' if plan else 'Create' }} the plan {{ patient_name }} follows from their dashboard. Your observations stay private to you; the patient sees the instructions, activities, games and follow-up date.</p>
+      </div>
+    </section>
+
+    {% if plan %}
+    <section class="chart-panel tp-current" aria-labelledby="tpCurrentTitle">
+      <div class="panel-head">
+        <h3 id="tpCurrentTitle">Current plan</h3>
+        <span class="panel-sub">Last updated {{ plan.updated_label }} by Dr. {{ plan.updated_by_name }}{% if plan.created_by_name != plan.updated_by_name %} · created by Dr. {{ plan.created_by_name }}{% endif %}</span>
+      </div>
+      {% include '_treatment_plan_summary.html' %}
+    </section>
+    {% endif %}
+
+    <section class="chart-panel" aria-labelledby="tpFormTitle">
+      <div class="panel-head"><h3 id="tpFormTitle">{{ 'Update the plan' if plan else 'New treatment plan' }}</h3></div>
+      <form id="tpForm" class="tp-form" novalidate data-url="{{ url_for('doctor_save_treatment_plan', patient_uid=patient_uid) }}">
+        <div class="tp-field">
+          <label for="tpObservations">Observations <span class="tp-tag tp-tag-private">Only you see this</span></label>
+          <textarea id="tpObservations" name="observations" rows="4" maxlength="{{ text_max }}"
+                    placeholder="Clinical summary: presentation, risk factors, progress since the last review.">{{ plan.observations if plan }}</textarea>
+          <small class="tp-error" data-error="observations" hidden></small>
+        </div>
+        <div class="tp-field">
+          <label for="tpInstructions">Instructions for the patient <span class="tp-tag">Patient sees this</span></label>
+          <textarea id="tpInstructions" name="instructions" rows="4" maxlength="{{ text_max }}" required
+                    placeholder="e.g. Do the breathing exercise each morning and write a short journal entry before bed.">{{ plan.instructions if plan }}</textarea>
+          <small class="tp-hint"><span data-count="tpInstructions">0</span>/{{ text_max }}</small>
+          <small class="tp-error" data-error="instructions" hidden></small>
+        </div>
+
+        <fieldset class="tp-field">
+          <legend>Recommended daily activities</legend>
+          <p class="tp-hint">The patient ticks these off each day; the list resets at their midnight.</p>
+          <div class="tp-checks">
+            {% for key, label in activities.items() %}
+            <label class="tp-check"><input type="checkbox" name="recommended_activities" value="{{ key }}"{{ ' checked' if plan and key in plan.recommended_activities }}><span>{{ label }}</span></label>
+            {% endfor %}
+            {# Already in this plan but no longer offered: can be kept or unticked, never added again #}
+            {% for key, label in retired_in_plan.items() %}
+            <label class="tp-check is-retired" title="This feature was removed. Untick to drop it from the plan."><input type="checkbox" name="recommended_activities" value="{{ key }}" checked><span>{{ label }} <span class="tp-tag tp-tag-removed">Feature removed</span></span></label>
+            {% endfor %}
+          </div>
+          <small class="tp-error" data-error="recommended_activities" hidden></small>
+        </fieldset>
+
+        <fieldset class="tp-field">
+          <legend>Recommended wellness games</legend>
+          <p class="tp-hint">Shown with a Play button on the patient's dashboard.</p>
+          <div class="tp-games">
+            {% for key, g in games.items() %}
+            <label class="tp-game"><input type="checkbox" name="recommended_games" value="{{ key }}"{{ ' checked' if plan and key in plan.recommended_games }}>
+              <span class="tp-game-icon" style="background: {{ g.color }};" aria-hidden="true">{{ g.icon }}</span><span>{{ g.title }}</span></label>
+            {% endfor %}
+          </div>
+          <small class="tp-error" data-error="recommended_games" hidden></small>
+        </fieldset>
+
+        <div class="tp-field tp-date">
+          <label for="tpFollowUp">Follow-up date <span class="tp-optional">(optional)</span></label>
+          <input type="date" id="tpFollowUp" name="follow_up_date" min="{{ today }}" value="{{ plan.follow_up_date if plan and plan.follow_up_date }}">
+          <small class="tp-error" data-error="follow_up_date" hidden></small>
+        </div>
+
+        <div class="tp-actions">
+          <p class="tp-form-error" id="tpFormError" role="alert" hidden></p>
+          <a href="{{ url_for('doctor_patient_detail', patient_uid=patient_uid) }}" class="cs-btn">Cancel</a>
+          <button type="submit" class="cs-btn cs-btn-primary" id="tpSave">{{ 'Update plan' if plan else 'Save plan' }}</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</div>
+<div class="tp-toast" id="tpToast" role="status" aria-live="polite" hidden></div>
+<script src="{{ url_for('static', filename='js/treatment_plan.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% include '_chat_badge.html' %}
+</body>
+</html>

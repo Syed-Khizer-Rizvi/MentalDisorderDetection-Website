@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/consultations.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/treatment.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
 </head>
 <body>
@@ -141,6 +142,64 @@
     {% endif %}
     {% endif %}
 
+    {# My Treatment Plan: written by the assigned doctor; the doctor's private observations are never sent here #}
+    <section class="chart-panel tp-card" id="treatment-plan" aria-labelledby="tpCardTitle">
+      <div class="panel-head">
+        <h3 id="tpCardTitle">My Treatment Plan</h3>
+        {% if treatment_plan and treatment_plan.total %}
+        <span class="tp-badge{{ ' is-complete' if treatment_plan.done_count == treatment_plan.total }}" id="tpBadge"><span id="tpBadgeDone">{{ treatment_plan.done_count }}</span>/{{ treatment_plan.total }} completed today</span>
+        {% endif %}
+      </div>
+      {% if treatment_plan %}
+      {% set tp = treatment_plan %}
+      <div class="tp-instructions">
+        <span class="tp-block-label">From your doctor</span>
+        {% for para in tp.instructions_paragraphs %}<p>{{ para }}</p>{% endfor %}
+      </div>
+
+      <div class="tp-patient-grid">
+        {% if tp.activities %}
+        <div class="tp-checklist-wrap">
+          <div class="tp-progress-head">
+            <span class="tp-block-label" id="tpChecklistLabel">Today's activities</span>
+            <span class="tp-progress-text"><strong id="tpDone">{{ tp.done_count }}</strong> of {{ tp.total }} done</span>
+          </div>
+          <div class="tp-progress" role="progressbar" aria-labelledby="tpChecklistLabel" aria-valuemin="0" aria-valuemax="{{ tp.total }}" aria-valuenow="{{ tp.done_count }}" id="tpProgress">
+            <span style="width: {{ (tp.done_count / tp.total * 100)|round|int }}%;"></span>
+          </div>
+          <ul class="tp-checklist" aria-labelledby="tpChecklistLabel">
+            {% for a in tp.activities %}
+            <li><label class="tp-tick"><input type="checkbox" value="{{ a.id }}"{{ ' checked' if a.done }}><span>{{ a.label }}{% if a.retired %} <span class="tp-tag tp-tag-removed">Feature removed</span>{% endif %}</span></label></li>
+            {% endfor %}
+          </ul>
+          <p class="tp-tick-error" id="tpTickError" role="alert" hidden></p>
+        </div>
+        {% endif %}
+
+        <div class="tp-side">
+          {% if tp.games %}
+          <span class="tp-block-label">Recommended games</span>
+          <ul class="tp-game-list">
+            {% for g in tp.games %}
+            <li><span class="tp-game-icon" style="background: {{ g.color }};" aria-hidden="true">{{ g.icon }}</span>
+              <span class="tp-game-name">{{ g.title }}</span>
+              <a href="{{ g.url }}" class="cs-btn cs-btn-primary tp-play" aria-label="Play {{ g.title }}">▶ Play</a></li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          <div class="tp-follow-box">
+            <span class="tp-block-label">Next follow-up</span>
+            <strong>{{ tp.follow_up_label or 'Not scheduled yet' }}</strong>
+          </div>
+        </div>
+      </div>
+      <p class="tp-updated">Last updated by Dr. {{ tp.updated_by_name }} on {{ tp.updated_date }}</p>
+      <script type="application/json" id="tpData">{{ {'completed': tp.all_completed, 'total': tp.total, 'url': url_for('treatment_plan_complete')}|tojson }}</script>
+      {% else %}
+      <p class="tp-empty">No treatment plan yet. Your doctor will create one after your consultation.</p>
+      {% endif %}
+    </section>
+
     <section class="chart-panel trend-panel">
       <div class="panel-head"><h3>Risk Trend</h3><span class="panel-sub">Composite score · last {{ risk_trend|length }} assessment{{ 's' if risk_trend|length != 1 }}</span></div>
       {% include '_risk_trend.html' %}
@@ -199,6 +258,7 @@
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 {% set consult_doctor_name = assigned_doctor.name if assigned_doctor else None %}
 {% include '_consultation_modal.html' %}
+<script src="{{ url_for('static', filename='js/treatment_checklist.js') }}"></script>
 <script>document.addEventListener('consultation-sent', () => setTimeout(() => location.reload(), 1200));</script>
 {% include '_chat_badge.html' %}
 {% include '_login_toast.html' %}
