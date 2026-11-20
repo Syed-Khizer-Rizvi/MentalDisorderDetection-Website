@@ -1,0 +1,16 @@
+Hi Dr. {{ doctor_name }},
+
+Your PsyMonitor doctor account has been approved.
+
+An administrator has reviewed your registration, and you can now sign in to the doctor portal to see your assigned patients, risk alerts and consultation requests.
+
+Please confirm the details you registered with:
+  Name:              Dr. {{ doctor_name }}
+  Specialty:         {{ specialization }}
+  Hospital / clinic: {{ affiliation }}
+
+If anything is wrong, you can correct it on your Profile page after signing in.
+
+Sign in: {{ login_url }}
+
+{% include 'emails/_footer.txt' %}

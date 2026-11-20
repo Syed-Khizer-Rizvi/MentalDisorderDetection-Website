@@ -1,0 +1,5 @@
+--
+PsyMonitor · Mental Disorder Detection
+You're receiving this because you have a PsyMonitor account and this message is about your care or your account.
+These notifications can't be unsubscribed from individually; to stop them, email {{ support_email }}.
+This is an automated message, please don't reply.

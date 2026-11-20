@@ -1,0 +1,12 @@
+Hi{{ ' ' ~ recipient_name if recipient_name }},
+
+Your treatment plan has been {{ 'created' if is_new else 'updated' }}.
+
+Dr. {{ doctor_name }} has {{ 'written a new treatment plan for you' if is_new else 'made changes to your treatment plan' }}. Here is the start of their instructions:
+
+  "{{ instructions_preview }}"
+
+You can read the full plan, along with your recommended activities and games, on your dashboard:
+{{ dashboard_url }}
+
+{% include 'emails/_footer.txt' %}

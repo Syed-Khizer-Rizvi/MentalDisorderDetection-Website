@@ -1,0 +1,21 @@
+{% extends 'emails/base.html' %}
+{% set band_color = '#B91C1C' if level == 'critical' else '#C2410C' %}
+{% set band_bg = '#FEF2F2' if level == 'critical' else '#FFF7ED' %}
+{% block title %}Risk alert for {{ patient_name }}{% endblock %}
+{% block preheader %}{{ patient_name }}'s latest assessment is in the {{ band }} risk band ({{ score }}/100).{% endblock %}
+{% block greeting %}Hi Dr. {{ recipient_name }},{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:21px; color:#0F172A;">Risk alert for {{ patient_name }}</h1>
+<p style="margin:0 0 16px;">Your patient's latest assessment has raised a <strong style="color:{{ band_color }};">{{ band }}</strong> risk alert.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{{ band_bg }}; border-left:4px solid {{ band_color }}; border-radius:10px;">
+  <tr>
+    <td style="padding:14px 16px;">
+      <div style="font-size:13px; color:#64748B;">{{ patient_name }}</div>
+      <div style="font-size:28px; font-weight:800; color:{{ band_color }}; line-height:1.2;">{{ score }}<span style="font-size:15px; color:#64748B; font-weight:600;">/100</span></div>
+      <div style="display:inline-block; margin-top:6px; padding:3px 10px; border-radius:999px; background:{{ band_color }}; color:#FFFFFF; font-size:12px; font-weight:800; letter-spacing:0.4px;">{{ band | upper }} RISK</div>
+    </td>
+  </tr>
+</table>
+<p style="margin:14px 0 0;">Please review the assessment and acknowledge the alert on the Risk Alerts page.</p>
+{% with href=alerts_url, label='Review risk alerts', color=band_color %}{% include 'emails/_button.html' %}{% endwith %}
+{% endblock %}

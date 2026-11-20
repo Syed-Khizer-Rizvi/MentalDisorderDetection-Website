@@ -20,6 +20,7 @@
 {%- elif name == 'rotate' %}<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
 {%- elif name == 'save' %}<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
 {%- elif name == 'alert' %}<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+{%- elif name == 'mail' %}<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
 {%- elif name == 'external' %}<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
 {%- endif %}</svg>
 {%- endmacro %}
@@ -169,6 +170,23 @@
         </div>
         <p class="admin-note">Pairing currently works by the patient generating credentials on their Wristband page, so there are no pairing requests for auto-pair to approve yet.</p>
         {{ section_foot('wristband') }}
+      </section>
+
+      {# ===== Email notifications ===== #}
+      <section class="chart-panel st-section" id="emails" aria-labelledby="h-emails">
+        <div class="st-section-head"><span class="st-section-icon">{{ icon('mail', 20) }}</span>
+          <div><h2 id="h-emails">Email Notifications</h2><p>Emails sent to doctors and patients when something needs their attention</p></div></div>
+        <div class="st-fields">
+          {{ toggle('emails', 'enabled', 'Send email notifications',
+                    'Doctor approval, consultation and emergency requests, High/Critical risk alerts and treatment plan updates',
+                    status='live' if smtp_ready else 'off') }}
+        </div>
+        {% if smtp_ready %}
+        <p class="admin-note">Sent through Gmail SMTP. At most one email of each type per person every 10 minutes; emergency requests are always sent.</p>
+        {% else %}
+        <p class="st-note">SMTP is not configured: add SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM_NAME to <code>.env</code>. Until then, emails are skipped.</p>
+        {% endif %}
+        {{ section_foot('emails') }}
       </section>
     </form>
   </main>

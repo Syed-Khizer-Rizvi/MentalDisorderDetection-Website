@@ -70,6 +70,13 @@
     const data = JSON.parse(btn.closest('.cs-row').querySelector('.cs-data').textContent);
     open(data, btn.dataset.focus);
   }));
+  // ?open=<id> (the link in a request email) opens that request straight away
+  const wanted = new URLSearchParams(location.search).get('open');
+  const wantedRow = wanted && document.getElementById(`request-${wanted}`);
+  if (wantedRow) {
+    wantedRow.scrollIntoView({ block: 'center' });
+    wantedRow.querySelector('[data-view]').click();
+  }
   dialog.querySelector('[data-close]').addEventListener('click', () => dialog.close());
   dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
   dialog.addEventListener('close', () => { if (opener) opener.focus(); });

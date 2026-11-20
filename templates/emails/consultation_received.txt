@@ -1,0 +1,14 @@
+Hi Dr. {{ recipient_name }},
+
+New consultation request from {{ patient_name }}.
+
+  Patient:  {{ patient_name }}
+  Subject:  {{ subject }}
+  Urgency:  {{ urgency | capitalize }}
+  Received: {{ time }}
+
+The patient's message is on the Consultations page, so it isn't shared by email.
+
+View consultation requests: {{ consultations_url }}
+
+{% include 'emails/_footer.txt' %}

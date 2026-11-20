@@ -1,0 +1,18 @@
+Hi Dr. {{ recipient_name }},
+
+*** URGENT: EMERGENCY APPOINTMENT REQUEST ***
+
+{{ patient_name }} used the emergency button and is waiting for your response.
+
+  Patient: {{ patient_name }}
+  Subject: {{ subject }}
+  Sent:    {{ time }}
+
+Message:
+{{ message }}
+
+Open the request now: {{ request_url }}
+
+If the patient may be in immediate danger, contact them directly or advise them to call emergency services (1122) or Umang 0317-4288665.
+
+{% include 'emails/_footer.txt' %}

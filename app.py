@@ -1139,6 +1139,9 @@ def submit_facial():
                 activity_log('critical_alert', f'Critical alert raised for {patient_name} (composite {score}/100)', 'alert',
                              details={'patient_uid': uid, 'alert_id': alert_display_id(uid, assessment_id), 'composite': score},
                              user=SYSTEM_ACTOR)
+            if alert_severity(score):   # High or Critical: email the assigned doctor
+                queue_risk_alert_email(uid, session['user'].get('name') or 'A patient', level, risk_label, score,
+                                       external_url('doctor_risk_alerts'))
 
         return jsonify({'success': True, 'redirect': url_for('patient_results')})
     except Exception as e:
@@ -2469,6 +2472,168 @@ def activity_log(action, label, status='success', details=None, user=None):
 SYSTEM_ACTOR = {'uid': 'system', 'name': 'System', 'role': 'auto'}
 
 
+# ========== EMAIL NOTIFICATIONS (Gmail SMTP) ==========
+# Five events email the person they concern. SMTP settings come from .env (never committed); if any is
+# missing, sends are skipped with a warning. Everything after the trigger (settings check, address lookup,
+# throttle, rendering, SMTP) runs on _WRITE_POOL so the request that caused it returns immediately.
+# Admins can switch all emails off at system/settings/emails_enabled (Admin > Settings).
+# Throttle: one email of each type per recipient per 10 minutes, tracked at
+# email_throttle/{uid}/{event_type} (ms timestamp of the last send). Emergency requests always go out.
+# Each attempt is logged as email_sent with event_type, to_uid and the result: never the address or body.
+import smtplib
+import ssl
+from email.message import EmailMessage
+from email.utils import formataddr
+
+SMTP_ENV_KEYS = ('SMTP_SERVER', 'SMTP_PORT', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_FROM_NAME')
+SMTP_TIMEOUT_S = 20
+EMAIL_THROTTLE_MS = 10 * 60 * 1000
+EMAIL_EVENTS = {   # event_type: label used in the activity log
+    'doctor_approved': 'Doctor approved', 'consultation_received': 'Consultation request received',
+    'emergency_request': 'Emergency appointment request', 'risk_alert': 'Risk alert',
+    'treatment_plan_updated': 'Treatment plan updated',
+}
+UNTHROTTLED_EMAILS = {'emergency_request'}
+# Reserved names that can never receive mail (RFC 2606 / 6761): test accounts use them, so test runs
+# never send real emails
+RESERVED_EMAIL_SUFFIXES = ('.invalid', '.test', '.example', '.localhost')
+RESERVED_EMAIL_DOMAINS = {'example.com', 'example.net', 'example.org', 'localhost'}
+EMAIL_PREVIEW_CHARS = 150
+
+
+def smtp_config():
+    """(config, missing_keys). The port must be a number."""
+    config = {key: (os.environ.get(key) or '').strip() for key in SMTP_ENV_KEYS}
+    missing = [key for key, value in config.items() if not value]
+    if config['SMTP_PORT'] and not config['SMTP_PORT'].isdigit():
+        missing.append('SMTP_PORT')
+    return config, missing
+
+
+def undeliverable_address(address):
+    address = str(address or '').strip()
+    local, at, domain = address.rpartition('@')
+    domain = domain.lower().rstrip('.')
+    return not (local and at and domain) or domain in RESERVED_EMAIL_DOMAINS or domain.endswith(RESERVED_EMAIL_SUFFIXES)
+
+
+def send_email(to, subject, html_body, text_body):
+    """Sends one message over SMTP with STARTTLS (or implicit TLS on port 465).
+    Returns 'sent', 'not_configured' or 'failed'. Never raises; the body is never logged."""
+    config, missing = smtp_config()
+    if missing:
+        app.logger.warning('Email not sent: SMTP settings missing from .env (%s).', ', '.join(sorted(set(missing))))
+        return 'not_configured'
+    message = EmailMessage()
+    message['Subject'] = ' '.join(str(subject).split())[:200]   # no line breaks in a header
+    message['From'] = formataddr((config['SMTP_FROM_NAME'], config['SMTP_USERNAME']))
+    message['To'] = to
+    message.set_content(text_body)
+    message.add_alternative(html_body, subtype='html')
+    port = int(config['SMTP_PORT'])
+    try:
+        tls = ssl.create_default_context()
+        if port == 465:
+            server = smtplib.SMTP_SSL(config['SMTP_SERVER'], port, timeout=SMTP_TIMEOUT_S, context=tls)
+        else:
+            server = smtplib.SMTP(config['SMTP_SERVER'], port, timeout=SMTP_TIMEOUT_S)
+        with server:
+            if port != 465:
+                server.ehlo()
+                server.starttls(context=tls)
+                server.ehlo()
+            server.login(config['SMTP_USERNAME'], config['SMTP_PASSWORD'])
+            server.send_message(message)
+        return 'sent'
+    except Exception as exc:
+        app.logger.warning('Email not sent: SMTP error (%s).', type(exc).__name__)
+        return 'failed'
+
+
+def emails_enabled():
+    return setting('emails', 'enabled') is True
+
+
+def claim_email_slot(uid, event_type):
+    """True if this email may go out now (and records the send time); False inside the 10-minute window."""
+    ref = db.reference(f'email_throttle/{uid}/{event_type}')
+    now = int(time.time() * 1000)
+    last = ref.get()
+    if isinstance(last, (int, float)) and not isinstance(last, bool) and 0 <= now - last < EMAIL_THROTTLE_MS:
+        return False
+    ref.set(now)
+    return True
+
+
+def render_email(event_type, context):
+    """(html, text) from templates/emails/{event_type}.html / .txt. Rendered straight from the Jinja
+    environment: there is no request here, and the templates only use the context they're given."""
+    ctx = {'support_email': SUPPORT_EMAIL, 'year': time.strftime('%Y'), **context}
+    return (app.jinja_env.get_template(f'emails/{event_type}.html').render(**ctx),
+            app.jinja_env.get_template(f'emails/{event_type}.txt').render(**ctx))
+
+
+def deliver_notification(event_type, to_uid, subject, context):
+    """Background half of queue_email. Returns what happened (for tests): 'disabled', 'no_address',
+    'reserved_address', 'throttled', 'sent', 'not_configured' or 'failed'."""
+    if not emails_enabled():
+        return 'disabled'
+    got = fetch_parallel(email=lambda: db.reference(f'users/{to_uid}/email').get(),
+                         name=lambda: db.reference(f'users/{to_uid}/name').get())
+    address = got['email'] if isinstance(got['email'], str) else ''
+    if not address.strip():
+        return 'no_address'
+    if undeliverable_address(address):
+        return 'reserved_address'
+    throttled = event_type not in UNTHROTTLED_EMAILS
+    if throttled and not claim_email_slot(to_uid, event_type):
+        return 'throttled'
+    try:
+        with app.app_context():
+            html, text = render_email(event_type, {'recipient_name': strip_dr(got['name']) or '', **context})
+        result = send_email(address.strip(), subject, html, text)
+    except Exception:
+        result = 'failed'
+    if result != 'sent' and throttled:
+        try:   # a failed attempt doesn't use up the window
+            db.reference(f'email_throttle/{to_uid}/{event_type}').delete()
+        except Exception:
+            pass
+    activity_log('email_sent', f'Email: {EMAIL_EVENTS[event_type]}' + ('' if result == 'sent' else f' ({result.replace("_", " ")})'),
+                 'success' if result == 'sent' else 'failed',
+                 details={'event_type': event_type, 'to_uid': to_uid, 'result': result}, user=SYSTEM_ACTOR)
+    return result
+
+
+def queue_email(event_type, to_uid, subject, context):
+    """Hands the email to the background pool; the caller never waits or sees an error."""
+    if event_type in EMAIL_EVENTS and isinstance(to_uid, str) and is_safe_key(to_uid):
+        run_in_background(deliver_notification, event_type, to_uid, subject, dict(context))
+
+
+def queue_risk_alert_email(patient_uid, patient_name, level, label, score, alerts_url):
+    """Risk alerts go to the patient's assigned doctor, looked up in the background."""
+    def job():
+        doctor_uid = db.reference(f'users/{patient_uid}/assigned_doctor_uid').get()
+        if not (isinstance(doctor_uid, str) and is_safe_key(doctor_uid)):
+            return
+        if db.reference(f'users/{doctor_uid}/status').get() != 'approved':
+            return
+        deliver_notification('risk_alert', doctor_uid, f'Risk alert for {patient_name}', {
+            'patient_name': patient_name, 'level': level, 'band': label, 'score': score, 'alerts_url': alerts_url})
+    run_in_background(job)
+
+
+def external_url(endpoint, **values):
+    """Absolute link for an email, built from the request that triggered it."""
+    return url_for(endpoint, _external=True, **values)
+
+
+def email_preview(text, limit=EMAIL_PREVIEW_CHARS):
+    flat = ' '.join(str(text or '').split())
+    return flat if len(flat) <= limit else flat[:limit].rstrip() + '…'
+
+
 def validate_note(data):
     """(clean_fields, errors) for a clinical note request body."""
     title = str(data.get('title') or '').strip()
@@ -3613,6 +3778,11 @@ def doctor_save_treatment_plan(patient_uid):
                  f"{'Created' if is_new else 'Updated'} the treatment plan for {patient.get('name') or 'a patient'}",
                  details={'patient_uid': patient_uid, 'activities': len(fields['recommended_activities']),
                           'games': len(fields['recommended_games']), 'follow_up': bool(fields['follow_up_date'])})
+    # Only the instructions (never the private observations) go into the patient's email
+    queue_email('treatment_plan_updated', patient_uid, 'Your treatment plan has been updated', {
+        'doctor_name': strip_dr(doctor_name) or 'your doctor', 'is_new': is_new,
+        'instructions_preview': email_preview(fields['instructions']),
+        'dashboard_url': external_url('patient_dashboard')})
     return jsonify({'success': True, 'created': is_new,
                     'plan': treatment_plan_view(treatment_plan_ref(patient_uid).get(), for_doctor=True)})
 
@@ -3921,6 +4091,16 @@ def consultation_request():
     if urgency == 'emergency':
         activity_log('consultation_emergency', f"Emergency appointment requested by {me.get('name') or 'a patient'}", 'alert',
                      details={'consultation_id': ref.key, 'patient_uid': me['uid'], 'doctor_uid': doctor_uid}, user=SYSTEM_ACTOR)
+    patient_name = me.get('name') or 'A patient'
+    email_context = {'patient_name': patient_name, 'subject': subject, 'urgency': urgency,
+                     'time': format_timestamp(int(time.time() * 1000), '%a %d %b %Y, %I:%M %p'),
+                     'consultations_url': external_url('doctor_consultations_page'),
+                     'request_url': external_url('doctor_consultations_page', open=ref.key)}
+    if urgency == 'emergency':   # always sent, with the patient's message
+        queue_email('emergency_request', doctor_uid, f'URGENT: Emergency request from {patient_name}',
+                    {**email_context, 'message': message})
+    else:
+        queue_email('consultation_received', doctor_uid, f'New consultation request from {patient_name}', email_context)
     return jsonify({'success': True, 'id': ref.key, 'doctor_name': doctor_name,
                     'message': f'Request sent to Dr. {doctor_name}'})
 
@@ -4856,7 +5036,12 @@ SETTINGS_SCHEMA = {
         'buffer_min': ('int', 5, 1, 60, None),
         'auto_pair': ('bool', False, None, None, None),
     },
+    'emails': {
+        'enabled': ('bool', True, None, None, None),
+    },
 }
+# Fields stored flat under system/settings instead of system/settings/{section}/{key}
+SETTINGS_FLAT_KEYS = {('emails', 'enabled'): 'emails_enabled'}
 SETTINGS_SECTIONS = tuple(SETTINGS_SCHEMA)
 SETTINGS_DEFAULTS = {s: {k: spec[1] for k, spec in fields.items()} for s, fields in SETTINGS_SCHEMA.items()}
 _settings_cache = {'at': 0.0, 'values': SETTINGS_DEFAULTS, 'meta': {}, 'stale': False}
@@ -4909,7 +5094,10 @@ def system_settings(refresh=False):
         try:
             raw = db.reference('system/settings').get() or {}
             raw = raw if isinstance(raw, dict) else {}
-            _settings_cache['values'] = {s: clean_settings_section(s, raw.get(s)) for s in SETTINGS_SECTIONS}
+            stored = {s: dict(raw.get(s)) if isinstance(raw.get(s), dict) else {} for s in SETTINGS_SECTIONS}
+            for (section, key), flat in SETTINGS_FLAT_KEYS.items():
+                stored[section][key] = raw.get(flat)
+            _settings_cache['values'] = {s: clean_settings_section(s, stored[s]) for s in SETTINGS_SECTIONS}
             meta = raw.get('_meta') if isinstance(raw.get('_meta'), dict) else {}
             _settings_cache['meta'] = {s: m for s, m in meta.items() if s in SETTINGS_SECTIONS and isinstance(m, dict)}
             _settings_cache['stale'] = False
@@ -4932,7 +5120,7 @@ def settings_page(values=None, errors=None, status=200):
     page = admin_page('admin_settings.html', 'settings', admin_load_users(),
                       values=values or settings['values'], errors=errors or {}, meta=meta,
                       stale=settings['stale'], defaults=SETTINGS_DEFAULTS, schema=SETTINGS_SCHEMA,
-                      critical_min=t['high'] + 1, high_max=t['high'])
+                      critical_min=t['high'] + 1, high_max=t['high'], smtp_ready=not smtp_config()[1])
     return page, status
 
 
@@ -4972,7 +5160,12 @@ def admin_save_settings():
     me = session['user']
     updates = {}
     for section in sections:
-        updates[f'system/settings/{section}'] = values[section]
+        nested = {k: v for k, v in values[section].items() if (section, k) not in SETTINGS_FLAT_KEYS}
+        if nested:
+            updates[f'system/settings/{section}'] = nested
+        for (flat_section, key), flat in SETTINGS_FLAT_KEYS.items():
+            if flat_section == section:
+                updates[f'system/settings/{flat}'] = values[section][key]
         updates[f'system/settings/_meta/{section}'] = {'at': {'.sv': 'timestamp'}, 'by_uid': me['uid'],
                                                       'by_name': me.get('name') or 'Admin'}
     try:
@@ -6331,6 +6524,7 @@ def admin_delete_user(user_uid):
         }
         deletions[f'chat_unread/{user_uid}'] = None
         deletions[f'presence/{user_uid}'] = None
+        deletions[f'email_throttle/{user_uid}'] = None
         if profile.get('role') == 'patient':
             device_id = (profile.get('wristband') or {}).get('device_id')
             if isinstance(device_id, str) and is_safe_key(device_id):
@@ -6476,6 +6670,13 @@ def admin_review_doctor(doctor_uid, decision):
     action = 'approved' if decision == 'approve' else 'rejected'
     activity_log(f'doctor_{action}', f"{action.capitalize()} doctor {strip_dr(doctor.get('name')) or doctor_uid}",
                  details={'doctor_uid': doctor_uid, 'email': doctor.get('email', '')})
+    if decision == 'approve':
+        profile = doctor.get('profile') if isinstance(doctor.get('profile'), dict) else {}
+        queue_email('doctor_approved', doctor_uid, 'Your PsyMonitor doctor account has been approved', {
+            'doctor_name': strip_dr(doctor.get('name')) or 'Doctor',
+            'specialization': str(profile.get('specialization') or '').strip() or 'Not provided',
+            'affiliation': str(profile.get('affiliation') or '').strip() or 'Not provided',
+            'login_url': external_url('doctor_login')})
     flash(f"{doctor.get('name') or 'Doctor'} was {action}.", 'success')
     return admin_back('admin_approvals', 'admin_dashboard')
 

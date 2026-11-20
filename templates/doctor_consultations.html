@@ -68,7 +68,7 @@
       {% if rows %}
       <div class="cs-list">
         {% for r in rows %}
-        <article class="cs-row u-{{ r.urgency }}">
+        <article class="cs-row u-{{ r.urgency }}" id="request-{{ r.id }}">
           <div class="cs-row-head">
             <a href="{{ url_for('doctor_patient_detail', patient_uid=r.patient_uid) }}" style="color:#0F172A; font-weight:800;">{{ r.patient_name }}</a>
             <span class="cs-badge {{ 'cs-type-emergency' if r.type == 'emergency_appointment' else 'cs-type' }}">{{ r.type_label }}</span>

@@ -1,0 +1,14 @@
+Hi Dr. {{ recipient_name }},
+
+Risk alert for {{ patient_name }}.
+
+Your patient's latest assessment has raised a {{ band }} risk alert.
+
+  Patient:         {{ patient_name }}
+  Risk band:       {{ band }}
+  Composite score: {{ score }}/100
+
+Please review the assessment and acknowledge the alert on the Risk Alerts page:
+{{ alerts_url }}
+
+{% include 'emails/_footer.txt' %}

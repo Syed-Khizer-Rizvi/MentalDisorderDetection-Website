@@ -1,0 +1,25 @@
+{% extends 'emails/base.html' %}
+{% block title %}Your doctor account has been approved{% endblock %}
+{% block preheader %}You can now sign in to the PsyMonitor doctor portal.{% endblock %}
+{% block greeting %}Hi Dr. {{ doctor_name }},{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:21px; color:#0F172A;">Your doctor account has been approved</h1>
+<p style="margin:0 0 16px;">An administrator has reviewed your registration, and you can now sign in to the doctor portal to see your assigned patients, risk alerts and consultation requests.</p>
+<p style="margin:0 0 8px; font-weight:700; color:#0F172A;">Please confirm the details you registered with:</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px;">
+  <tr>
+    <td style="padding:12px 16px; font-size:13px; color:#64748B; width:140px;">Name</td>
+    <td style="padding:12px 16px; font-size:14px; font-weight:700; color:#0F172A;">Dr. {{ doctor_name }}</td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px; font-size:13px; color:#64748B;">Specialty</td>
+    <td style="padding:0 16px 12px; font-size:14px; font-weight:700; color:#0F172A;">{{ specialization }}</td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px; font-size:13px; color:#64748B;">Hospital / clinic</td>
+    <td style="padding:0 16px 12px; font-size:14px; font-weight:700; color:#0F172A;">{{ affiliation }}</td>
+  </tr>
+</table>
+<p style="margin:12px 0 0; font-size:13px; color:#64748B;">If anything is wrong, you can correct it on your Profile page after signing in.</p>
+{% with href=login_url, label='Sign in to the doctor portal' %}{% include 'emails/_button.html' %}{% endwith %}
+{% endblock %}

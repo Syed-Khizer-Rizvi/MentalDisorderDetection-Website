@@ -1,0 +1,28 @@
+{% extends 'emails/base.html' %}
+{% block title %}New consultation request{% endblock %}
+{% block preheader %}{{ patient_name }} has asked for a consultation: {{ subject }}{% endblock %}
+{% block greeting %}Hi Dr. {{ recipient_name }},{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:21px; color:#0F172A;">New consultation request</h1>
+<p style="margin:0 0 16px;"><strong style="color:#0F172A;">{{ patient_name }}</strong> has asked you for a consultation.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px;">
+  <tr>
+    <td style="padding:12px 16px; font-size:13px; color:#64748B; width:110px;">Patient</td>
+    <td style="padding:12px 16px; font-size:14px; font-weight:700; color:#0F172A;">{{ patient_name }}</td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px; font-size:13px; color:#64748B;">Subject</td>
+    <td style="padding:0 16px 12px; font-size:14px; font-weight:700; color:#0F172A;">{{ subject }}</td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px; font-size:13px; color:#64748B;">Urgency</td>
+    <td style="padding:0 16px 12px; font-size:14px; font-weight:700; color:{{ '#C2410C' if urgency == 'urgent' else '#0F172A' }};">{{ urgency | capitalize }}</td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px; font-size:13px; color:#64748B;">Received</td>
+    <td style="padding:0 16px 12px; font-size:14px; color:#0F172A;">{{ time }}</td>
+  </tr>
+</table>
+<p style="margin:12px 0 0; font-size:13px; color:#64748B;">The patient's message is on the Consultations page, so it isn't shared by email.</p>
+{% with href=consultations_url, label='View consultation requests' %}{% include 'emails/_button.html' %}{% endwith %}
+{% endblock %}

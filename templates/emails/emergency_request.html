@@ -1,0 +1,36 @@
+{% extends 'emails/base.html' %}
+{% set accent = '#B91C1C' %}
+{% block title %}URGENT: Emergency request{% endblock %}
+{% block preheader %}URGENT: {{ patient_name }} has requested an emergency appointment.{% endblock %}
+{% block tagline %}Urgent patient request{% endblock %}
+{% block banner %}
+<tr>
+  <td style="background:#FEF2F2; border-bottom:2px solid #DC2626; padding:14px 28px; font-size:14px; font-weight:800; color:#991B1B; letter-spacing:0.3px;">
+    &#9888; EMERGENCY APPOINTMENT REQUEST: please respond as soon as possible
+  </td>
+</tr>
+{% endblock %}
+{% block greeting %}Hi Dr. {{ recipient_name }},{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:21px; color:#991B1B;">{{ patient_name }} needs an emergency appointment</h1>
+<p style="margin:0 0 16px;">Your patient used the emergency button and is waiting for your response.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FEF2F2; border:1px solid #FECACA; border-left:4px solid #DC2626; border-radius:10px;">
+  <tr>
+    <td style="padding:12px 16px; font-size:13px; color:#7F1D1D; width:110px;">Patient</td>
+    <td style="padding:12px 16px; font-size:14px; font-weight:700; color:#7F1D1D;">{{ patient_name }}</td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px; font-size:13px; color:#7F1D1D;">Subject</td>
+    <td style="padding:0 16px 12px; font-size:14px; font-weight:700; color:#7F1D1D;">{{ subject }}</td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px; font-size:13px; color:#7F1D1D;">Sent</td>
+    <td style="padding:0 16px 12px; font-size:14px; color:#7F1D1D;">{{ time }}</td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:0 16px 14px; font-size:14px; color:#450A0A; white-space:pre-line;"><strong style="display:block; font-size:13px; color:#7F1D1D; margin-bottom:4px;">Message</strong>{{ message }}</td>
+  </tr>
+</table>
+{% with href=request_url, label='Open the request now', color='#DC2626' %}{% include 'emails/_button.html' %}{% endwith %}
+<p style="margin:18px 0 0; font-size:13px; color:#7F1D1D;">If the patient may be in immediate danger, contact them directly or advise them to call emergency services (1122) or Umang 0317-4288665.</p>
+{% endblock %}
