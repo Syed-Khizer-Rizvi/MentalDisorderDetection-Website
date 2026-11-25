@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
 </head>
-<body>
+<body class="page-fade">
 
     <!-- ========== NAVBAR ========== -->
     <nav class="navbar">
@@ -89,5 +89,6 @@
         </div>
     </footer>
 
+    <script src="{{ url_for('static', filename='js/site_motion.js') }}" defer></script>
 </body>
 </html>

@@ -114,23 +114,12 @@ ul { list-style: none; }
 }
 .trust-item svg { color: var(--primary); }
 
-/* HERO RIGHT - FLOATING CARDS */
+/* HERO RIGHT - ILLUSTRATION + FLOATING CARDS */
 .hero-right {
     position: relative;
-    height: 500px;
     display: flex; align-items: center; justify-content: center;
 }
-.hero-brain {
-    width: 280px; height: 280px;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 25px 60px rgba(15, 122, 95, 0.3);
-    position: relative;
-    animation: breathe 4s ease-in-out infinite;
-}
-.hero-brain svg { width: 160px; height: 160px; }
-@keyframes breathe { 0%,100%{transform:scale(1)} 50%{transform:scale(1.03)} }
+.hero-art { display: block; width: 100%; max-width: 500px; height: auto; }
 
 .float-card {
     position: absolute; background: #fff;
@@ -139,10 +128,12 @@ ul { list-style: none; }
     min-width: 170px;
     animation: float 3.5s ease-in-out infinite;
 }
-.card-top-left { top: 10%; left: -10px; }
-.card-top-right { top: 15%; right: -10px; min-width: 200px; animation-delay: 0.5s; }
-.card-bottom-left { bottom: 10%; left: 10px; min-width: 190px; animation-delay: 1s; }
-.card-bottom-right { bottom: 15%; right: -10px; min-width: 190px; animation-delay: 1.5s; }
+/* Pinned to the outer corners so they frame the illustration instead of covering it */
+.hero-right { padding: 56px 0; }
+.card-top-left { top: 0; left: -24px; }
+.card-top-right { top: 8px; right: -24px; min-width: 200px; animation-delay: 0.5s; }
+.card-bottom-left { bottom: 0; left: -24px; min-width: 190px; animation-delay: 1s; }
+.card-bottom-right { bottom: 8px; right: -24px; min-width: 190px; animation-delay: 1.5s; }
 @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
 
 .fc-head { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
@@ -213,19 +204,15 @@ ul { list-style: none; }
 .form-group :is(input, select, textarea)[aria-invalid="true"] { border-color: #F87171; }
 
 /* ========== FEATURES ========== */
-.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.features-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
 .feat-card {
     background: #fff; padding: 26px 24px; border-radius: 14px;
     border: 1px solid var(--border); transition: all 0.3s;
 }
 .feat-card:hover { transform: translateY(-5px); box-shadow: var(--shadow); border-color: var(--primary); }
-.feat-icon {
-    width: 44px; height: 44px;
-    background: var(--primary-light); color: var(--primary);
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    margin-bottom: 16px;
-}
+/* 80x80 illustration on every card */
+.feat-art { width: 80px; height: 80px; margin-bottom: 16px; }
+.feat-art img { display: block; width: 80px; max-width: 100%; height: auto; }
 .feat-card h3 { font-size: 17px; margin-bottom: 10px; }
 .feat-card p { font-size: 13.5px; color: var(--muted); line-height: 1.65; }
 
@@ -242,20 +229,12 @@ ul { list-style: none; }
     font-family: 'Plus Jakarta Sans', sans-serif;
     z-index: 2;
 }
-.step-circle {
-    width: 76px; height: 76px;
-    background: #fff;
-    border-radius: 20px;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--primary);
-    border: 2px solid var(--primary-light);
-    box-shadow: var(--shadow);
-}
+.step-art { display: block; width: 120px; max-width: 100%; height: auto; }
 .step-item h3 { font-size: 17px; margin-bottom: 8px; }
 .step-item p { font-size: 13px; color: var(--muted); line-height: 1.6; }
 .step-arrow {
-    color: var(--border); font-size: 24px; align-self: center;
-    margin-top: 20px;
+    color: var(--border); font-size: 24px; align-self: flex-start;
+    margin-top: 46px;   /* level with the middle of the 120px illustrations */
 }
 
 /* ========== CONTACT ========== */
@@ -354,14 +333,13 @@ ul { list-style: none; }
         grid-template-columns: 1fr; gap: 32px;
     }
     .hero-left h1, .about-left h2 { font-size: 32px; }
-    .hero-right { height: 400px; }
-    .hero-brain { width: 200px; height: 200px; }
-    .hero-brain svg { width: 110px; height: 110px; }
+    :is(.card-top-left, .card-bottom-left) { left: 0; }
+    :is(.card-top-right, .card-bottom-right) { right: 0; }
     .section { padding: 50px 0; }
     .section-head h2 { font-size: 28px; }
-    .features-grid { grid-template-columns: 1fr; }
-    .steps-row { flex-direction: column; }
-    .step-arrow { transform: rotate(90deg); margin: 0; }
+    .features-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .steps-row { flex-direction: column; align-items: center; }
+    .step-arrow { transform: rotate(90deg); margin: 0; align-self: center; }
 }
 /* ========== TEAM MEMBERS SECTION ========== */
 .team-grid {
@@ -461,14 +439,10 @@ ul { list-style: none; }
     .contact-form-card { padding: 22px 18px; }
     /* Hero illustration: smaller cards so they don't pile on top of each other */
     .hero { padding: 40px 16px 60px; }
-    .hero-right { height: 330px; }
-    .hero-brain { width: 150px; height: 150px; }
-    .hero-brain svg { width: 84px; height: 84px; }
-    .float-card { min-width: 0; padding: 10px 12px; }
-    .card-top-left { top: 0; left: 0; width: 46%; }
-    .card-top-right { top: 0; right: 0; width: 50%; min-width: 0; }
-    .card-bottom-left { bottom: 0; left: 0; width: 46%; min-width: 0; }
-    .card-bottom-right { bottom: 0; right: 0; width: 46%; min-width: 0; }
+    .features-grid { grid-template-columns: 1fr; }
+    /* Phones: the illustration alone, under the headline (the stat cards would cover it) */
+    .hero-cards { display: none; }
+    .hero-right { padding: 0; }
     .fc-value.big { font-size: 22px; }
 }
 /* ========== HELP / FAQ (templates/help.html) ========== */
@@ -532,4 +506,43 @@ ul { list-style: none; }
     background: #FEE2E2;
     color: #B91C1C;
     border: 1px solid #FCA5A5;
+}
+/* ========== ILLUSTRATIONS (static/illustrations) ========== */
+.about-right { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.about-art { display: block; width: 100%; max-width: 360px; height: auto; }
+.about-right .highlights-card { width: 100%; }
+.team-art { display: block; width: 100%; max-width: 400px; height: auto; margin: 0 auto 12px; }
+
+/* ========== MOTION ==========
+   Hero: headline, then buttons, then illustration, 150 ms apart.
+   Sections: fade + rise 20px as they scroll into view (static/js/site_motion.js adds .reveal / .is-visible).
+   Pages: fade in on load, fade out for 300 ms when an internal link is followed.
+   Everything is switched off for visitors who prefer reduced motion. */
+@keyframes rise-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+.hero-left > :is(.hero-pill, h1, .hero-sub) { animation: rise-in 0.6s ease both; }
+.hero-left > :is(.hero-cta, .hero-trust) { animation: rise-in 0.6s ease 0.15s both; }
+.hero-right { animation: rise-in 0.7s ease 0.3s both; }
+
+.reveal-ready .reveal {
+    opacity: 0; translate: 0 20px;
+    transition: opacity 0.6s ease, translate 0.6s ease;
+    transition-delay: var(--reveal-delay, 0ms);
+}
+.reveal-ready .reveal.is-visible { opacity: 1; translate: none; }
+
+@keyframes page-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes page-out { from { opacity: 1; } to { opacity: 0; } }
+body.page-fade { animation: page-in 0.3s ease both; }
+body.page-fade.page-leaving { animation: page-out 0.3s ease both; }
+
+/* Every button on the public pages lifts the same way */
+:is(.btn-primary, .btn-outline, .btn-white):hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.btn:active { transform: translateY(0); }
+
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .hero-left > *, .hero-right, body.page-fade, body.page-fade.page-leaving,
+    .float-card, .pill-dot { animation: none !important; }
+    .reveal-ready .reveal { opacity: 1; translate: none; transition: none; }
+    :is(.btn-primary, .btn-outline, .btn-white):hover { transform: none; }
 }

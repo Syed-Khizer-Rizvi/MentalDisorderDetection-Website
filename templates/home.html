@@ -23,12 +23,11 @@
         </div>
 
         <div class="hero-right">
-            <div class="hero-brain">
-                <svg viewBox="0 0 100 100" fill="none" stroke="white" stroke-width="2.5">
-                    <path d="M35 30 Q25 35 25 50 Q25 65 35 70 Q40 75 50 75 Q60 75 65 70 Q75 65 75 50 Q75 35 65 30 Q60 25 50 25 Q40 25 35 30 Z" fill="rgba(255,255,255,0.15)"/>
-                    <path d="M50 25 L50 75 M35 40 Q50 45 65 40 M35 60 Q50 55 65 60"/>
-                </svg>
-            </div>
+            {# Above the fold, so it loads straight away (lazy loading would delay the largest image on the page) #}
+            <img class="hero-art" src="{{ url_for('static', filename='illustrations/hero.png') }}" width="1000" height="1000"
+                 fetchpriority="high" decoding="async"
+                 alt="Illustration of a stressed woman holding up a heavy load of bills, deadlines and worries">
+            <div class="hero-cards" aria-hidden="true">
             <div class="float-card card-top-left">
                 <div class="fc-head"><div class="fc-icon">⌚</div> Heart Rate</div>
                 <div class="fc-value">72 <span>BPM</span></div>
@@ -48,6 +47,7 @@
             <div class="float-card card-bottom-right">
                 <div class="fc-head small">Brain Activity</div>
                 <svg class="fc-wave big" viewBox="0 0 120 30"><polyline points="0,15 10,15 15,8 20,22 25,10 30,18 40,15 45,5 50,25 55,12 65,15 70,8 75,20 80,10 90,15 95,6 100,22 105,13 120,15" fill="none" stroke="#0F7A5F" stroke-width="1.5"/></svg>
+            </div>
             </div>
         </div>
     </div>
@@ -77,8 +77,9 @@
             </div>
 
             <div class="about-right">
+                <img class="about-art" src="{{ url_for('static', filename='illustrations/about.png') }}" width="1000" height="1000"
+                     loading="lazy" decoding="async" alt="Illustration of a calm person meditating cross-legged among plants">
                 <div class="highlights-card" aria-labelledby="highlightsTitle">
-                    <div class="team-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
                     <h3 id="highlightsTitle">Project Highlights</h3>
                     <ul class="hl-grid">
                         <li><strong>67.46%</strong><span>AI Model Accuracy</span></li>
@@ -102,37 +103,49 @@
 
         <div class="features-grid">
             <div class="feat-card">
-                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v6a2 2 0 0 0 2 2h3l4 4V3l-4 4H5a2 2 0 0 0-2 2z"/><path d="M14 9a3 3 0 0 1 0 6"/><path d="M8 9h.01M12 9h.01M16 9h.01"/></svg></div>
-                <h3>AI Facial Emotion Detection</h3>
-                <p>OpenCV + TensorFlow detect 7 emotions in real-time from your camera feed.</p>
+                <div class="feat-art"><img src="{{ url_for('static', filename='illustrations/assessment.png') }}" width="80" height="80" loading="lazy" decoding="async" alt="Illustration of a patient talking with a psychologist"></div>
+                <h3>Facial Emotion Recognition</h3>
+                <p>Our custom-trained CNN reads 7 emotions from your camera during a check-in. The video is never stored.</p>
             </div>
 
             <div class="feat-card">
-                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="3"/><path d="M12 8v4l2 2"/></svg></div>
-                <h3>IoT Wristband Monitoring</h3>
-                <p>Live heart rate, GSR, and skin temperature streamed from ESP32 hardware.</p>
+                <div class="feat-art"><img src="{{ url_for('static', filename='illustrations/questionnaire.png') }}" width="80" height="80" loading="lazy" decoding="async" alt="Illustration of a questionnaire checklist on a clipboard with a pencil"></div>
+                <h3>Clinical Questionnaires</h3>
+                <p>PHQ-9, GAD-7 and PSS-10: the standard screening tools for depression, anxiety and stress.</p>
             </div>
 
             <div class="feat-card">
-                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4"/><path d="M9 11V7a3 3 0 0 1 6 0v4"/><polyline points="9 15 11 17 15 13"/></svg></div>
-                <h3>PHQ-9 / GAD-7 Assessment</h3>
-                <p>Gold-standard clinical questionnaires for depression and anxiety screening.</p>
+                <div class="feat-art"><img src="{{ url_for('static', filename='illustrations/wristband.png') }}" width="80" height="80" loading="lazy" decoding="async" alt="Illustration of a runner checking heart rate on a smartwatch"></div>
+                <h3>PsyMonitor Wristband</h3>
+                <p>PsyMonitor Band v2 streams heart rate, skin response (GSR) and temperature from its ESP32 sensors.</p>
             </div>
 
             <div class="feat-card">
-                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
-                <h3>Real-time Doctor Alerts</h3>
-                <p>Automated notifications when thresholds are exceeded — no manual escalation.</p>
+                <div class="feat-art"><img src="{{ url_for('static', filename='illustrations/games.png') }}" width="80" height="80" loading="lazy" decoding="async" alt="Illustration of a person relaxing with a jigsaw puzzle"></div>
+                <h3>Wellness Games</h3>
+                <p>Calming games plus breathing, journaling and gratitude exercises, right in your dashboard.</p>
             </div>
 
             <div class="feat-card">
-                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 8 22 9 17 14 18 21 12 17 6 21 7 14 2 9 9 8 12 2"/></svg></div>
-                <h3>Therapeutic Activities</h3>
-                <p>Breathing, coloring, journaling and meditation built into your dashboard.</p>
+                <div class="feat-art"><img src="{{ url_for('static', filename='illustrations/consultation.png') }}" width="80" height="80" loading="lazy" decoding="async" alt="Illustration of a doctor consulting with a patient"></div>
+                <h3>Doctor Consultations</h3>
+                <p>Request a consultation or an emergency appointment, and chat with your assigned doctor.</p>
             </div>
 
             <div class="feat-card">
-                <div class="feat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+                <div class="feat-art"><img src="{{ url_for('static', filename='illustrations/treatment.png') }}" width="80" height="80" loading="lazy" decoding="async" alt="Illustration of an online therapy session on a computer screen"></div>
+                <h3>Treatment Plans</h3>
+                <p>Your doctor writes a personal plan with instructions, recommended activities and a follow-up date.</p>
+            </div>
+
+            <div class="feat-card">
+                <div class="feat-art"><img src="{{ url_for('static', filename='illustrations/monitoring.png') }}" width="80" height="80" loading="lazy" decoding="async" alt="Illustration of a person analysing charts on a large screen"></div>
+                <h3>Live Monitoring</h3>
+                <p>Doctors see live wristband readings and are alerted as soon as a High or Critical risk appears.</p>
+            </div>
+
+            <div class="feat-card">
+                <div class="feat-art"><img src="{{ url_for('static', filename='illustrations/privacy.png') }}" width="80" height="80" loading="lazy" decoding="async" alt="Illustration of a person on a laptop beside locked private folders and a key"></div>
                 <h3>Privacy-First Design</h3>
                 <p>Video never stored. Only emotion scores are encrypted and saved securely.</p>
             </div>
@@ -153,40 +166,40 @@
             <div class="step-item">
                 <div class="step-wrap">
                     <span class="step-num">1</span>
-                    <div class="step-circle"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></div>
+                    <img class="step-art" src="{{ url_for('static', filename='illustrations/assessment.png') }}" width="120" height="120" loading="lazy" decoding="async" alt="Illustration of a patient talking with a psychologist">
                 </div>
-                <h3>Register & Login</h3>
-                <p>Create a secure account in under a minute.</p>
+                <h3>Take the Assessment</h3>
+                <p>Answer the PHQ-9, GAD-7 and PSS questionnaires, then an optional facial emotion scan.</p>
             </div>
-            <div class="step-arrow">→</div>
+            <div class="step-arrow" aria-hidden="true">→</div>
 
             <div class="step-item">
                 <div class="step-wrap">
                     <span class="step-num">2</span>
-                    <div class="step-circle"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4"/><path d="M9 11V7a3 3 0 0 1 6 0v4"/></svg></div>
+                    <img class="step-art" src="{{ url_for('static', filename='illustrations/monitoring.png') }}" width="120" height="120" loading="lazy" decoding="async" alt="Illustration of a person analysing charts on a large screen">
                 </div>
-                <h3>Fill PHQ-9 / GAD-7</h3>
-                <p>Take clinically validated assessments.</p>
+                <h3>Continuous Monitoring</h3>
+                <p>Your PsyMonitor wristband keeps tracking stress signals between check-ins.</p>
             </div>
-            <div class="step-arrow">→</div>
+            <div class="step-arrow" aria-hidden="true">→</div>
 
             <div class="step-item">
                 <div class="step-wrap">
                     <span class="step-num">3</span>
-                    <div class="step-circle"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a2 2 0 0 1 2-2h2M4 17v2a2 2 0 0 0 2 2h2M20 7V5a2 2 0 0 0-2-2h-2M20 17v2a2 2 0 0 1-2 2h-2M8 10h.01M16 10h.01M9 14h6"/></svg></div>
+                    <img class="step-art" src="{{ url_for('static', filename='illustrations/consultation.png') }}" width="120" height="120" loading="lazy" decoding="async" alt="Illustration of a doctor consulting with a patient">
                 </div>
-                <h3>Facial + Wristband Scan</h3>
-                <p>AI analyzes emotion and biometric signals.</p>
+                <h3>Consult Your Doctor</h3>
+                <p>Your assigned doctor reviews your risk score and answers your requests.</p>
             </div>
-            <div class="step-arrow">→</div>
+            <div class="step-arrow" aria-hidden="true">→</div>
 
             <div class="step-item">
                 <div class="step-wrap">
                     <span class="step-num">4</span>
-                    <div class="step-circle"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
+                    <img class="step-art" src="{{ url_for('static', filename='illustrations/treatment.png') }}" width="120" height="120" loading="lazy" decoding="async" alt="Illustration of an online therapy session on a computer screen">
                 </div>
-                <h3>Get Risk Score</h3>
-                <p>Receive personalized recommendations.</p>
+                <h3>Follow Your Treatment Plan</h3>
+                <p>Daily activities and games from your doctor's personal plan.</p>
             </div>
         </div>
     </div>
@@ -194,6 +207,8 @@
 <!-- ========== TEAM SECTION ========== -->
 <section class="section" id="team">
     <div class="container">
+        <img class="team-art" src="{{ url_for('static', filename='illustrations/team.png') }}" width="1000" height="1000"
+             loading="lazy" decoding="async" alt="Illustration of a team of four medical professionals standing together">
         <div class="section-head">
             <span class="eyebrow">OUR TEAM</span>
             <h2>Meet the <span class="text-gradient">Developers</span></h2>
