@@ -98,96 +98,102 @@
     <form method="post" action="{{ url_for('admin_save_settings') }}" id="settingsForm" class="st-grid" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-      {# ===== Alerts ===== #}
-      <section class="chart-panel st-section" id="alerts" aria-labelledby="h-alerts">
-        <div class="st-section-head"><span class="st-section-icon">{{ icon('bell', 20) }}</span>
-          <div><h2 id="h-alerts">Alert Threshold Configuration</h2><p>When the system should raise an alert</p></div></div>
+      {# Two independent columns, so each card is only as tall as its own content. Below 1100px the
+         columns dissolve (display: contents) and the cards stack in the order set in admin.css. #}
+      <div class="st-col">
+        {# ===== Alerts ===== #}
+        <section class="chart-panel st-section" id="alerts" aria-labelledby="h-alerts">
+          <div class="st-section-head"><span class="st-section-icon">{{ icon('bell', 20) }}</span>
+            <div><h2 id="h-alerts">Alert Threshold Configuration</h2><p>When the system should raise an alert</p></div></div>
 
-        <p class="st-note">The heart rate, GSR and temperature thresholds are for future wristband-based alerts (currently inactive). Composite score alerts are already working via the ML Models page.</p>
-        <div class="st-fields">
-          {{ number('alerts', 'hr_max', 'Alert when HR exceeds:', 'BPM', '30–220 BPM') }}
-          {{ number('alerts', 'gsr_max', 'Alert when GSR exceeds:', 'µS', '0.1–5.0 µS', 0.1, hint='The wristband currently sends raw GSR sensor values, which need converting to µS before this can be used.') }}
-          {{ number('alerts', 'temp_max', 'Alert when temperature exceeds:', '°C', '35.0–42.0 °C', 0.1) }}
+          <p class="st-note">The heart rate, GSR and temperature thresholds are for future wristband-based alerts (currently inactive). Composite score alerts are already working via the ML Models page.</p>
+          <div class="st-fields">
+            {{ number('alerts', 'hr_max', 'Alert when HR exceeds:', 'BPM', '30–220 BPM') }}
+            {{ number('alerts', 'gsr_max', 'Alert when GSR exceeds:', 'µS', '0.1–5.0 µS', 0.1, hint='The wristband currently sends raw GSR sensor values, which need converting to µS before this can be used.') }}
+            {{ number('alerts', 'temp_max', 'Alert when temperature exceeds:', '°C', '35.0–42.0 °C', 0.1) }}
 
-          <div class="st-field">
-            <div class="st-field-head"><label for="f-composite">Alert when composite score exceeds:</label>{{ chip('live') }}</div>
-            <div class="st-readonly-range">
-              <input type="range" id="f-composite" min="0" max="100" value="{{ critical_min }}" disabled aria-describedby="composite-note">
-              <output for="f-composite">{{ critical_min }}<small>/100</small></output>
+            <div class="st-field">
+              <div class="st-field-head"><label for="f-composite">Alert when composite score exceeds:</label>{{ chip('live') }}</div>
+              <div class="st-readonly-range">
+                <input type="range" id="f-composite" min="0" max="100" value="{{ critical_min }}" disabled aria-describedby="composite-note">
+                <output for="f-composite">{{ critical_min }}<small>/100</small></output>
+              </div>
+              <p class="st-sub" id="composite-note">Critical alerts start at {{ critical_min }} (High band ends at {{ high_max }}). Read-only here. <a href="{{ url_for('admin_ml_models') }}#thresholds" class="admin-text-link">Also configurable on ML Models page →</a></p>
             </div>
-            <p class="st-sub" id="composite-note">Critical alerts start at {{ critical_min }} (High band ends at {{ high_max }}). Read-only here. <a href="{{ url_for('admin_ml_models') }}#thresholds" class="admin-text-link">Also configurable on ML Models page →</a></p>
+
+            {{ number('alerts', 'escalation_min', 'If unacknowledged for:', 'minutes', '5–180 minutes', hint='Future feature: automated escalation to a senior doctor.') }}
+          </div>
+          {{ section_foot('alerts') }}
+        </section>
+
+        {# ===== Email notifications ===== #}
+        <section class="chart-panel st-section" id="emails" aria-labelledby="h-emails">
+          <div class="st-section-head"><span class="st-section-icon">{{ icon('mail', 20) }}</span>
+            <div><h2 id="h-emails">Email Notifications</h2><p>Emails sent to doctors and patients when something needs their attention</p></div></div>
+          <div class="st-fields">
+            {{ toggle('emails', 'enabled', 'Send email notifications',
+                      'Doctor approval, consultation and emergency requests, High/Critical risk alerts and treatment plan updates',
+                      status='live' if smtp_ready else 'off') }}
+          </div>
+          {% if smtp_ready %}
+          <p class="admin-note">Sent through Gmail SMTP. At most one email of each type per person every 10 minutes; emergency requests are always sent.</p>
+          {% else %}
+          <p class="st-note">SMTP is not configured: add SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM_NAME to <code>.env</code>. Until then, emails are skipped.</p>
+          {% endif %}
+          {{ section_foot('emails') }}
+        </section>
+      </div>
+
+      <div class="st-col">
+        {# ===== Questionnaires ===== #}
+        <section class="chart-panel st-section" id="questionnaire" aria-labelledby="h-questionnaire">
+          <div class="st-section-head"><span class="st-section-icon">{{ icon('clipboard', 20) }}</span>
+            <div><h2 id="h-questionnaire">Questionnaire Configuration</h2><p>How often patients take the assessment</p></div></div>
+          <div class="st-fields">
+            {{ number('questionnaire', 'cooldown_hours', 'Cooldown period', 'hours', 'Minimum time between assessments, 0–168 hours (0 = no limit)', hint='Saved, but patients can still retake the assessment at any time until this is enforced.') }}
+            {{ toggle('questionnaire', 'mandatory_on_login', 'Mandatory on login', 'Require assessment on every login') }}
           </div>
 
-          {{ number('alerts', 'escalation_min', 'If unacknowledged for:', 'minutes', '5–180 minutes', hint='Future feature: automated escalation to a senior doctor.') }}
-        </div>
-        {{ section_foot('alerts') }}
-      </section>
-
-      {# ===== Questionnaires ===== #}
-      <section class="chart-panel st-section" id="questionnaire" aria-labelledby="h-questionnaire">
-        <div class="st-section-head"><span class="st-section-icon">{{ icon('clipboard', 20) }}</span>
-          <div><h2 id="h-questionnaire">Questionnaire Configuration</h2><p>How often patients take the assessment</p></div></div>
-        <div class="st-fields">
-          {{ number('questionnaire', 'cooldown_hours', 'Cooldown period', 'hours', 'Minimum time between assessments, 0–168 hours (0 = no limit)', hint='Saved, but patients can still retake the assessment at any time until this is enforced.') }}
-          {{ toggle('questionnaire', 'mandatory_on_login', 'Mandatory on login', 'Require assessment on every login') }}
-        </div>
-
-        <h3 class="st-subhead">Severity bands used in results <span class="st-chip st-chip-ref">Read-only</span></h3>
-        <div class="st-bands">
-          {% for title, max_score, bands in [
-               ('PHQ-9', 27, [('Minimal', '0–4', '#059669'), ('Mild', '5–9', '#2563EB'), ('Moderate', '10–14', '#D97706'), ('Moderately severe', '15–19', '#EA580C'), ('Severe', '20–27', '#DC2626')]),
-               ('GAD-7', 21, [('Minimal', '0–4', '#059669'), ('Mild', '5–9', '#2563EB'), ('Moderate', '10–14', '#D97706'), ('Severe', '15–21', '#DC2626')]),
-               ('PSS-10', 40, [('Low', '0–13', '#059669'), ('Moderate', '14–26', '#D97706'), ('High', '27–40', '#DC2626')])] %}
-          <div class="st-band-card">
-            <h4>{{ title }} <small>0–{{ max_score }}</small></h4>
-            <ul>{% for label, rng, color in bands %}<li><span class="st-band-dot" style="background: {{ color }};"></span>{{ label }}<strong>{{ rng }}</strong></li>{% endfor %}</ul>
-          </div>
-          {% endfor %}
-        </div>
-        <p class="admin-note">Standard clinical cut-offs, as applied on the results pages. PHQ-9 uses five bands, so "Severe" starts at 20.</p>
-        {{ section_foot('questionnaire') }}
-      </section>
-
-      {# ===== Email notifications ===== #}
-      <section class="chart-panel st-section" id="emails" aria-labelledby="h-emails">
-        <div class="st-section-head"><span class="st-section-icon">{{ icon('mail', 20) }}</span>
-          <div><h2 id="h-emails">Email Notifications</h2><p>Emails sent to doctors and patients when something needs their attention</p></div></div>
-        <div class="st-fields">
-          {{ toggle('emails', 'enabled', 'Send email notifications',
-                    'Doctor approval, consultation and emergency requests, High/Critical risk alerts and treatment plan updates',
-                    status='live' if smtp_ready else 'off') }}
-        </div>
-        {% if smtp_ready %}
-        <p class="admin-note">Sent through Gmail SMTP. At most one email of each type per person every 10 minutes; emergency requests are always sent.</p>
-        {% else %}
-        <p class="st-note">SMTP is not configured: add SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM_NAME to <code>.env</code>. Until then, emails are skipped.</p>
-        {% endif %}
-        {{ section_foot('emails') }}
-      </section>
-
-      {# ===== Wristband ===== #}
-      <section class="chart-panel st-section" id="wristband" aria-labelledby="h-wristband">
-        <div class="st-section-head"><span class="st-section-icon">{{ icon('watch', 20) }}</span>
-          <div><h2 id="h-wristband">IoT Wristband Configuration</h2><p>How paired wristbands collect and send data</p></div></div>
-        <div class="st-fields">
-          {% set err = errors.get('wristband.interval_s') %}
-          <div class="st-field{{ ' has-error' if err }}">
-            <div class="st-field-head"><label for="f-wristband-interval_s">Send sensor readings</label>{{ chip('device') }}</div>
-            <div class="st-input st-select">
-              <select id="f-wristband-interval_s" name="wristband.interval_s" data-default="{{ defaults.wristband.interval_s }}"{% if err %} aria-invalid="true"{% endif %}>
-                {% for s in schema.wristband.interval_s[4] %}<option value="{{ s }}"{{ ' selected' if values.wristband.interval_s|string == s|string }}>Every {{ s }}s{{ ' (default)' if s == defaults.wristband.interval_s }}</option>{% endfor %}
-              </select>
+          <h3 class="st-subhead">Severity bands used in results <span class="st-chip st-chip-ref">Read-only</span></h3>
+          <div class="st-bands">
+            {% for title, max_score, bands in [
+                 ('PHQ-9', 27, [('Minimal', '0–4', '#059669'), ('Mild', '5–9', '#2563EB'), ('Moderate', '10–14', '#D97706'), ('Moderately severe', '15–19', '#EA580C'), ('Severe', '20–27', '#DC2626')]),
+                 ('GAD-7', 21, [('Minimal', '0–4', '#059669'), ('Mild', '5–9', '#2563EB'), ('Moderate', '10–14', '#D97706'), ('Severe', '15–21', '#DC2626')]),
+                 ('PSS-10', 40, [('Low', '0–13', '#059669'), ('Moderate', '14–26', '#D97706'), ('High', '27–40', '#DC2626')])] %}
+            <div class="st-band-card">
+              <h4>{{ title }} <small>0–{{ max_score }}</small></h4>
+              <ul>{% for label, rng, color in bands %}<li><span class="st-band-dot" style="background: {{ color }};"></span>{{ label }}<strong>{{ rng }}</strong></li>{% endfor %}</ul>
             </div>
-            {% if err %}<p class="st-error" role="alert">{{ err }}</p>{% endif %}
-            <p class="st-sub">The wristband receives this in the reply to each reading.</p>
+            {% endfor %}
           </div>
-          {{ number('wristband', 'buffer_min', 'Buffer duration when offline', 'minutes', '1–60 minutes of readings kept on the device while offline', status='device') }}
-          {{ toggle('wristband', 'auto_pair', 'Auto-pair new devices', 'Automatically approve wristband pairing requests',
-                    warning='Only enable in trusted environments.') }}
-        </div>
-        <p class="admin-note">Pairing currently works by the patient generating credentials on their Wristband page, so there are no pairing requests for auto-pair to approve yet.</p>
-        {{ section_foot('wristband') }}
-      </section>
+          <p class="admin-note">Standard clinical cut-offs, as applied on the results pages. PHQ-9 uses five bands, so "Severe" starts at 20.</p>
+          {{ section_foot('questionnaire') }}
+        </section>
+
+        {# ===== Wristband ===== #}
+        <section class="chart-panel st-section" id="wristband" aria-labelledby="h-wristband">
+          <div class="st-section-head"><span class="st-section-icon">{{ icon('watch', 20) }}</span>
+            <div><h2 id="h-wristband">IoT Wristband Configuration</h2><p>How paired wristbands collect and send data</p></div></div>
+          <div class="st-fields">
+            {% set err = errors.get('wristband.interval_s') %}
+            <div class="st-field{{ ' has-error' if err }}">
+              <div class="st-field-head"><label for="f-wristband-interval_s">Send sensor readings</label>{{ chip('device') }}</div>
+              <div class="st-input st-select">
+                <select id="f-wristband-interval_s" name="wristband.interval_s" data-default="{{ defaults.wristband.interval_s }}"{% if err %} aria-invalid="true"{% endif %}>
+                  {% for s in schema.wristband.interval_s[4] %}<option value="{{ s }}"{{ ' selected' if values.wristband.interval_s|string == s|string }}>Every {{ s }}s{{ ' (default)' if s == defaults.wristband.interval_s }}</option>{% endfor %}
+                </select>
+              </div>
+              {% if err %}<p class="st-error" role="alert">{{ err }}</p>{% endif %}
+              <p class="st-sub">The wristband receives this in the reply to each reading.</p>
+            </div>
+            {{ number('wristband', 'buffer_min', 'Buffer duration when offline', 'minutes', '1–60 minutes of readings kept on the device while offline', status='device') }}
+            {{ toggle('wristband', 'auto_pair', 'Auto-pair new devices', 'Automatically approve wristband pairing requests',
+                      warning='Only enable in trusted environments.') }}
+          </div>
+          <p class="admin-note">Pairing currently works by the patient generating credentials on their Wristband page, so there are no pairing requests for auto-pair to approve yet.</p>
+          {{ section_foot('wristband') }}
+        </section>
+      </div>
     </form>
   </main>
 </div>
