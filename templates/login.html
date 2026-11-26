@@ -90,7 +90,7 @@
           <label for="password">Password</label>
           <div class="input-wrap">
             <span class="input-icon" aria-hidden="true">🔒</span>
-            <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required>
+            <input type="password" id="password" class="pw-field" placeholder="••••••••" autocomplete="current-password" required>
           </div>
           <a href="{{ url_for('forgot_password', portal=portal) }}" class="auth-link auth-forgot">Forgot password?</a>
         </div>
@@ -109,6 +109,7 @@
 
 
 
+<script src="{{ url_for('static', filename='js/password_toggle.js') }}" defer></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";

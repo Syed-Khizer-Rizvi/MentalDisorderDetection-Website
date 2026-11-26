@@ -121,12 +121,12 @@
           <div class="form-group">
             <label for="password">Password</label>
             <div class="input-wrap"><span class="input-icon" aria-hidden="true">🔒</span>
-              <input type="password" id="password" placeholder="At least 6 characters" autocomplete="new-password" minlength="6" required></div>
+              <input type="password" id="password" class="pw-field" placeholder="At least 6 characters" autocomplete="new-password" minlength="6" required></div>
           </div>
           <div class="form-group">
             <label for="confirm">Confirm password</label>
             <div class="input-wrap"><span class="input-icon" aria-hidden="true">🔒</span>
-              <input type="password" id="confirm" placeholder="Repeat password" autocomplete="new-password" required></div>
+              <input type="password" id="confirm" class="pw-field" placeholder="Repeat password" autocomplete="new-password" required></div>
           </div>
         </div>
 
@@ -163,6 +163,7 @@
   </main>
 </div>
 
+<script src="{{ url_for('static', filename='js/password_toggle.js') }}" defer></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";

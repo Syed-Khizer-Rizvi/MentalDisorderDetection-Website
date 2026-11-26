@@ -33,7 +33,7 @@
           <label>Name<input name="name" maxlength="100" required></label>
           <label>Email<input type="email" name="email" maxlength="254" autocomplete="off" required></label>
           <label>Phone<input name="phone" maxlength="30"></label>
-          <label>Temporary password<input type="password" name="password" minlength="6" autocomplete="new-password" required></label>
+          <label>Temporary password<span class="pw-wrap"><input type="password" name="password" class="pw-field" minlength="6" autocomplete="new-password" required></span></label>
           <label>Role<select name="role" required><option value="patient">Patient</option><option value="doctor"{{ ' selected' if create_role == 'doctor' }}>Doctor</option></select></label>
           <button type="submit" class="admin-approve">Create account</button>
         </form>
@@ -75,7 +75,7 @@
                     <label>Name<input name="name" value="{{ account.name }}" maxlength="100" required></label>
                     <label>Email<input type="email" name="email" value="{{ account.email }}" maxlength="254" required></label>
                     <label>Phone<input name="phone" value="{{ account.phone }}" maxlength="30"></label>
-                    <label>New password<input type="password" name="password" minlength="6" autocomplete="new-password"></label>
+                    <label>New password<span class="pw-wrap"><input type="password" name="password" class="pw-field" minlength="6" autocomplete="new-password"></span></label>
                     <label>Status<select name="status">
                       {% set statuses = ['active', 'suspended'] if account.role == 'patient' else ['pending', 'approved', 'rejected', 'suspended'] %}
                       {% for status in statuses %}<option value="{{ status }}" {{ 'selected' if account.status == status }}>{{ status|capitalize }}</option>{% endfor %}
@@ -111,5 +111,6 @@
   </main>
 </div>
 <script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/password_toggle.js') }}" defer></script>
 </body>
 </html>

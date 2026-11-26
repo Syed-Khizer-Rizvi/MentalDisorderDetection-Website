@@ -147,3 +147,24 @@
 @media (prefers-reduced-motion: reduce) {
   :is(a.stat-card, .stat-link, .feat-card, .role-card, .team-member-card):hover { transform: none; }
 }
+
+/* ---------- Show / hide password toggle (static/js/password_toggle.js) ---------- */
+.pw-wrap { position: relative; display: flex; align-items: center; }
+.pw-wrap > input { width: 100%; box-sizing: border-box; }
+input.pw-has-toggle { padding-right: 44px !important; }
+input.pw-has-toggle::-ms-reveal, input.pw-has-toggle::-ms-clear { display: none; }  /* Edge's own eye would double up */
+.pw-toggle {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: 0; margin: 0;
+  border: 0; border-radius: 8px; background: none; box-shadow: none;
+  color: var(--ui-faint); cursor: pointer; transition: color 0.15s ease;
+}
+.pw-toggle:hover, .pw-toggle[aria-pressed="true"]:hover { color: var(--ui-green); background: none; transform: translateY(-50%); }
+.pw-toggle:focus-visible { outline: 2px solid var(--ui-green); outline-offset: -2px; color: var(--ui-green); }
+.pw-toggle svg { display: block; pointer-events: none; }
+.pw-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+@media (prefers-reduced-motion: reduce) { .pw-toggle { transition: none; } }
