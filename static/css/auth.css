@@ -462,3 +462,12 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .auth-form-box h2 { font-size: 26px; }
 }
 @media (prefers-reduced-motion: reduce) { .role-card { transition: none; } .role-card:hover { transform: none; } }
+
+/* Verify email page (templates/verify_email.html) */
+.verify-box .reset-hint { margin: 0 0 18px; }
+.verify-email-address { color: #0F172A; overflow-wrap: anywhere; }
+.verify-box .auth-alert { margin: 0 0 16px; text-align: left; }
+.verify-box .btn-auth { width: 100%; }
+.verify-resend { margin-top: 12px; justify-content: center; }
+.verify-resend:disabled, .verify-box .btn-auth:disabled { opacity: 0.6; cursor: not-allowed; }
+.verify-tip { margin: 16px 0 8px !important; }

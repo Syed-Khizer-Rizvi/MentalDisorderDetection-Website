@@ -974,3 +974,17 @@ a.db-stub { color: #0F7A5F; text-decoration: underline; text-decoration-style: d
   .ad-pending-actions form { flex: 1; }
   .ad-pending-actions button { width: 100%; }
 }
+
+/* ===== Email verification (Accounts, Approvals, Dashboard) ===== */
+.admin-verify { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.admin-verify-yes { background: #D1FAE5; color: #065F46; }
+.admin-verify-no { background: #FEF3C7; color: #92400E; }
+.admin-verify-cell form { margin-top: 6px; }
+.admin-text-button {
+  padding: 0; border: 0; background: none; color: #0F7A5F; font: inherit; font-size: 12px; font-weight: 700;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.admin-text-button:hover { color: #0A5A47; }
+.admin-text-button:focus-visible { outline: 2px solid #0F7A5F; outline-offset: 2px; border-radius: 3px; }
+.admin-verify-warning { margin: 0 0 8px; color: #92400E; font-size: 12px; font-weight: 600; line-height: 1.45; }
+.ad-pending-info .admin-verify-warning { display: block; margin: 2px 0 0; }

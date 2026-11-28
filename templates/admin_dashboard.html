@@ -151,6 +151,7 @@
                 <strong>{{ d.name }}</strong>
                 <span>{{ d.specialization }}</span>
                 <small>Applied: {{ d.applied }}</small>
+                {% if not d.email_verified %}<small class="admin-verify-warning" role="note">⚠ Email not yet verified</small>{% endif %}
               </div>
               <div class="ad-pending-actions">
                 <form method="post" action="{{ url_for('admin_review_doctor', doctor_uid=d.uid, decision='approve') }}">

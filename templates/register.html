@@ -360,6 +360,12 @@
 
       const userCred = await createUserWithEmailAndPassword(auth, emailInput.value.trim(), $('password').value);
       const data = await registerProfile(userCred.user, body);
+      if (data.success && data.verify_email) {
+        // The server has asked Firebase to send the verification link (same request as sendEmailVerification()).
+        // Stay signed in to Firebase so the verify page can resend it and check when it's been clicked.
+        showAuthSuccess('Account created! Check your inbox to verify your email...', data.redirect, 900);
+        return;
+      }
       await signOut(auth);
 
       if (!data.success) {

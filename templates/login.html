@@ -166,6 +166,12 @@
       window.location.href = REGISTER_URL + '?google=1';
       return;
     }
+    if (data.unverified) {
+      // Stay signed in to Firebase (no app session exists): the verify page needs it to resend the link
+      showAlert(data.error, { href: data.verify_url, text: 'Resend verification email →' });
+      setBusy(false);
+      return;
+    }
     await signOut(auth);
     showAlert(data.error || 'Login failed',
               data.wrong_portal && data.portal_url ? { href: data.portal_url, text: `Go to the ${data.portal_title} →` } : null);

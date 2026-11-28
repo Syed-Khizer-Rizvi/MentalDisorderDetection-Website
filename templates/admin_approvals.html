@@ -38,6 +38,7 @@
               <td>{{ doctor.phone or 'Not provided' }}</td>
               <td>{{ doctor.created_date }}</td>
               <td>
+                {% if doctor.email_verified is sameas false %}<p class="admin-verify-warning" role="note">⚠ Email not yet verified. You can approve now, but they can't sign in until they verify it.</p>{% endif %}
                 <form method="post" action="{{ url_for('admin_review_doctor', doctor_uid=doctor.uid, decision='approve') }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                   <button class="admin-approve" type="submit">Approve</button>

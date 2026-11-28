@@ -696,7 +696,8 @@ def verify_token():
         user_ref = db.reference(f'users/{uid}')
         # Only the fields sign-in needs, read in parallel: one ~300 ms round instead of downloading
         # the whole user node (which for a patient includes assessments, wristband readings, journal...)
-        fields = ['role', 'status', 'name', 'email', 'uid', 'created_at'] + (['mfa/totp_secret_enc'] if uid == ADMIN_UID else [])
+        fields = (['role', 'status', 'name', 'email', 'uid', 'created_at', 'email_verified']
+                  + (['mfa/totp_secret_enc'] if uid == ADMIN_UID else []))
         values = fetch_parallel(**{f'f{i}': (lambda f=f: db.reference(f'users/{uid}/{f}').get()) for i, f in enumerate(fields)})
         found = {f: values[f'f{i}'] for i, f in enumerate(fields) if values[f'f{i}'] is not None}
         mfa_enrolled = bool(found.pop('mfa/totp_secret_enc', None))
@@ -733,6 +734,20 @@ def verify_token():
             return jsonify({'success': False, 'wrong_portal': True, 'error': portal_mismatch_message(portal, role),
                             'portal_url': url_for(PORTALS[role]['login']), 'portal_title': PORTALS[role]['title']}), 403
 
+        # Email verification (see EMAIL VERIFICATION). Checked before doctor approval, so an unverified doctor
+        # is told the thing they can fix themselves. Only an explicit False blocks; the admin is never blocked.
+        if uid != ADMIN_UID and profile.get('email_verified') is False:
+            actor = {'uid': uid, 'name': profile.get('name') or email, 'role': role if role in PORTALS else 'guest'}
+            if decoded.get('email_verified'):
+                mark_email_verified(uid, actor)   # they clicked the link since registering
+                profile['email_verified'] = True
+            else:
+                activity_log('login_blocked_unverified', 'Sign-in blocked: email not verified', 'failed',
+                             {'uid': uid}, user=actor)
+                remember_verification(uid, email or profile.get('email'), role)
+                return jsonify({'success': False, 'unverified': True, 'error': UNVERIFIED_LOGIN_MESSAGE,
+                                'verify_url': url_for('verify_email_page')}), 403
+
         if profile.get('role') == 'doctor' and profile.get('status') != 'approved':
             activity_log('login_failed', f"Sign-in blocked: doctor account {profile.get('status') or 'not approved'}", 'failed',
                          {'email': email, 'reason': f"doctor_{profile.get('status') or 'unknown'}"},
@@ -756,6 +771,7 @@ def verify_token():
             activity_log('mfa_challenge', 'Password accepted; 2FA code requested', 'info', details={'email': email}, user=user_record)
             return jsonify({'success': True, 'mfa_required': True, 'redirect': url_for('admin_mfa_verify')})
 
+        session.pop('_verify_pending', None)
         session['user'] = user_record
         session['_login_toast'] = True   # one-time: popped by the next dashboard load
         # Daily login total for the admin analytics "Activities Completed" figure (server-local day);
@@ -858,6 +874,9 @@ def register_profile():
             return jsonify({'success': False, 'error': problem}), 400
         name, phone = profile_fields.pop('name'), profile_fields.pop('phone')
 
+        # Google has already verified a Google account's address (the token says so); an email + password
+        # sign-up has to click the link first. Either way the flag is stored explicitly.
+        email_verified = bool(decoded.get('email_verified'))
         record = {
             'uid': uid,
             'name': name,
@@ -865,6 +884,7 @@ def register_profile():
             'phone': phone,
             'role': role,
             'status': status,
+            'email_verified': email_verified,
             'created_at': {'.sv': 'timestamp'}
         }
         if profile_fields:
@@ -888,6 +908,15 @@ def register_profile():
             # No approved doctors yet: register unassigned; the dashboard auto-assigns later
 
         db.reference(f'users/{uid}').set(record)
+
+        if not email_verified:
+            actor = {'uid': uid, 'name': name, 'role': role}
+            sent = request_verification_email(uid, id_token, 'registration', actor)
+            remember_verification(uid, email, role)
+            return jsonify({'success': True, 'status': status, 'verify_email': True,
+                            'email_sent': sent['result'] == 'sent',
+                            'redirect': url_for('verify_email_page', sent=1) if sent['result'] == 'sent' else url_for('verify_email_page'),
+                            'message': 'Account created! We sent a verification link to your email.'})
 
         message = (
             'Account created! Your doctor account is pending admin approval. You can sign in once an administrator has approved it.'
@@ -2200,6 +2229,171 @@ def forgot_password_submit():
                    else "We couldn't send the email just now. Please try again in a few minutes.")
         return render_forgot_password(503, error=message, email=email)
     return redirect(url_for('forgot_password', sent=1, portal=reset_portal()))
+
+
+# ========== EMAIL VERIFICATION ==========
+# Accounts registered with email + password must prove they own the address before they can sign in.
+# users/{uid}/email_verified is the app's flag:
+#   False -> registered here and not verified yet: sign-in is blocked until Firebase reports the address
+#            verified (the ID token's email_verified claim), at which point the flag flips to True;
+#   True  -> verified, signed up with Google (Google has verified the address), created by an admin, or
+#            marked verified by an admin;
+#   absent -> an account from before this feature that the one-time migration didn't cover (it only
+#            grandfathers active / approved accounts). These are not blocked, so no existing sign-in breaks.
+# Doctors also still need admin approval: both checks have to pass.
+# The email itself is Firebase's "Email address verification" template (see DEPLOY.md), requested from the
+# server through the same REST call the browser SDK's sendEmailVerification() makes. Sending it here means
+# the one-per-minute limit can't be skipped from the browser, and every send is logged.
+EMAIL_VERIFY_INTERVAL_S = 60
+EMAIL_VERIFY_MIGRATION = 'system/migrations/email_verification_v1'
+UNVERIFIED_LOGIN_MESSAGE = 'Please verify your email first. Check your inbox or click resend verification.'
+RATE_LIMITS['email_verification_resend'] = '10 per hour'   # per IP, on top of the per-account 1/minute
+
+
+def send_verification_email(id_token):
+    """Asks Firebase to email the verification link to the account behind `id_token`.
+    'sent' | 'busy' (Firebase is throttling) | 'error'."""
+    import json as _json
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(
+        f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_WEB_CONFIG['apiKey']}",
+        data=_json.dumps({'requestType': 'VERIFY_EMAIL', 'idToken': id_token}).encode(),
+        headers={'Content-Type': 'application/json'})
+    try:
+        urllib.request.urlopen(req, timeout=10).read()
+        return 'sent'
+    except urllib.error.HTTPError as e:
+        try:
+            code = str(_json.loads(e.read().decode()).get('error', {}).get('message', ''))
+        except Exception:
+            code = ''
+        return 'busy' if ('TOO_MANY' in code or 'EXCEED' in code) else 'error'
+    except Exception:
+        return 'error'
+
+
+def claim_verification_slot(uid):
+    """(True, 0) and records the send time, or (False, seconds to wait) inside the one-minute window.
+    A transaction, so two quick clicks can't both get through."""
+    now = int(time.time() * 1000)
+    window_ms = EMAIL_VERIFY_INTERVAL_S * 1000
+    outcome = {}
+
+    def claim(last):
+        if isinstance(last, (int, float)) and not isinstance(last, bool) and 0 <= now - last < window_ms:
+            outcome['wait'] = max(1, -(-(window_ms - (now - last)) // 1000))
+            return last   # unchanged
+        outcome.pop('wait', None)
+        return now
+
+    db.reference(f'email_verification/{uid}/last_sent_at').transaction(claim)
+    return ('wait' not in outcome), outcome.get('wait', 0)
+
+
+def request_verification_email(uid, id_token, reason, actor=None):
+    """Rate-limited send. Returns {'result': 'sent' | 'rate_limited' | 'busy' | 'error', 'retry_after': s}."""
+    allowed, wait = claim_verification_slot(uid)
+    if not allowed:
+        return {'result': 'rate_limited', 'retry_after': wait}
+    result = send_verification_email(id_token)
+    if result != 'sent':
+        try:
+            db.reference(f'email_verification/{uid}/last_sent_at').delete()   # a failed send doesn't use up the minute
+        except Exception:
+            pass
+    activity_log('email_verification_sent', 'Verification email sent' if result == 'sent' else f'Verification email not sent ({result})',
+                 'info' if result == 'sent' else 'failed', details={'uid': uid, 'reason': reason, 'result': result},
+                 user=actor)
+    return {'result': result, 'retry_after': EMAIL_VERIFY_INTERVAL_S if result == 'sent' else 0}
+
+
+def mark_email_verified(uid, actor=None):
+    """Called when Firebase first reports the address verified (sign-in or the "I've verified" button)."""
+    db.reference(f'users/{uid}').update({'email_verified': True, 'email_verified_at': {'.sv': 'timestamp'}})
+    activity_log('email_verification_completed', 'Email address verified', details={'uid': uid}, user=actor)
+
+
+def mask_email(email):
+    """'mohib.k@gmail.com' -> 'mo*****@gmail.com' (enough to recognise, not enough to harvest)."""
+    local, sep, domain = str(email or '').partition('@')
+    if not sep or not local:
+        return ''
+    keep = 1 if len(local) <= 2 else 2
+    return local[:keep] + '*' * max(3, len(local) - keep) + '@' + domain
+
+
+def remember_verification(uid, email, role):
+    """What /verify-email shows: kept in the (signed) session cookie, never in a URL."""
+    session['_verify_pending'] = {'uid': uid, 'email': email or '', 'role': role if role in ('patient', 'doctor') else 'patient'}
+
+
+def migrate_email_verification(users_path='users', flag_path=EMAIL_VERIFY_MIGRATION):
+    """One-time: existing active patients and approved doctors are grandfathered as verified.
+    Guarded by a flag, and only fills in a missing email_verified (never overwrites one), so running it
+    again changes nothing. Returns 'already_done' or the number of accounts marked."""
+    if db.reference(flag_path).get():
+        return 'already_done'
+    uids = [u for u in (db.reference(users_path).get(shallow=True) or {}) if is_safe_key(u)]
+    # Only the two fields needed, not whole user nodes (those carry assessments, readings, ...)
+    calls = {}
+    for i, u in enumerate(uids):
+        calls[f's{i}'] = (lambda u=u: db.reference(f'{users_path}/{u}/status').get())
+        calls[f'v{i}'] = (lambda u=u: db.reference(f'{users_path}/{u}/email_verified').get())
+    got = fetch_parallel(**calls) if calls else {}
+    updates = {f'{users_path}/{u}/email_verified': True for i, u in enumerate(uids)
+               if got.get(f's{i}') in ('active', 'approved') and got.get(f'v{i}') is None}
+    updates[flag_path] = {'done_at': {'.sv': 'timestamp'}, 'accounts_marked': len(updates)}
+    db.reference().update(updates)
+    activity_log('email_verification_migration', f'Email verification: {len(updates) - 1} existing accounts grandfathered as verified',
+                 'info', details={'accounts_marked': len(updates) - 1}, user=SYSTEM_ACTOR)
+    return len(updates) - 1
+
+
+
+@app.route('/verify-email')
+def verify_email_page():
+    pending = session.get('_verify_pending') if isinstance(session.get('_verify_pending'), dict) else None
+    if 'user' in session and not pending:
+        return redirect(url_for('dashboard'))
+    role = (pending or {}).get('role', 'patient')
+    return render_template('verify_email.html', firebase_config=FIREBASE_WEB_CONFIG,
+                           masked_email=mask_email((pending or {}).get('email')), role=role, has_pending=bool(pending),
+                           login_url=url_for(PORTALS[role]['login']), interval_s=EMAIL_VERIFY_INTERVAL_S,
+                           just_sent=bool(pending) and request.args.get('sent') == '1')
+
+
+@app.route('/api/email-verification/resend', methods=['POST'])
+@limiter.limit(RATE_LIMITS['email_verification_resend'])
+def email_verification_resend():
+    data = request.get_json(silent=True) or {}
+    try:
+        decoded = auth.verify_id_token(data.get('idToken'), clock_skew_seconds=10)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Your sign-in has expired. Sign in again to resend the email.',
+                        'needs_login': True}), 401
+    uid = decoded['uid']
+    profile = fetch_parallel(v=lambda: db.reference(f'users/{uid}/email_verified').get(),
+                             n=lambda: db.reference(f'users/{uid}/name').get(),
+                             r=lambda: db.reference(f'users/{uid}/role').get())
+    actor = {'uid': uid, 'name': profile['n'] or decoded.get('email') or 'Unknown', 'role': profile['r'] or 'guest'}
+    if profile['v'] is not False:
+        return jsonify({'success': True, 'already_verified': True,
+                        'message': 'Your email is already verified. You can sign in.'})
+    if decoded.get('email_verified'):
+        mark_email_verified(uid, actor)
+        return jsonify({'success': True, 'already_verified': True,
+                        'message': 'Your email is already verified. You can sign in.'})
+    outcome = request_verification_email(uid, data.get('idToken'), 'resend', actor)
+    if outcome['result'] == 'rate_limited':
+        return jsonify({'success': False, 'rate_limited': True, 'retry_after': outcome['retry_after'],
+                        'error': f"Please wait {outcome['retry_after']} seconds before requesting another email."}), 429
+    if outcome['result'] != 'sent':
+        return jsonify({'success': False, 'error': ('Firebase is limiting emails to this address right now. Please try again in a few minutes.'
+                                                    if outcome['result'] == 'busy' else
+                                                    "We couldn't send the email just now. Please try again in a minute.")}), 503
+    return jsonify({'success': True, 'retry_after': outcome['retry_after'],
+                    'message': 'Verification email sent. Check your inbox (and spam folder).'})
 
 
 # ========== HELP / FAQ ==========
@@ -4305,6 +4499,8 @@ def admin_account_row(uid, user):
         'phone': user.get('phone', ''),
         'role': user.get('role', 'patient'),
         'status': user.get('status', 'active'),
+        # True / False / None (an older account the grandfather migration didn't cover: treated as verified)
+        'email_verified': user.get('email_verified') if isinstance(user.get('email_verified'), bool) else None,
         'created_at': created_at if isinstance(created_at, (int, float)) else 0,
         'created_date': admin_date(created_at)
     }
@@ -4403,7 +4599,8 @@ def admin_dashboard_data(users):
                     'uid': uid, 'name': name,
                     'initials': ''.join(w[0].upper() for w in strip_dr(name).split()[:2]) or 'D',
                     'specialization': profile.get('specialization') or 'Specialization not given',
-                    'applied': admin_date(created), 'created_at': created if isinstance(created, (int, float)) else 0})
+                    'applied': admin_date(created), 'created_at': created if isinstance(created, (int, float)) else 0,
+                    'email_verified': user.get('email_verified') is not False})
             continue
         if role != 'patient':
             continue
@@ -6419,6 +6616,7 @@ def admin_create_user():
             email=email,
             password=password,
             display_name=name,
+            email_verified=True,   # the admin vouches for the address
             disabled=role == 'doctor'
         )
         db.reference(f'users/{created_user.uid}').set({
@@ -6428,6 +6626,7 @@ def admin_create_user():
             'phone': phone,
             'role': role,
             'status': status,
+            'email_verified': True,
             'created_at': {'.sv': 'timestamp'}
         })
         activity_log('account_created', f'Created {role} account {name}',
@@ -6501,6 +6700,38 @@ def admin_update_user(user_uid):
     return admin_back('admin_accounts')
 
 
+@app.route('/admin/users/<user_uid>/verify-email', methods=['POST'])
+@admin_required
+def admin_mark_email_verified(user_uid):
+    """Bypass for test accounts (and people whose inbox drops the email): marks the address verified both
+    here and in Firebase Auth. Logged with who did it."""
+    if not admin_csrf_valid():
+        return 'Invalid or expired form token.', 400
+    if not is_safe_key(user_uid) or user_uid == ADMIN_UID:
+        flash('That account cannot be changed.', 'error')
+        return admin_back('admin_accounts')
+    user_ref = db.reference(f'users/{user_uid}')
+    profile = fetch_parallel(role=lambda: user_ref.child('role').get(), name=lambda: user_ref.child('name').get(),
+                             verified=lambda: user_ref.child('email_verified').get())
+    if profile['role'] not in ('patient', 'doctor'):
+        flash('That account could not be found.', 'error')
+        return admin_back('admin_accounts')
+    if profile['verified'] is True:
+        flash('That email address is already verified.', 'success')
+        return admin_back('admin_accounts')
+    try:
+        auth.update_user(user_uid, email_verified=True)
+    except Exception:
+        flash('Firebase Auth could not be updated, so the account was not marked verified.', 'error')
+        return admin_back('admin_accounts')
+    user_ref.update({'email_verified': True, 'email_verified_at': {'.sv': 'timestamp'},
+                     'email_verified_by': session['user']['uid']})
+    activity_log('email_verification_bypassed', f"Marked {profile['name'] or user_uid}'s email as verified",
+                 details={'admin_uid': session['user']['uid'], 'target_uid': user_uid})
+    flash(f"{profile['name'] or 'The account'}'s email is now marked as verified.", 'success')
+    return admin_back('admin_accounts')
+
+
 @app.route('/admin/users/<user_uid>/delete', methods=['POST'])
 @admin_required
 def admin_delete_user(user_uid):
@@ -6525,6 +6756,7 @@ def admin_delete_user(user_uid):
         deletions[f'chat_unread/{user_uid}'] = None
         deletions[f'presence/{user_uid}'] = None
         deletions[f'email_throttle/{user_uid}'] = None
+        deletions[f'email_verification/{user_uid}'] = None
         if profile.get('role') == 'patient':
             device_id = (profile.get('wristband') or {}).get('device_id')
             if isinstance(device_id, str) and is_safe_key(device_id):
@@ -6704,6 +6936,10 @@ def logout():
             pass
     session.clear()  # also drops the admin CSRF token
     return redirect(url_for('home'))
+
+
+# Startup, once everything above is defined: grandfather existing accounts (a no-op once its flag is set)
+run_in_background(migrate_email_verification)
 
 
 if __name__ == '__main__':

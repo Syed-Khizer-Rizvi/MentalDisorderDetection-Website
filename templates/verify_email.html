@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Verify your email address to activate your Mental Disorder Detection account.">
+{% include '_favicon.html' %}
+<title>Verify Your Email | Mental Disorder Detection</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
+</head>
+<body class="portal-{{ role }}">
+<main class="auth-admin">
+  <a href="{{ url_for('home') }}" class="auth-brand auth-brand-dark"><img src="{{ url_for('static', filename='images/favicon-192.png') }}" alt="" class="auth-logo">
+    <span class="auth-brand-text">Mental Disorder Detection</span></a>
+  <div class="auth-form-box auth-admin-card">
+    <div class="reset-done verify-box">
+      <span class="reset-icon" aria-hidden="true">✉</span>
+      <h2>Verify your email</h2>
+      <p class="auth-sub">We sent a verification link to your email{% if masked_email %} <strong class="verify-email-address">{{ masked_email }}</strong>{% endif %}.
+        Please click the link to activate your account.</p>
+      {% if role == 'doctor' %}
+      <p class="reset-hint">After you verify, an administrator still needs to approve your doctor account before you can sign in.</p>
+      {% endif %}
+
+      <div id="verifyAlert" class="auth-alert" role="status" aria-live="polite" hidden></div>
+
+      <button type="button" class="btn-auth" id="checkBtn">I've verified my email</button>
+      <button type="button" class="btn-google verify-resend" id="resendBtn">Resend verification email</button>
+      <p class="reset-hint verify-tip">Not getting the email? Check your spam or junk folder. You can resend it once a minute.</p>
+      <p class="auth-footer-text"><a href="{{ login_url }}" id="backLink">← Back to sign in</a></p>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+  import { verifyToken, showAuthSuccess } from "{{ url_for('static', filename='js/auth_common.js') }}";
+
+  const app = initializeApp({
+    apiKey: "{{ firebase_config.apiKey }}",
+    authDomain: "{{ firebase_config.authDomain }}",
+    projectId: "{{ firebase_config.projectId }}",
+    storageBucket: "{{ firebase_config.storageBucket }}",
+    messagingSenderId: "{{ firebase_config.messagingSenderId }}",
+    appId: "{{ firebase_config.appId }}",
+    databaseURL: "{{ firebase_config.databaseURL }}"
+  });
+  const auth = getAuth(app);
+  const ROLE = {{ role|tojson }};
+  const LOGIN_URL = {{ login_url|tojson }};
+  const INTERVAL_S = {{ interval_s|int }};
+  const resendBtn = document.getElementById('resendBtn');
+  const checkBtn = document.getElementById('checkBtn');
+  const alertBox = document.getElementById('verifyAlert');
+  const resendLabel = resendBtn.textContent;
+  let user = null;
+  let timer = null;
+
+  function say(message, ok = false) {
+    alertBox.textContent = message;
+    alertBox.classList.toggle('is-success', ok);
+    alertBox.hidden = !message;
+  }
+
+  // The server enforces one email per minute; this only shows the wait
+  function cooldown(seconds) {
+    clearInterval(timer);
+    let left = Math.max(0, Math.round(seconds));
+    const tick = () => {
+      if (left <= 0) { clearInterval(timer); resendBtn.disabled = false; resendBtn.textContent = resendLabel; return; }
+      resendBtn.disabled = true;
+      resendBtn.textContent = `Resend available in ${left}s`;
+      left -= 1;
+    };
+    tick();
+    timer = setInterval(tick, 1000);
+  }
+
+  function needSignIn() {
+    resendBtn.disabled = checkBtn.disabled = true;
+    say('Sign in again to resend the verification email or to continue once you have verified.');
+    document.getElementById('backLink').textContent = 'Sign in →';
+  }
+
+  onAuthStateChanged(auth, (current) => {
+    user = current;
+    if (!user) needSignIn();
+  });
+  {% if just_sent %}cooldown(INTERVAL_S);   // the link was sent just before arriving here{% endif %}
+
+  resendBtn.addEventListener('click', async () => {
+    if (!user) return needSignIn();
+    resendBtn.disabled = true;
+    say('');
+    try {
+      const res = await fetch('/api/email-verification/resend', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: await user.getIdToken() })
+      });
+      const data = await res.json();
+      if (data.needs_login) return needSignIn();
+      say(data.message || data.error || 'Something went wrong. Please try again.', Boolean(data.success));
+      if (data.retry_after) cooldown(data.retry_after); else resendBtn.disabled = false;
+    } catch (err) {
+      say('Network error. Check your connection and try again.');
+      resendBtn.disabled = false;
+    }
+  });
+
+  // After clicking the link (any device): refresh the Firebase account so the new token carries
+  // email_verified, then sign in as usual. The server marks the account verified on the way.
+  checkBtn.addEventListener('click', async () => {
+    if (!user) return needSignIn();
+    checkBtn.disabled = true;
+    say('');
+    try {
+      await user.reload();
+      await user.getIdToken(true);
+      const data = await verifyToken(user, ROLE);
+      if (data.success) {
+        showAuthSuccess('Email verified! Redirecting to your dashboard...', data.redirect);
+        return;
+      }
+      if (data.unverified) {
+        say("We haven't seen the verification yet. Click the link in the email, then try again.");
+      } else {
+        await signOut(auth);   // e.g. a doctor still waiting for approval: nothing more to do here
+        say(data.error || 'Sign-in failed. Please try again.', /pending/.test(data.error || ''));
+        resendBtn.disabled = true;
+      }
+    } catch (err) {
+      say('Network error. Check your connection and try again.');
+    }
+    checkBtn.disabled = false;
+  });
+</script>
+</body>
+</html>

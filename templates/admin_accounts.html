@@ -59,12 +59,27 @@
       {% if accounts %}
       <div class="admin-table-wrap">
         <table class="admin-table">
-          <thead><tr><th scope="col">Account</th><th scope="col">Role / status</th><th scope="col">Joined</th><th scope="col">Manage</th></tr></thead>
+          <thead><tr><th scope="col">Account</th><th scope="col">Role / status</th><th scope="col">Email verification</th><th scope="col">Joined</th><th scope="col">Manage</th></tr></thead>
           <tbody>
             {% for account in accounts %}
             <tr>
               <td><strong>{{ account.name }}</strong><span class="admin-secondary">{{ account.email }}{% if account.phone %} · {{ account.phone }}{% endif %}</span></td>
               <td><span class="admin-capitalize">{{ account.role }}</span><span class="admin-status admin-status-{{ account.status|lower }}">{{ account.status }}</span></td>
+              <td class="admin-verify-cell">
+                {% if account.email_verified is sameas false %}
+                <span class="admin-verify admin-verify-no">Not verified</span>
+                <form method="post" action="{{ url_for('admin_mark_email_verified', user_uid=account.uid) }}"
+                      onsubmit="return confirm('Mark this email address as verified without the user clicking the link? Use this for test accounts.')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="next" value="{{ request.full_path }}">
+                  <button type="submit" class="admin-text-button">Mark as verified</button>
+                </form>
+                {% elif account.email_verified %}
+                <span class="admin-verify admin-verify-yes">Verified</span>
+                {% else %}
+                <span class="admin-verify admin-verify-yes" title="Registered before email verification was introduced">Verified</span><span class="admin-secondary">Existing account</span>
+                {% endif %}
+              </td>
               <td>{{ account.created_date }}</td>
               <td class="admin-account-actions">
                 <details class="admin-edit">
